@@ -1,0 +1,568 @@
+<?php
+session_start();
+include "../config/db.php";
+
+$message = "";
+$message_type = "";
+
+// ========================================================
+// API ENDPOINT: LIVE FETCH OF ITEMS, VARIANTS & STORE PRODUCTS
+// ========================================================
+if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
+    header('Content-Type: application/json');
+    $order_id = mysqli_real_escape_string($conn, trim($_GET['order_id'] ?? ''));
+    $email = mysqli_real_escape_string($conn, trim($_GET['email'] ?? ''));
+    
+    $check = mysqli_query($conn, "SELECT id, status FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
+    if ($check && mysqli_num_rows($check) > 0) {
+        $order_data = mysqli_fetch_assoc($check);
+
+        $items_query = mysqli_query($conn, "SELECT oi.product_id, oi.qty, 
+                                            COALESCE(NULLIF(pv.variant_name, ''), p.product_name) AS product_name, 
+                                            COALESCE(pv.price, p.price) AS price 
+                                            FROM order_items oi 
+                                            JOIN products p ON oi.product_id = p.id
+                                            LEFT JOIN product_variants pv ON oi.variant_id = pv.id 
+                                            WHERE oi.order_id = '{$order_data['id']}'");
+
+        $items = [];
+        while ($row = mysqli_fetch_assoc($items_query)) {
+            $items[] = $row;
+        }
+
+        // Kunin ang lahat ng available products sa shop para sa exchange selection (Variant name lang)
+        $all_products_query = mysqli_query($conn, "SELECT pv.id, 
+                                                   COALESCE(NULLIF(pv.variant_name, ''), p.product_name) AS product_name, 
+                                                   pv.price 
+                                                   FROM product_variants pv
+                                                   JOIN products p ON pv.product_id = p.id
+                                                   WHERE pv.stock > 0 
+                                                   ORDER BY p.product_name ASC, pv.variant_name ASC");
+        $shop_products = [];
+        while ($p = mysqli_fetch_assoc($all_products_query)) {
+            $shop_products[] = $p;
+        }
+
+        echo json_encode([
+            'success' => true, 
+            'status' => $order_data['status'], 
+            'items' => $items,
+            'shop_products' => $shop_products
+        ]);
+        exit;
+    } else {
+        echo json_encode(['success' => false, 'message' => 'Order not found with matching email.']);
+        exit;
+    }
+}
+
+// ========================================================
+// POST HANDLER: SUBMISSION OF REQUESTS (WITH TOTAL PRICE LOGIC)
+// ========================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
+    $order_id = mysqli_real_escape_string($conn, trim($_POST['order_id']));
+    $email = mysqli_real_escape_string($conn, trim($_POST['email']));
+    $request_type = mysqli_real_escape_string($conn, $_POST['request_type']);
+    $reason = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
+    
+    $user_comments = trim($_POST['details'] ?? '');
+    $item_replaced_val = '';
+    $item_exchange_val = '';
+    $comment_val = $user_comments;
+
+    $ver_query = mysqli_query($conn, "SELECT status FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
+    if ($ver_query && mysqli_num_rows($ver_query) > 0) {
+        $v_data = mysqli_fetch_assoc($ver_query);
+        $v_status = strtolower(trim($v_data['status']));
+
+        if ($request_type === 'exchange' && $v_status !== 'completed') {
+            $message = "❌ Cannot request exchange. Item Exchange is only allowed for COMPLETED orders.";
+            $message_type = "danger";
+        } 
+        elseif ($request_type === 'cancel' && ($v_status === 'out for delivery' || $v_status === 'completed' || $v_status === 'delivered')) {
+            $message = "❌ Cannot request cancellation. Order status is " . strtoupper($v_data['status']) . ".";
+            $message_type = "danger";
+        } else {
+            $filename = "";
+            if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === 0) {
+                $ext = pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION);
+                $filename = "REQ_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+                move_uploaded_file($_FILES['product_image']['tmp_name'], "../uploads/" . $filename);
+            }
+
+            if ($request_type === 'exchange') {
+                $return_qty = (int)($_POST['return_item_qty'] ?? 1);
+                $old_item_name = trim($_POST['exchange_old_item_name'] ?? 'Selected Item');
+                $old_item_unit_price = (float)($_POST['exchange_old_item_price'] ?? 0);
+                $old_total_price = $old_item_unit_price * $return_qty;
+                
+                // Format: item x2 total:440
+                $item_replaced_val = "{$old_item_name} x{$return_qty} total: " . number_format($old_total_price, 2, '.', '');
+                
+                $exchange_summary = "";
+                if (isset($_POST['exchange_products'])) {
+                    foreach ($_POST['exchange_products'] as $index => $variant_id) {
+                        $qty = (int)$_POST['exchange_qtys'][$index];
+                        $prod_query = mysqli_query($conn, "SELECT CONCAT(p.product_name, ' - ', pv.variant_name) AS full_vname, pv.price 
+                                                            FROM product_variants pv 
+                                                            JOIN products p ON pv.product_id = p.id 
+                                                            WHERE pv.id = '$variant_id' LIMIT 1");
+                        if ($prod_query && $prod_row = mysqli_fetch_assoc($prod_query)) {
+                            $line_total = (float)$prod_row['price'] * $qty;
+                            $exchange_summary .= "{$prod_row['full_vname']} x{$qty} total: " . number_format($line_total, 2, '.', '') . " | ";
+                        }
+                    }
+                }
+                $item_exchange_val = trim($exchange_summary, " | ");
+            }
+
+            $comment_escaped = mysqli_real_escape_string($conn, $comment_val);
+            $replaced_escaped = mysqli_real_escape_string($conn, $item_replaced_val);
+            $exchange_escaped = mysqli_real_escape_string($conn, $item_exchange_val);
+
+            $ins = mysqli_query($conn, "INSERT INTO customer_requests (order_number, account, request_type, reason, details, item_to_replace, item_to_exchange, product_image, status) 
+                                        VALUES ('$order_id', '$email', '$request_type', '$reason', '$comment_escaped', '$replaced_escaped', '$exchange_escaped', " . ($filename ? "'$filename'" : "NULL") . ", 'Pending')");
+            if ($ins) {
+                $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
+                $message_type = "success";
+            } else {
+                $message = "❌ Failed to submit request. Please try again.";
+                $message_type = "danger";
+            }
+        }
+    } else {
+        $message = "❌ Verification error. Order connection lost.";
+        $message_type = "danger";
+    }
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Service Help Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        body { background: #f4f6f9; }
+        .card-custom { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .receipt-preview { background: #fff; border: 1px dashed #bbb; font-family: monospace; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-9">
+            
+            <div class="text-center mb-4">
+                <h2 class="fw-bold text-dark"><i class="bi bi-headset text-primary"></i> Customer Service Help Center</h2>
+                <p class="text-muted">Input your order details below to file an item exchange, cancellation, or ask questions.</p>
+            </div>
+
+            <?php if(!empty($message)): ?>
+                <div class="alert alert-<?php echo $message_type; ?> alert-dismissible fade show card-custom p-3" role="alert">
+                    <?php echo $message; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <div class="card card-custom p-4 bg-white mb-4">
+                <form action="customerService.php" method="POST" enctype="multipart/form-data" id="mainRequestForm">
+                    
+                    <!-- Hidden inputs para maipasa ang pangalan at unit price ng papalitan -->
+                    <input type="hidden" name="exchange_old_item_name" id="exchange_old_item_name">
+                    <input type="hidden" name="exchange_old_item_price" id="exchange_old_item_price">
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Order ID / Number</label>
+                            <input type="number" name="order_id" id="order_id" class="form-control" placeholder="e.g. 1024" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Account Email Address</label>
+                            <input type="email" name="email" id="email" class="form-control" placeholder="yourname@email.com" required>
+                        </div>
+                        <div class="col-12 text-end">
+                            <button type="button" id="btnVerify" class="btn btn-primary px-4"><i class="bi bi-shield-check"></i> Verify Order</button>
+                        </div>
+                    </div>
+
+                    <div id="errorWrapper" class="alert alert-danger d-none card-custom mb-4"></div>
+
+                    <div id="formBodyWrapper" class="d-none">
+                        
+                        <div class="border-top pt-4 mb-4">
+                            <label class="form-label fw-bold fs-5 text-dark">Select Request Action</label>
+                            <div class="row g-2">
+                                <div class="col-md-4">
+                                    <input type="radio" class="btn-check" name="request_type" id="req_exchange" value="exchange" checked>
+                                    <label class="btn btn-outline-primary w-100 py-3 h-100 rounded-3 d-flex flex-column align-items-center justify-content-center" for="req_exchange" id="lbl_req_exchange">
+                                        <i class="bi bi-arrow-left-right fs-4 mb-1"></i> Exchange Items
+                                    </label>
+                                </div>
+                                <div class="col-md-4">
+                                    <input type="radio" class="btn-check" name="request_type" id="req_cancel" value="cancel">
+                                    <label class="btn btn-outline-dark w-100 py-3 h-100 rounded-3 d-flex flex-column align-items-center justify-content-center" for="req_cancel">
+                                        <i class="bi bi-x-circle fs-4 mb-1"></i> Cancel Order
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4" id="reasonFieldWrapper">
+                            <label class="form-label fw-semibold">Reason for Request</label>
+                            <select name="reason" id="requestReason" class="form-select"></select>
+                        </div>
+
+                        <div id="exchangeCalculatorWrapper" class="card p-3 bg-light card-custom mb-4 d-none">
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-8">
+                                    <label class="small fw-semibold text-dark">1. Select Bought Item to Replace</label>
+                                    <select id="exch_old_item" class="form-select"></select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="small fw-semibold text-dark">Qty to Return</label>
+                                    <input type="number" name="return_item_qty" id="return_item_qty" class="form-control" value="1" min="1">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="small fw-semibold text-dark">2. Add Replacement Items (Specific Products & Quantities)</label>
+                                    <button type="button" id="btnAddExchangeRow" class="btn btn-sm btn-outline-primary"><i class="bi bi-plus-circle"></i> Add Item</button>
+                                </div>
+                                <div id="exchangeRowsContainer"></div>
+                            </div>
+
+                            <div class="receipt-preview p-3 text-dark small">
+                                <div class="d-flex justify-content-between"><span>Original Returned Value:</span><span id="lbl_old_val">₱0.00</span></div>
+                                <div class="d-flex justify-content-between"><span>Total Replacement Items Value:</span><span id="lbl_new_val">₱0.00</span></div>
+                                <hr class="my-2 border-secondary border-dashed">
+                                <div class="d-flex justify-content-between fw-bold fs-6">
+                                    <span id="lbl_calc_status">BALANCE STATUS:</span>
+                                    <span id="lbl_calc_result" class="text-dark">₱0.00</span>
+                                </div>
+                                <div id="exchangeWarningNotice" class="text-danger mt-2 small fw-bold d-none">
+                                    ⚠️ The total value of the replacement item(s) must not exceed the value of the original item. Please adjust the quantity or choose a lower-priced item to proceed with your exchange request.
+                                </div>
+                                <div id="exchangeSuccessNotice" class="text-muted mt-2 small italic d-none">
+                                    *Please note: Any remaining balance after the exchange is non-refundable and cannot be redeemed for cash, in accordance with our store's exchange policy.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4 d-none" id="photoUploadSection">
+                            <label class="form-label fw-semibold">Upload Image Proof / Photo of the Item</label>
+                            <input type="file" name="product_image" id="product_image" class="form-control" accept="image/*">
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold" id="lbl_details_desc">Additional Comments / Specific Details</label>
+                            <textarea name="details" id="requestDetails" class="form-control" rows="4" placeholder="Explain your concern comprehensively..."></textarea>
+                        </div>
+
+                        <div class="text-end">
+                            <button type="submit" name="submit_request" id="btnSubmitForm" class="btn btn-success px-5 fw-semibold py-2">Submit Ticket Request</button>
+                        </div>
+
+                    </div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let verifiedItemsData = [];
+let shopProductsData = [];
+
+document.getElementById('btnVerify').addEventListener('click', function() {
+    const orderId = document.getElementById('order_id').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const errorWrapper = document.getElementById('errorWrapper');
+    const formBodyWrapper = document.getElementById('formBodyWrapper');
+
+    if(!orderId || !email) {
+        alert("Please enter both Order ID and Email address.");
+        return;
+    }
+
+    fetch(`customerService.php?action=get_items&order_id=${orderId}&email=${email}`)
+    .then(res => res.json())
+    .then(data => {
+        if(data.success) {
+            errorWrapper.classList.add('d-none');
+            formBodyWrapper.classList.remove('d-none');
+            verifiedItemsData = data.items;
+            shopProductsData = data.shop_products;
+            handleFormTypeSetup(data.status);
+        } else {
+            formBodyWrapper.classList.add('d-none');
+            errorWrapper.classList.remove('d-none');
+            errorWrapper.innerHTML = `<strong>Error:</strong> ${data.message}`;
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert("An error occurred during verification lookup.");
+    });
+});
+
+function handleFormTypeSetup(status) {
+    const currentStatus = status.toLowerCase().trim();
+    const reqCancel = document.getElementById('req_cancel');
+    const reqExchange = document.getElementById('req_exchange');
+    const lblExchange = document.getElementById('lbl_req_exchange');
+    const errorWrapper = document.getElementById('errorWrapper');
+    
+    errorWrapper.classList.add('d-none');
+
+    if (currentStatus === 'completed') {
+        reqExchange.disabled = false;
+        lblExchange.classList.remove('disabled', 'btn-outline-secondary');
+        lblExchange.classList.add('btn-outline-primary');
+        reqExchange.checked = true; 
+    } else {
+        reqExchange.disabled = true;
+        lblExchange.classList.add('disabled');
+        reqExchange.checked = false;
+        reqCancel.checked = true;
+
+        errorWrapper.classList.remove('d-none');
+        errorWrapper.innerHTML = `ℹ️ Your order is currently <strong>${currentStatus.toUpperCase()}</strong>. Item Exchange requests can only be submitted after your order has been delivered and its status has been updated to <strong>COMPLETED</strong>.`;
+    }
+
+    if (currentStatus === 'out for delivery' || currentStatus === 'completed' || currentStatus === 'delivered') {
+        reqCancel.disabled = true;
+        if (currentStatus !== 'completed') {
+            errorWrapper.classList.remove('d-none');
+            errorWrapper.innerHTML = `ℹ️ Order status is <strong>${status.toUpperCase()}</strong>. Cancellation option is locked.`;
+        }
+    } else {
+        reqCancel.disabled = false;
+    }
+
+    renderReasonOptions();
+    setupExchangeDropdowns();
+}
+
+function renderReasonOptions() {
+    const reasonSelect = document.getElementById('requestReason');
+    const selectedRadio = document.querySelector('input[name="request_type"]:checked');
+    const selectedType = selectedRadio ? selectedRadio.value : 'others';
+    
+    const reasonFieldWrapper = document.getElementById('reasonFieldWrapper');
+    const photoUploadSection = document.getElementById('photoUploadSection');
+    const exchangeCalculatorWrapper = document.getElementById('exchangeCalculatorWrapper');
+    const lblDetailsDesc = document.getElementById('lbl_details_desc');
+    const txtDetails = document.getElementById('requestDetails');
+    const productImageInput = document.getElementById('product_image');
+    
+    reasonSelect.innerHTML = "";
+    let options = [];
+
+    reasonFieldWrapper.classList.remove('d-none');
+    photoUploadSection.classList.add('d-none');
+    exchangeCalculatorWrapper.classList.add('d-none');
+    productImageInput.removeAttribute('required');
+    lblDetailsDesc.textContent = "Additional Comments / Specific Details";
+    txtDetails.placeholder = "Explain your concern comprehensively...";
+
+    if(selectedType === 'exchange') {
+        options = ["Wrong size/variant selected", "Received Damaged / Broken Item", "Wrong item delivered", "Other"];
+        photoUploadSection.classList.remove('d-none');
+        exchangeCalculatorWrapper.classList.remove('d-none');
+        productImageInput.setAttribute('required', 'required');
+    } else if(selectedType === 'cancel') {
+        options = ["Found mistake in order details", "Change of mind", "Accidental order placement","Other"];
+    }
+
+    options.forEach(opt => {
+        let el = document.createElement('option');
+        el.value = opt;
+        el.textContent = opt;
+        reasonSelect.appendChild(el);
+    });
+}
+
+document.querySelectorAll('input[name="request_type"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        renderReasonOptions();
+        runMultiExchangeCalculation();
+    });
+});
+
+function setupExchangeDropdowns() {
+    const oldSelect = document.getElementById('exch_old_item');
+    oldSelect.innerHTML = "";
+
+    if (verifiedItemsData.length === 0) {
+        let opt = document.createElement('option');
+        opt.textContent = "No items found or loaded";
+        oldSelect.appendChild(opt);
+        return;
+    }
+
+    verifiedItemsData.forEach(item => {
+        let opt = document.createElement('option');
+        
+        let itemPrice = parseFloat(item.price) || 0; 
+        
+        opt.value = itemPrice; 
+        opt.setAttribute('data-max-qty', item.qty);
+        opt.setAttribute('data-product-name', item.product_name);
+        opt.textContent = `${item.product_name} (Unit: ₱${itemPrice.toFixed(2)} - Max Qty: ${item.qty})`;
+        oldSelect.appendChild(opt);
+    });
+
+    oldSelect.addEventListener('change', function() {
+        updateSelectedOldItemData();
+        updateMaxReturnQty();
+    });
+
+    const returnQtyField = document.getElementById('return_item_qty');
+    returnQtyField.addEventListener('input', updateMaxReturnQty);
+    
+    updateSelectedOldItemData();
+    updateMaxReturnQty();
+    document.getElementById('exchangeRowsContainer').innerHTML = "";
+    addExchangeRow();
+}
+
+function updateSelectedOldItemData() {
+    const oldSelect = document.getElementById('exch_old_item');
+    const hiddenNameInput = document.getElementById('exchange_old_item_name');
+    const hiddenPriceInput = document.getElementById('exchange_old_item_price');
+    
+    if(oldSelect.options.length > 0 && oldSelect.selectedIndex !== -1) {
+        const selectedOpt = oldSelect.options[oldSelect.selectedIndex];
+        hiddenNameInput.value = selectedOpt.getAttribute('data-product-name') || selectedOpt.text;
+        hiddenPriceInput.value = oldSelect.value;
+    }
+}
+
+function updateMaxReturnQty() {
+    const oldSelect = document.getElementById('exch_old_item');
+    const qtyInput = document.getElementById('return_item_qty');
+    
+    if(oldSelect.options.length > 0 && oldSelect.value !== "") {
+        const selectedOpt = oldSelect.options[oldSelect.selectedIndex];
+        const maxQty = parseInt(selectedOpt.getAttribute('data-max-qty') || 1);
+        qtyInput.setAttribute('max', maxQty);
+        if(parseInt(qtyInput.value) > maxQty) {
+            qtyInput.value = maxQty;
+        }
+    }
+    updateSelectedOldItemData();
+    runMultiExchangeCalculation();
+}
+
+document.getElementById('btnAddExchangeRow').addEventListener('click', addExchangeRow);
+
+function addExchangeRow() {
+    const container = document.getElementById('exchangeRowsContainer');
+    const rowIndex = container.children.length;
+
+    let rowHtml = document.createElement('div');
+    rowHtml.className = "row g-2 mb-2 align-items-center exchange-row";
+    
+    let productOptions = "";
+    shopProductsData.forEach(p => {
+        productOptions += `<option value="${p.id}" data-price="${p.price}">${p.product_name} (₱${parseFloat(p.price).toFixed(2)})</option>`;
+    });
+
+    rowHtml.innerHTML = `
+        <div class="col-md-7">
+            <select name="exchange_products[]" class="form-select cmb-exchange-product">${productOptions}</select>
+        </div>
+        <div class="col-md-3">
+            <input type="number" name="exchange_qtys[]" class="form-control txt-exchange-qty" value="1" min="1">
+        </div>
+        <div class="col-md-2 text-end">
+            <button type="button" class="btn btn-sm btn-danger btn-remove-row w-100" ${rowIndex === 0 ? 'disabled' : ''}><i class="bi bi-trash"></i></button>
+        </div>
+    `;
+
+    container.appendChild(rowHtml);
+
+    rowHtml.querySelector('.cmb-exchange-product').addEventListener('change', runMultiExchangeCalculation);
+    rowHtml.querySelector('.txt-exchange-qty').addEventListener('input', runMultiExchangeCalculation);
+    rowHtml.querySelector('.btn-remove-row').addEventListener('click', function() {
+        rowHtml.remove();
+        runMultiExchangeCalculation();
+    });
+
+    runMultiExchangeCalculation();
+}
+
+function runMultiExchangeCalculation() {
+    const selectedRadio = document.querySelector('input[name="request_type"]:checked');
+    const requestType = selectedRadio ? selectedRadio.value : 'others';
+    const submitBtn = document.getElementById('btnSubmitForm');
+    
+    if(requestType !== 'exchange') {
+        submitBtn.removeAttribute('disabled');
+        return;
+    }
+
+    const oldSelect = document.getElementById('exch_old_item');
+    if(!oldSelect || oldSelect.options.length === 0 || oldSelect.value === "No items found or loaded") {
+        submitBtn.setAttribute('disabled', 'disabled');
+        return;
+    }
+
+    const unitPrice = parseFloat(oldSelect.value || 0);
+    const returnQty = parseInt(document.getElementById('return_item_qty').value || 1);
+    const oldTotalVal = unitPrice * returnQty;
+    document.getElementById('lbl_old_val').textContent = `₱${oldTotalVal.toFixed(2)}`;
+
+    let totalNewVal = 0;
+    document.querySelectorAll('.exchange-row').forEach(row => {
+        const productSelect = row.querySelector('.cmb-exchange-product');
+        const qtyInput = row.querySelector('.txt-exchange-qty');
+        if (productSelect && qtyInput) {
+            const selectedOpt = productSelect.options[productSelect.selectedIndex];
+            if(selectedOpt) {
+                totalNewVal += (parseFloat(selectedOpt.getAttribute('data-price') || 0) * parseInt(qtyInput.value || 0));
+            }
+        }
+    });
+
+    document.getElementById('lbl_new_val').textContent = `₱${totalNewVal.toFixed(2)}`;
+
+    const statusLabel = document.getElementById('lbl_calc_status');
+    const resultLabel = document.getElementById('lbl_calc_result');
+    const warningNotice = document.getElementById('exchangeWarningNotice');
+    const successNotice = document.getElementById('exchangeSuccessNotice');
+    const diff = totalNewVal - oldTotalVal;
+
+    if(diff > 0) {
+        statusLabel.textContent = "❌ PRICE EXCEEDED:";
+        resultLabel.textContent = `+ ₱${diff.toFixed(2)} (OVER BUDGET)`;
+        resultLabel.className = "text-danger fw-bold fs-5";
+        warningNotice.classList.remove('d-none');
+        successNotice.classList.add('d-none');
+        submitBtn.setAttribute('disabled', 'disabled');
+    } else if(diff < 0) {
+        statusLabel.textContent = "NO CASH REFUND! (REMAINING):";
+        resultLabel.textContent = `₱${Math.abs(diff).toFixed(2)}`;
+        resultLabel.className = "text-warning fw-bold fs-5";
+        warningNotice.classList.add('d-none');
+        successNotice.classList.remove('d-none');
+        submitBtn.removeAttribute('disabled');
+    } else {
+        statusLabel.textContent = "EVEN EXCHANGE:";
+        resultLabel.textContent = "₱0.00 (Perfect Match)";
+        resultLabel.className = "text-success fw-bold fs-5";
+        warningNotice.classList.add('d-none');
+        successNotice.classList.add('d-none');
+        submitBtn.removeAttribute('disabled');
+    }
+}
+</script>
+</body>
+</html>

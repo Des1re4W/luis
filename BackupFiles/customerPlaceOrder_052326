@@ -1,0 +1,314 @@
+<?php
+session_start();
+include "../config/db.php";
+
+// 1. DYNAMIC SOURCE DETECTION (Ito ang kailangan para maghiwalay ang Buy Now at Cart)
+$checkout_source = isset($_GET['from']) ? $_GET['from'] : 'cart';
+$items_to_process = [];
+
+if ($checkout_source == 'buynow' && isset($_SESSION['buy_now'])) {
+    $items_to_process = $_SESSION['buy_now'];
+} elseif (isset($_SESSION['cart']) && !empty($_SESSION['cart'])) {
+    $items_to_process = $_SESSION['cart'];
+} else {
+    // Kung walang maproseso, bumalik sa dashboard
+    header("Location: dashboard.php");
+    exit();
+}
+
+// Compute grand total base sa detected items
+$grand_total = 0;
+foreach ($items_to_process as $item) {
+    $grand_total += (float)$item['price'] * (int)$item['qty'];
+}
+
+// 2. I-handle ang POST request
+if (isset($_POST['place_order'])) {
+    
+    $payment_method = mysqli_real_escape_string($conn, $_POST['payment_method']);
+    $payment_scheme = mysqli_real_escape_string($conn, $_POST['payment_scheme'] ?? 'full_payment');
+
+    // Validation para sa 5k+ Rule
+    if ($grand_total >= 5000 && $payment_method === 'Cash on Delivery (COD)') {
+        die("<script>alert('Error: COD is unavailable for orders ₱5,000 and above.'); history.back();</script>");
+    }
+
+    $fullname = mysqli_real_escape_string($conn, $_POST['fullname']);
+    $surname = mysqli_real_escape_string($conn, $_POST['surname']);
+    $contact_number = mysqli_real_escape_string($conn, $_POST['contact_number']);
+    $tel_no = mysqli_real_escape_string($conn, $_POST['tel_no'] ?? '');
+    $email = mysqli_real_escape_string($conn, $_POST['email']);
+    $full_address = mysqli_real_escape_string($conn, $_POST['full_address']);
+    $landmark = mysqli_real_escape_string($conn, $_POST['landmark']);
+    
+    $cart_json = mysqli_real_escape_string($conn, json_encode($items_to_process));
+
+    // File Upload Handler
+    $proof_of_payment = "";
+    $ref_no = "";
+    if (in_array($payment_method, ['GCash', 'Maya'])) {
+        $ref_no = mysqli_real_escape_string($conn, $_POST['ref_no']);
+        if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] == 0) {
+            $target_dir = "../uploads/proofs/";
+            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+            $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
+            if (move_uploaded_file($_FILES["proof_of_payment"]["tmp_name"], $target_dir . $new_filename)) {
+                $proof_of_payment = "uploads/proofs/" . $new_filename;
+            }
+        }
+    }
+
+    // 1. I-SAVE ANG ORDER
+    $order_query = "INSERT INTO orders (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
+                    VALUES ('$fullname', '$surname', '$contact_number', '$tel_no', '$email', '$full_address', '$landmark', '$grand_total', '$cart_json', '$payment_method', '$payment_scheme', '$ref_no', '$proof_of_payment', NOW(), 'pending')";
+
+    if (mysqli_query($conn, $order_query)) {
+        $order_id = mysqli_insert_id($conn);
+
+        // 2. I-LOOP ITEMS AT DEDUCT STOCK
+        foreach ($items_to_process as $item) {
+            $qty = (int)$item['qty'];
+            $price = (float)$item['price'];
+            $product_id = mysqli_real_escape_string($conn, $item['id']);
+            $name = mysqli_real_escape_string($conn, $item['name']);
+            $v_id = !empty($item['variant_id']) ? "'".mysqli_real_escape_string($conn, $item['variant_id'])."'" : "NULL";
+            $v_name = !empty($item['variant_name']) ? "'".mysqli_real_escape_string($conn, $item['variant_name'])."'" : "NULL";
+
+            mysqli_query($conn, "INSERT INTO order_items (order_id, product_id, product_name, variant_id, variant_name, price, qty, subtotal) 
+                                 VALUES ('$order_id', '$product_id', '$name', $v_id, $v_name, '$price', '$qty', '".($price * $qty)."')");
+
+            // Deduct Stock
+            if ($v_id !== "NULL") {
+                mysqli_query($conn, "UPDATE product_variants SET stock = GREATEST(stock - $qty, 0) WHERE id = $v_id");
+            } else {
+                mysqli_query($conn, "UPDATE products SET stock = GREATEST(stock - $qty, 0) WHERE id = '$product_id'");
+            }
+        }
+
+        // 3. MALINIS NA PAG-UNSET NG SESSION
+        if ($checkout_source == 'buynow') {
+            unset($_SESSION['buy_now']);
+        } else {
+            unset($_SESSION['cart']);
+        }
+
+       $_SESSION['message'] = "
+    <b>Order Placed Successfully! </b><br><b>Thank you for your purchase. Kindly check your email for any updates on your order.</b><br>
+    Your Order Number is: <span class='text-primary fw-bold'>#$order_id</span>
+";
+header("Location: dashboard.php");
+exit();
+    }
+    // 1. Validation para sa Names (Letters and spaces only)
+if (!preg_match("/^[a-zA-Z\s]+$/", $_POST['fullname']) || !preg_match("/^[a-zA-Z\s]+$/", $_POST['surname'])) {
+    die("<script>alert('Error: First name and last name must contain letters only.'); history.back();</script>");
+}
+
+// 2. Validation para sa Contact Number (11 digits, starts with 09)
+if (!preg_match("/^09[0-9]{9}$/", $_POST['contact_number'])) {
+    die("<script>alert('Invalid contact number. Please enter an 11-digit number starting with 09..'); history.back();</script>");
+}
+
+// 3. Validation para sa Telephone (Numbers only)
+if (!empty($_POST['tel_no']) && !preg_match("/^[0-9]+$/", $_POST['tel_no'])) {
+    die("<script>alert('Telephone number must consist of numbers only.'); history.back();</script>");
+}
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Checkout | Hardware System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+</head>
+<body class="bg-light">
+<div class="container py-5">
+    <div class="row g-4">
+        <div class="col-md-7">
+            <div class="card border-0 shadow-sm p-4">
+                <h4 class="mb-4 text-primary"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
+                <form action="placeorder.php<?php echo isset($_GET['from']) ? '?from=' . $_GET['from'] : ''; ?>" method="POST" enctype="multipart/form-data">
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <label class="form-label">First Name</label>
+                            <input type="text" name="fullname" class="form-control" 
+                            pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
+                        </div>
+                        
+                        <div class="col-sm-6">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" name="surname" class="form-control" 
+                            pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
+                        </div>
+
+                        <div class="col-sm-6">
+                            <label class="form-label">Contact Number</label>
+                            <input type="text" name="contact_number" class="form-control" placeholder="09XXXXXXXXX"
+                            maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                        </div>
+
+                        <div class="col-sm-6">
+                            <label class="form-label">Telephone (Optional)</label>
+                            <input type="text" name="tel_no" class="form-control" 
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Email Address</label>
+                            <input type="email" name="email" class="form-control" placeholder="name@example.com" required>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Complete Delivery Address</label>
+                            <textarea name="full_address" class="form-control" rows="3" placeholder="" required></textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Landmark</label>
+                            <input type="text" name="landmark" class="form-control" placeholder="" required>
+                        </div>
+
+                       <div class="col-12">
+<?php if ($grand_total >= 5000): ?>
+    <div id="payment_option_box" class="col-12 alert alert-info mb-3">
+    <p class="fw-bold mb-2 small text-danger">
+    <b>Note:</b> Orders with a total amount of ₱5,000.00 or more require a 50% down payment prior to order processing.
+    </p>
+
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="payment_scheme" id="opt1" value="50_percent" checked>
+            <label class="form-check-label" for="opt1">50% Downpayment (₱<?php echo number_format($grand_total * 0.5, 2); ?>)</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="payment_scheme" id="opt2" value="full_payment">
+            <label class="form-check-label" for="opt2">Full Payment (₱<?php echo number_format($grand_total, 2); ?>)</label>
+        </div>
+    </div>
+<?php endif; ?>
+
+<label class="form-label fw-bold">Mode of Payment</label>
+
+<?php if ($grand_total < 5000): ?>
+<div class="form-check mb-2">
+    <input class="form-check-input" type="radio" name="payment_method" id="cod_radio" value="Cash on Delivery (COD)" onclick="togglePaymentFields()" required>
+    <label class="form-check-label" for="cod_radio">Cash on Delivery (COD)</label>
+</div>
+<?php endif; ?>
+
+<div class="form-check mb-2">
+    <input class="form-check-input" type="radio" name="payment_method" id="gcash_radio" value="GCash" onclick="togglePaymentFields()">
+    <label class="form-check-label" for="gcash_radio">GCash</label>
+</div>
+
+<div class="form-check mb-2">
+    <input class="form-check-input" type="radio" name="payment_method" id="maya_radio" value="Maya" onclick="togglePaymentFields()">
+    <label class="form-check-label" for="maya_radio">Maya</label>
+</div>
+
+<div id="cod_message" class="alert alert-warning mt-2 d-none">
+    Cash on Delivery is selected. Please pay the exact amount upon delivery.
+</div>
+</div>
+    
+ <div id="online_payment_fields" class="col-12 d-none bg-info bg-opacity-10 p-3 rounded border border-info mt-2">
+    <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mt-2">
+            <i class="bi bi-qr-code"></i> CLICK HERE TO VIEW QR CODE
+        </a>
+    <div class="mb-2">
+        <label class="form-label small fw-bold">Reference Number</label>
+        <input type="text" name="ref_no" id="ref_no" class="form-control" placeholder="Ref No.">
+    </div>
+    <div>
+        <label class="form-label small fw-bold">Upload Screenshot Receipt</label>
+        <input type="file" name="proof_of_payment" id="proof_of_payment" class="form-control" accept="image/*">
+    </div>
+</div>
+
+  <div class="mb-3 form-check text-start">
+            <input type="checkbox" class="form-check-input" id="termsCheckbox" onclick="toggleSubmitButton()">
+            <label class="form-check-label" for="termsCheckbox" style="font-size: 0.85rem;">
+                 I have read and agree to the Terms and Conditions and Privacy Notice. <a href="tac.php" target="_blank" class="text-decoration-underline">Terms and Conditions</a> 
+            </label>
+        </div>
+                    </div>
+                    <hr class="my-4">
+                    <!-- Hanapin ito sa iyong file -->
+<button type="submit" name="place_order" id="submitBtn" class="btn btn-success btn-lg w-100 mb-3" disabled>
+    Confirm & Place Order
+</button>
+
+                    <button type="button" class="btn btn-secondary btn-lg w-100" onclick="window.location.href='dashboard.php';">
+                      Cancel
+                    </button>
+                    
+                </form>
+            </div>
+        </div>
+        
+        <div class="col-md-5">
+            <div class="card border-0 shadow-sm p-4 sticky-top" style="top: 20px;">
+                <h5 class="mb-3 fw-bold">Items to Purchase</h5>
+                <div class="overflow-auto" style="max-height: 350px;">
+                    <?php foreach ($items_to_process as $item): ?>
+                        <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
+                           <img src="../<?php echo $item['image']; ?>" class="rounded me-3" style="width: 55px; height: 55px; object-fit: cover;">
+                            <div class="flex-grow-1">
+                                <h6 class="mb-0 fw-bold small text-truncate" style="max-width: 180px;"><?php echo $item['name']; ?></h6>
+                                <small class="text-muted">Qty: <?php echo $item['qty']; ?> × ₱<?php echo number_format($item['price'], 2); ?></small>
+                            </div>
+                            <div class="text-end fw-bold small">
+                                ₱<?php echo number_format($item['price'] * $item['qty'], 2); ?>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                <div class="d-flex justify-content-between align-items-center fs-5 fw-bold text-dark mt-3">
+                    <span>Total Amount:</span>
+                    <span class="text-primary">₱<?php echo number_format($grand_total, 2); ?></span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    const grandTotal = <?php echo $grand_total; ?>;
+function togglePaymentFields() {
+    // Kunin ang value ng napiling radio button
+    const selectedMethod = document.querySelector('input[name="payment_method"]:checked').value;
+    
+    const onlineFields = document.getElementById('online_payment_fields');
+    const codMessage = document.getElementById('cod_message');
+    const optionBox = document.getElementById('payment_option_box');
+
+    if (selectedMethod === 'GCash' || selectedMethod === 'Maya') {
+        onlineFields.classList.remove('d-none');
+        codMessage.classList.add('d-none');
+        if (optionBox) optionBox.classList.remove('d-none');
+    } else if (selectedMethod === 'Cash on Delivery (COD)') {
+        onlineFields.classList.add('d-none');
+        codMessage.classList.remove('d-none');
+        if (optionBox) optionBox.classList.add('d-none');
+    }
+}
+function toggleSubmitButton() {
+    const checkbox = document.getElementById("termsCheckbox");
+    const submitBtn = document.getElementById("submitBtn");
+    
+    // I-enable ang button kung naka-check, i-disable kung hindi
+    submitBtn.disabled = !checkbox.checked;
+}
+document.querySelector('form').addEventListener('submit', function(e) {
+    const contact = document.querySelector('input[name="contact_number"]').value;
+    
+    // Validate Contact Number (Starts with 09 and length 11)
+    if (!contact.startsWith('09') || contact.length !== 11) {
+        alert("Ang Contact Number ay dapat nagsisimula sa 09 at may 11 digits.");
+        e.preventDefault(); // Pigilan ang pag-submit
+        return false;
+    }
+});
+</script>
+</body>
+</html>

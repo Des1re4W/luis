@@ -1,0 +1,884 @@
+<?php
+session_start();
+include "../config/db.php";
+
+// --- 1. PHPMAILER START (ADDED) ---
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+
+require '../libs/src/Exception.php';
+require '../libs/src/PHPMailer.php';
+require '../libs/src/SMTP.php';
+
+if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+    header("Location: ../login.php");
+    exit();
+}
+// EMAILER ACTION LOGIC
+if (isset($_POST['send_email_update'])) {
+    $order_id = mysqli_real_escape_string($conn, $_POST['order_id']);
+    
+    $res = mysqli_query($conn, "SELECT email, fullname, status, total_amount, payment_method, payment_scheme FROM orders WHERE id = '$order_id'");
+    $order = mysqli_fetch_assoc($res);
+    $current_status = $order['status'];
+
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'rtaipancss@gmail.com'; 
+        $mail->Password   = 'untvtpzeiqyrkrpx';   
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+
+        $mail->setFrom('rtaipancss@gmail.com', 'R. Taipan Construction Supply and Services');
+        $mail->addAddress($order['email'], $order['fullname']);
+
+        $mail->isHTML(true);
+        $mail->Subject = "Order Status Update: #$order_id";
+// Approved email message
+        if ($current_status == 'approved') {
+
+    // Kunin ang items para sa receipt
+    $items_query = mysqli_query(
+        $conn,
+        "SELECT * FROM order_items WHERE order_id = '$order_id'"
+    );
+    // Capture receipt HTML
+    ob_start();
+    ?>
+    <div style="
+        border:1px solid #ddd;
+        padding:20px;
+        max-width:600px;
+        margin:0 auto;
+        font-family:Arial, sans-serif;
+        background:#ffffff;
+    ">
+        <h3 style="
+            color:#051c3c;
+            margin-top:0;
+            margin-bottom:15px;
+        ">
+            Official Receipt
+        </h3>
+        <p>
+            Order Number:
+            <b>#<?php echo $order_id; ?></b>
+        </p>
+        <table style="
+            width:100%;
+            border-collapse:collapse;
+            font-size:14px;
+        ">
+            <thead>
+                <tr style="background:#f4f4f4;">
+                    <th style="
+                        padding:10px;
+                        text-align:left;
+                        border-bottom:1px solid #ddd;
+                    ">
+                        Item
+                    </th>
+                    <th style="
+                        padding:10px;
+                        text-align:center;
+                        border-bottom:1px solid #ddd;
+                    ">
+                        Qty
+                    </th>
+                    <th style="
+                        padding:10px;
+                        text-align:right;
+                        border-bottom:1px solid #ddd;
+                    ">
+                        Price
+                    </th>
+                    <th style="
+                        padding:10px;
+                        text-align:right;
+                        border-bottom:1px solid #ddd;
+                    ">
+                        Subtotal
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php
+                while ($item = mysqli_fetch_assoc($items_query)) {
+                    $price = (float)$item['price'];
+                    $qty = (int)$item['qty'];
+                    $subtotal = $price * $qty;
+                ?>
+                <tr>
+                    <td style="
+                        padding:10px;
+                        border-bottom:1px solid #eee;
+                    ">
+                        <?php echo htmlspecialchars($item['product_name']); ?>
+                    </td>
+                    <td style="
+                        padding:10px;
+                        text-align:center;
+                        border-bottom:1px solid #eee;
+                    ">
+                        <?php echo $qty; ?>
+                    </td>
+                    <td style="
+                        padding:10px;
+                        text-align:right;
+                        border-bottom:1px solid #eee;
+                    ">
+                        ₱<?php echo number_format($price, 2); ?>
+                    </td>
+                    <td style="
+                        padding:10px;
+                        text-align:right;
+                        border-bottom:1px solid #eee;
+                    ">
+                        ₱<?php echo number_format($subtotal, 2); ?>
+                    </td>
+                </tr>
+                <?php } ?>
+            </tbody>
+        </table>
+        <div style="
+            margin-top:15px;
+            padding-top:10px;
+            border-top:2px solid #051c3c;
+            text-align:right;
+        ">
+            <span style="font-size:18px; font-weight:bold;">
+                Total: ₱<?php echo number_format($order['total_amount'], 2); ?>
+            </span>
+        </div>
+    </div>
+    <?php
+    $receiptHtml = ob_get_clean();
+    // Email body
+    $mail->Body = "
+        <div style='font-family:Arial, sans-serif;'>
+            <h3>
+                Hi " . htmlspecialchars($order['fullname']) . ",
+            </h3>
+            <p>
+                Good news! Your order with Order Number
+                <b>#$order_id</b> has been
+                <b>APPROVED</b> successfully.
+            </p>
+            <p>
+                Below is your official receipt for this transaction:
+            </p>
+            $receiptHtml
+            <br>
+            <p>
+                We are now preparing your items.
+                We will keep you updated via email!
+            </p>
+            <br>
+            <h4>
+                Best regards,<br>
+                R. Taipan Construction Supply and Services, OPC
+            </h4>
+        </div>
+    ";
+
+        } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
+            $mail->Body = "<h3>Hi {$order['fullname']},</h3>
+            <p>We regret to inform you that your order <b>#$order_id</b> has been <b>DECLINED</b>.</p>
+            <p>This may be due to your order details. If you have questions, please contact us by clicking the link or try to place a new order.</p>
+            <p><a href='https://www.facebook.com/RSRT22' 
+            style='background-color: #0d6efd; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
+            View Facebook Page
+            </a></p>
+            <p>Visit our shop here: <a href='https://www.google.com/maps/place/Ronel+Steel+Roof+Trading+and+Hardware+Supply/@14.5602582,121.1374471,17z/data=!3m1!4b1!4m6!3m5!1s0x3397c727501f019b:0xe2dfa8a1b3aec65f!8m2!3d14.5602583!4d121.142318!16s%2Fg%2F11t2lf3b8r?entry=ttu&g_ep=EgoyMDI2MDQyOS4wIKXMDSoASAFQAw%3D%3D'>Open in Google Maps</a></p>
+            <h4>Best regards,<br>
+            R. Taipan Construction Supply and Services, OPC</h4>";
+
+        } elseif ($current_status == 'out_for_delivery') {
+            $total = number_format($order['total_amount'], 2);
+            $payment_method = strtoupper($order['payment_method'] ?? 'COD');
+            
+            // Conditional Payment Reminder (Lalabas lang kapag COD)
+            $paymentReminderHtml = "";
+            if ($payment_method === 'COD') {
+                $paymentReminderHtml = "
+                <div style='background: #fff3cd; padding: 15px; border: 1px solid #ffeeba; border-radius: 5px; margin-bottom: 15px;'>
+                    <h4 style='margin-top:0;'>Payment Reminder:</h4>
+                    <p>Please prepare the <b>EXACT AMOUNT</b> upon delivery.</p>
+                    <p style='font-size: 18px;'>Total Amount to Pay: <b style='color: #d9534f;'>₱ $total</b></p>
+                </div>";
+            }
+            $mail->Body = "<h3>Hi {$order['fullname']},</h3>
+            <p>Your order <b>#$order_id</b> is now <b>OUT FOR DELIVERY</b>!</p>
+             <p>Please prepare the <b>EXACT AMOUNT</b> upon delivery.</p>
+                    <p style='font-size: 18px;'>Total Amount to Pay: <b style='color: #d9534f;'>₱ $total</b></p>
+            <p>Our delivery man will contact you shortly. Please keep your lines open.</p>
+            <br>
+            <h4>Best regards,<br>R. Taipan Construction Supply</h4>";    
+                elseif ($payment_method === 'GCash') {
+                $paymentReminderHtml = "
+                <div style='background: #d4edda; padding: 15px; border: 1px solid #c3e6cb; border-radius: 5px; margin-bottom: 15px;'>
+                    <h4 style='margin-top:0; color: #155724;'>Payment Status:</h4>
+                    <p style='color: #155724; margin-bottom:0;'>Your order is <b>FULLY PAID</b> online. No payment is required upon delivery.</p>
+                </div>";
+            }
+           $mail->Body = "<h3>Hi {$customer_name},</h3>
+            <p>Your order <b>#$order_id</b> is now <b>OUT FOR DELIVERY</b>!</p>
+            {$paymentReminderHtml}
+            <p>Our delivery man will contact you shortly. Please keep your lines open.</p>
+            <br>
+            <h4>Best regards,<br>R. Taipan Construction Supply</h4>";
+            
+        } elseif ($current_status == 'completed') {
+            $mail->Body = "<h3>Hi {$order['fullname']},</h3>
+            <p>Your order <b>#$order_id</b> status has been <b> DELIVERED </b>.</p>
+            <p>Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC.</b> We sincerely appreciate your trust and support, and we look forward to serving you again in the future.</p>
+            <br>
+            <h4>Best regards,<br>
+            R. Taipan Construction Supply and Services, OPC</h4>";
+
+        } else {
+            $mail->Body = "<h3>Hi {$order['fullname']},</h3>
+            <p>Your order <b>#$order_id</b> status has been updated to <b>" . strtoupper($current_status) . "</b>.</p>
+            <br>
+            <h4>Best regards,<br>
+            R. Taipan Construction Supply and Services, OPC</h4>";
+        }
+
+        $mail->send();
+        
+        mysqli_query($conn, "UPDATE orders SET email_status = '$current_status' WHERE id = '$order_id'");
+        echo "<script>alert('Email notification sent!'); window.location.href='orders.php';</script>";
+        exit();
+
+    } catch (Exception $e) {
+        echo "<script>alert('Email failed: {$mail->ErrorInfo}'); window.location.href='orders.php';</script>";
+        exit();
+    }
+}
+    
+//STATUS UPDATE
+if (isset($_POST['update_status'])) {
+
+    $order_id = (int) $_POST['order_id'];
+    $new_status = mysqli_real_escape_string($conn, $_POST['status']);
+    $admin_id = (int) $_SESSION['user_id'];
+
+    // Get old status
+    $res = mysqli_query($conn, "SELECT status, cart FROM orders WHERE id = $order_id");
+    $order = mysqli_fetch_assoc($res);
+
+    $old_status = $order['status'];
+
+    // STOCK LOGIC (same as yours)
+    if ($new_status == 'approved' && $old_status != 'approved') {
+        mysqli_query($conn, "
+            UPDATE orders 
+            SET status = '$new_status', approved_by = $admin_id 
+            WHERE id = $order_id
+        ");
+    } else {
+        mysqli_query($conn, "
+            UPDATE orders 
+            SET status = '$new_status'
+            WHERE id = $order_id
+        ");
+    }
+
+    header("Location: orders.php#order-" . $order_id);
+exit();
+}
+
+// SEND TO CASHIER LOGIC
+if (isset($_POST['send_to_cashier'])) {
+    $order_id = mysqli_real_escape_string($conn, $_POST['order_id']);
+    
+    //Check muna kung sent na o hindi pa approved
+    $check_query = mysqli_query($conn, "SELECT sent_to_cashier, status FROM orders WHERE id = '$order_id'");
+    $order_data = mysqli_fetch_assoc($check_query);
+
+    if ($order_data['sent_to_cashier'] == 1) {
+        echo "<script>alert('Receipt already sent to cashier!'); window.location.href='orders.php';</script>";
+        exit();
+    } elseif ($order_data['status'] == 'pending') {
+        echo "<script>alert('Please approve the order first before sending to cashier.'); window.location.href='orders.php';</script>";
+        exit();
+    } else {
+        $query = "UPDATE orders SET sent_to_cashier = 1 WHERE id = '$order_id'";
+        if(mysqli_query($conn, $query)) {
+            echo "<script>alert('Receipt successfully sent to cashier!'); window.location.href='orders.php';</script>";
+            exit();
+        }
+    }
+}
+
+$orders = mysqli_query($conn, "SELECT * FROM orders ORDER BY id DESC");
+?>
+
+   <!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Manage Orders | Admin</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+<style>
+
+body{
+    background:#f4f6f9;
+    margin:0;
+    overflow-x:hidden;
+}
+
+/* SIDEBAR */
+.sidebar{
+    position:fixed;
+    top:0;
+    left:0;
+    width:260px;
+    height:100vh;
+    background:#001f4d;
+    padding:20px;
+    overflow-y:auto;
+    z-index:1000;
+
+    display:flex;
+    flex-direction:column;
+}
+
+.sidebar h2{
+    color:white;
+    text-align:center;
+    font-weight:bold;
+    margin-bottom:40px;
+    line-height:1.3;
+}
+
+.sidebar a{
+    color:white;
+    text-decoration:none;
+    padding:12px 14px;
+    border-radius:8px;
+    margin-bottom:8px;
+    transition:0.3s;
+    font-size:16px;
+    display:block;
+}
+
+.sidebar a:hover{
+    background:#0d6efd;
+    padding-left:20px;
+}
+
+.sidebar .active{
+    background:#0d6efd;
+}
+
+/* LOGOUT SA BABA */
+.logout-section{
+    margin-top:auto;
+    padding-top:15px;
+    border-top:1px solid rgba(255,255,255,0.2);
+}
+
+/* MAIN CONTENT */
+.main-content{
+    margin-left:260px;
+    padding:25px;
+    min-height:100vh;
+}
+
+/* TABLE */
+.table-responsive{
+    border-radius:12px;
+}
+
+/* RECEIPT */
+.thermal-preview{
+    width:80mm;
+    margin:auto;
+    padding:10px;
+    background:#fff;
+    font-family:'Courier New', Courier, monospace;
+    border:1px solid #eee;
+    color:#000;
+}
+
+.line{
+    border-top:1px dashed #000;
+    margin:10px 0;
+}
+
+/* SCROLLBAR */
+.sidebar::-webkit-scrollbar{
+    width:5px;
+}
+
+.sidebar::-webkit-scrollbar-thumb{
+    background:#0d6efd;
+    border-radius:10px;
+}
+
+/* MOBILE */
+@media (max-width:768px){
+
+    .sidebar{
+        width:100%;
+        height:auto;
+        position:relative;
+    }
+
+    .main-content{
+        margin-left:0;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+
+    <h2>
+        Admin<br>
+        Dashboard
+    </h2>
+
+    <a href="dashboard.php">
+        <i class="bi bi-grid"></i> Dashboard
+    </a>
+<!--
+    <a href="sales.php">
+        <i class="bi bi-cash-stack"></i> Sales
+    </a>-->
+
+    <a href="products.php">
+        <i class="bi bi-box-seam"></i> Inventory
+    </a>
+
+    <a href="orders.php" class="active">
+        <i class="bi bi-receipt"></i> Orders
+    </a>
+<!--
+    <a href="history.php">
+        <i class="bi bi-clock-history"></i> Transaction History
+    </a>-->
+
+    <a href="ItemsRequest.php">
+        <i class="bi bi-arrow-return-left"></i> Customer Service request
+    </a>
+
+    <div class="logout-section">
+        <a href="../logout.php"
+           class="text-danger"
+           onclick="return confirm('Are you sure you want to logout?')">
+
+            <i class="bi bi-box-arrow-right"></i> Logout
+        </a>
+    </div>
+
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main-content">
+
+    <div class="d-flex justify-content-between mb-3 shadow-sm p-3 bg-white rounded align-items-center">
+        <h4 class="mb-0">📦 Orders Management</h4>
+    </div>
+
+    <!-- DITO NA YUNG TABLE MO -->
+    <div class="table-responsive bg-white p-3 rounded shadow-sm">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th class="text-center">Order ID</th>
+                    <th class="text-center">Customer</th>
+                    <th class="text-center">Total Amount</th>
+                    <th class="text-center">Status</th>
+                    <th class="text-center">Date</th> 
+                    <th class="text-center">Customer Info</th>
+                    <th class="text-center">Action</th>
+                    <th class="text-center">Emailer</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php while($row = mysqli_fetch_assoc($orders)): ?>
+                <tr id="order-<?php echo $row['id']; ?>">
+                    <td class="text-center">#<?php echo $row['id']; ?></td>
+                    <td class="text-center"><strong><?php echo $row['fullname']; ?></strong></td>
+                    
+                    <td class="text-center">
+                        <div class="fw-bold">₱<?php echo number_format($row['total_amount'], 2); ?></div>
+                        <a href="javascript:void(0)" class="small text-primary text-decoration-none" onclick='viewReceipt(<?php echo json_encode($row); ?>)'>
+                            <i class="bi bi-receipt"></i> View Receipt
+                        </a>
+                    </td>
+                    <td class="text-center">
+                        <span class="badge <?php 
+                            echo ($row['status'] == 'pending') ? 'bg-warning text-dark' : 
+                                 (($row['status'] == 'completed') ? 'bg-success' : 'bg-info'); 
+                        ?>">
+                            <?php echo strtoupper($row['status']); ?>
+                        </span>
+                    </td>
+                    <td class="text-center small text-muted">
+                        <?php echo date('M d, Y', strtotime($row['order_date'])); ?>
+                    </td>
+                    <td class="text-center">
+                        <button type="button" class="btn btn-sm btn-outline-primary" 
+                                onclick='viewCustomer(<?php echo json_encode($row); ?>)'>
+                            <i class="bi bi-person-lines-fill"></i> Details
+                        </button>
+                    </td>
+                    <td class="text-center"> 
+                        <form method="POST">
+                            <input type="hidden" name="order_id" value="<?php echo $row['id']; ?>">
+                            
+                            <?php if($row['status'] == 'pending'): ?>
+                                <button type="submit" name="status" value="approved" class="btn btn-success btn-sm">Approve</button>
+                                <button type="submit" name="status" value="declined" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to decline this order?')">Decline</button>
+                            
+                            <?php elseif($row['status'] == 'approved'): ?>
+                                <button type="submit" name="status" value="preparing" class="btn btn-info btn-sm text-white">Preparing</button>
+                            
+                            <?php elseif($row['status'] == 'preparing'): ?>
+                                <button type="submit" name="status" value="out_for_delivery" class="btn btn-warning btn-sm">Out for Delivery</button>
+                            
+                            <?php elseif($row['status'] == 'out_for_delivery'): ?>
+                                <button type="submit" name="status" value="completed" class="btn btn-primary btn-sm">Complete Order</button>
+
+                            <?php elseif($row['status'] == 'declined'): ?>
+                                <span class="badge bg-danger">Order Declined</span>
+
+                            <?php elseif($row['status'] == 'completed'): ?>
+                                <span class="text-success small fw-bold">Order Delivered</span>
+
+                            <?php else: ?>
+                                <span class="text-muted small"><?php echo ucfirst($row['status']); ?></span>
+                            <?php endif; ?>
+
+                            <input type="hidden" name="update_status" value="1">
+                        </form>
+                    </td>
+                    <td class="text-center">
+                        <form method="POST">
+                            <input type="hidden" name="order_id" value="<?php echo $row['id']; ?>">
+                            <?php 
+                            $alreadySent = (isset($row['email_status']) && $row['email_status'] == $row['status']);
+                            $canSend = ($row['status'] != 'pending' && !$alreadySent);
+                            ?>
+                            <button type="submit" name="send_email_update" 
+                                    class="btn btn-sm <?php echo $alreadySent ? 'btn-success' : 'btn-outline-dark'; ?>" 
+                                    <?php echo $canSend ? '' : 'disabled'; ?>>
+                                <i class="bi bi-envelope-at"></i> <?php echo $alreadySent ? 'Sent' : 'Send Email'; ?>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endwhile; ?>
+            </tbody>
+        </table>
+    </div>
+</div> 
+
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Order Details</h5>
+            </div>
+            <div class="modal-body bg-dark py-4">
+                <div class="thermal-preview" id="receiptContent"></div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <form method="POST" action="orders.php">
+                    <input type="hidden" name="order_id" id="modal_order_id">
+                    <button type="submit" name="send_to_cashier" class="btn btn-warning">
+                        Send to Cashier
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Customer Information</h5>
+            </div>
+            <div class="modal-body p-4">
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Name</label>
+                        <p id="c-name" class="fw-bold fs-5 mb-0"></p>
+                    </div>
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Surname</label>
+                        <p id="c-surname" class="fw-bold fs-5 mb-0"></p>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Contact Number</label>
+                        <p id="c-phone" class="mb-0"></p>
+                    </div>
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Email Address</label>
+                        <p id="c-email" class="mb-0"></p>
+                    </div>
+                </div>
+                <hr>
+                 <div class="row mb-3">
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Delivery Address</label>
+                        <p id="c-address" class="mb-0"></p>
+                    </div>
+                    <div class="col-6">
+                        <label class="text-muted small fw-bold text-uppercase">Landmark</label>
+                        <p id="c-landmark" class="mb-0"></p>
+                    </div>
+                </div>
+                <div class="bg-light p-3 border-start border-warning border-4 rounded text-center">
+                    <label class="text-muted small fw-bold text-uppercase d-block text-start mb-2">Proof of Payment / Downpayment</label>
+                    <div id="proof-container"></div>
+                </div>
+            </div>
+            <div class="modal-footer bg-light">
+                <button type="button" class="btn btn-secondary w-100" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function viewCustomer(data) {
+    document.getElementById('c-name').innerText = data.fullname;
+    document.getElementById('c-surname').innerText = data.surname;
+    document.getElementById('c-phone').innerText = data.contact_number;
+    document.getElementById('c-email').innerText = data.email;
+    document.getElementById('c-address').innerText = data.full_address;
+    document.getElementById('c-landmark').innerText = data.landmark ? data.landmark : "No specific landmark provided.";
+    
+    const proofContainer = document.getElementById('proof-container');
+    let currentMOP = data.payment_method ? data.payment_method.toUpperCase() : "COD";
+    
+    let htmlContent = "";
+    // Kung GCash o Maya ang ginamit, isingit ang Reference Number text block sa itaas ng image
+    if (currentMOP === "GCASH" || currentMOP === "MAYA") {
+        let referenceNumber = data.ref_no ? data.ref_no : "Not Provided";
+        let paymentScheme = data.payment_scheme ? data.payment_scheme : 'fullpayment';
+        htmlContent += `
+            <div class="alert alert-secondary py-1 px-2 mb-2 text-start small">
+                <b>Mode of Payment:</b> <span class="badge bg-primary">${currentMOP}</span><br>
+                <b>Reference No:</b> <span class="text-danger fw-bold">${referenceNumber}</span><br>
+                <b>Payment Type:</b> <span class="text-danger fw-bold">${paymentScheme}</span>
+            </div>
+        `;
+    }
+
+    // Isunod ang pag-render ng litrato/photo kung mayroong laman ang database image field
+    if (data.proof_of_payment && data.proof_of_payment.trim() !== "" && currentMOP !== "COD") {
+        htmlContent += `
+            <a href="../${data.proof_of_payment}" target="_blank" title="Click to view full image">
+                <img src="../${data.proof_of_payment}" class="img-thumbnail mt-1" style="max-height: 200px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #ffc107;">
+            </a>
+            <small class="text-muted d-block mt-1"><i class="bi bi-zoom-in"></i> Click the image to view full size</small>
+        `;
+    } else {
+        htmlContent += `<span class="text-muted italic small">No downpayment required (COD or Amount below ₱5,000)</span>`;
+    }
+    
+
+    // Inggit ang nabuong design sa proof-container div block
+    proofContainer.innerHTML = htmlContent;
+    
+    var myModal = new bootstrap.Modal(document.getElementById('customerModal'));
+    myModal.show();
+}
+function viewReceipt(data) {
+
+    console.log("RAW CART:", data.cart);
+    console.log("DATA TYPE:", typeof data.cart);
+
+    // Set order ID sa modal
+    document.getElementById('modal_order_id').value = data.id;
+
+    // SAFE STATUS
+    const orderStatus = (data.status || 'pending').toUpperCase();
+
+    // SAFE CART PARSE
+    let items = [];
+    try {
+        let cartObj = (typeof data.cart === "string")
+            ? JSON.parse(data.cart)
+            : data.cart;
+
+        items = Object.values(cartObj || {});
+    } catch (e) {
+        console.error("Cart parsing error:", e);
+        items = [];
+    }
+
+    // ITEMS HTML
+    let itemsHtml = '';
+    items.forEach(item => {
+        let price = parseFloat(item.price || 0);
+        let qty = parseInt(item.qty || 0);
+        let subtotal = price * qty;
+
+        itemsHtml += `
+            <tr>
+                <td>${item.name} (x${qty})</td>
+                <td align="right">₱${subtotal.toFixed(2)}</td>
+            </tr>
+        `;
+    });
+
+    // FIXED VALUES
+    let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
+    let paymentScheme = (data.payment_scheme || '').toLowerCase(); // 🔥 FIXED
+    let totalAmt = parseFloat(data.total_amount || 0);
+
+    let paymentBreakdownHtml = '';
+
+    // =========================
+    // COD
+    // =========================
+    if (paymentMethodName === 'COD') {
+
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-2">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+            <div class="text-muted small">
+                Cash on Delivery (Pay upon delivery)
+            </div>
+        `;
+    }
+     // =========================
+    // 5K+ DOWNPAYMENT LOGIC (FIXED)
+    // =========================
+    else if (totalAmt >= 5000 && paymentScheme.includes('50')) {
+
+        let downpayment = parseFloat(data.paid_amount || (totalAmt * 0.5));
+        let balance = totalAmt - downpayment;
+
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-1">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+
+            <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                <span>PAID VIA ${paymentMethodName}:</span>
+                <span>₱${downpayment.toFixed(2)}</span>
+            </div>
+
+            <div class="line"></div>
+
+            <div class="d-flex justify-content-between small fw-bold text-danger">
+                <span>PAY UPON DELIVERY:</span>
+                <span>₱${balance.toFixed(2)}</span>
+            </div>
+        `;
+    }
+
+    // =========================
+    // GCASH / MAYA FULL PAYMENT
+    // =========================
+    else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
+
+        let paidAmount = parseFloat(data.paid_amount || totalAmt);
+
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-1">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+
+            <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                <span>PAID VIA ${paymentMethodName}:</span>
+                <span>₱${paidAmount.toFixed(2)}</span>
+            </div>
+        `;
+
+        if (data.ref_no) {
+            paymentBreakdownHtml += `
+                <div class="small text-muted">
+                    Reference No: ${data.ref_no}
+                </div>
+            `;
+        }
+    }
+    else {
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+        `;
+    }
+
+    // RECEIPT HTML
+    let fullReceiptHtml = `
+        <div class="text-center mb-2">
+            <h5 class="fw-bold my-0 text-uppercase">R. Taipan Hardware</h5>
+            <small>190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</small><br>
+            <small>Contact: 0907 456 5632</small>
+            <div class="line"></div>
+            <small><b>OFFICIAL RECEIPT (ONLINE ORDER)</b></small>
+            <div class="line"></div>
+        </div>
+
+        <p class="small mb-1"><b>Order ID:</b> #${data.id}</p>
+        <p class="small mb-1"><b>Date:</b> ${data.order_date}</p>
+        <p class="small mb-1"><b>Customer:</b> ${data.fullname} ${data.surname}</p>
+        <p class="small mb-1"><b>Contact:</b> ${data.contact_number}</p>
+        <p class="small mb-1"><b>Address:</b> ${data.full_address}</p>
+        <p class="small mb-2"><b>Landmark:</b> ${data.landmark || 'N/A'}</p>
+
+        <div class="line"></div>
+
+        <table width="100%" class="small mb-2">
+            ${itemsHtml}
+        </table>
+
+        <div class="line"></div>
+
+        ${paymentBreakdownHtml}
+
+        <div class="line mt-2"></div>
+
+        <div class="text-start small">
+            <b>Mode of Payment:</b> ${paymentMethodName}
+        </div>
+
+        <div class="text-center mt-2">
+            <small class="fw-bold">STATUS: ${orderStatus}</small>
+        </div>
+    `;
+
+    // Inject
+    document.getElementById('receiptContent').innerHTML = fullReceiptHtml;
+
+    // SHOW MODAL
+    let receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
+    receiptModal.show();
+
+    // FIX ARIA FOCUS BUG
+    document.activeElement.blur();
+}
+</script>
+</body>
+</html> 

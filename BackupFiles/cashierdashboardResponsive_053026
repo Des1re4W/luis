@@ -1,0 +1,700 @@
+<?php
+session_start();
+include "../config/db.php";
+
+if (!isset($_SESSION['role']) || $_SESSION['role'] != "cashier") {
+    header("Location: ../login.php");
+    exit();
+}
+
+/* ONLINE ORDER NOTIFICATION */
+$notif_query = mysqli_query($conn, "
+    SELECT COUNT(*) as total 
+    FROM orders 
+    WHERE sent_to_cashier = 1
+");
+
+$notif_data = mysqli_fetch_assoc($notif_query);
+$order_count = $notif_data['total'];
+
+/* PRODUCTS + VARIANTS */
+$products = mysqli_query($conn, "
+    SELECT 
+        p.id,
+        p.product_name,
+        p.price,
+        p.stock,
+        p.image,
+        'main' AS type
+
+    FROM products p
+
+    UNION ALL
+
+    SELECT 
+        v.id,
+        v.variant_name AS product_name,
+        v.price,
+        v.stock,
+        v.variant_image AS image,
+        'variant' AS type
+
+    FROM product_variants v
+    INNER JOIN products p ON v.product_id = p.id
+
+    ORDER BY product_name ASC
+
+");
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Cashier POS | R. Taipan Hardware</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+        rel="stylesheet">
+
+    <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <style>
+body {
+    background: #f4f6f9;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* NAVBAR */
+.navbar-custom {
+    background: #051c3c !important;
+    height: 75px;
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+}
+
+.navbar-title {
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+/* MAIN */
+.main-wrapper {
+    display: flex;
+    height: calc(100vh - 75px);
+}
+
+/* PRODUCT AREA */
+.product-section {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* CARD */
+.card {
+    border-radius: 12px;
+    transition: .2s;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+}
+
+.prod-img {
+    width: 100%;
+    height: 170px;
+    object-fit: cover;
+    border-radius: 10px;
+    background: #f1f1f1;
+}
+
+/* CART */
+.cart-section {
+    width: 420px;
+    min-width: 420px;
+    background: #fff;
+    border-left: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
+.cart-items {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* TABLE FIX */
+.cart-items table td {
+    vertical-align: middle;
+    font-size: 14px;
+}
+
+/* BUTTON */
+.qty-btn {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+}
+
+/* =========================
+   MOBILE FIX (IMPORTANT)
+========================= */
+@media (max-width: 768px) {
+
+    /* CART FIX */
+    .cart-section {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+
+        width: 100%;
+        min-width: 100%;
+
+        height: 52vh;
+        max-height: 55vh;
+
+        z-index: 999;
+        border-top: 1px solid #ddd;
+
+        display: flex;
+        flex-direction: column;
+
+        padding: 10px;
+
+        background: #fff;
+    }
+
+    /* HEADER SMALLER */
+    .cart-section h5 {
+        font-size: 14px;
+        margin-bottom: 6px;
+        flex-shrink: 0;
+    }
+
+    /* CUSTOMER INPUT SMALLER SPACE */
+    .cart-section .form-control {
+        padding: 6px 10px;
+        font-size: 13px;
+        margin-bottom: 6px !important;
+        flex-shrink: 0;
+    }
+
+    /* 🔥 CART ITEMS BIGGER SPACE */
+    .cart-items {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+
+        /* give more room */
+        max-height: calc(52vh - 150px);
+    }
+
+    /* TABLE MORE COMPACT */
+    .cart-items table td {
+        font-size: 12px;
+        padding: 4px;
+    }
+
+    /* TOTAL / PAYMENT SECTION COMPACT */
+    .cart-section .border-top {
+        padding-top: 8px !important;
+    }
+
+    .cart-section h5,
+    .cart-section h4 {
+        font-size: 14px;
+        margin-bottom: 2px;
+    }
+
+    /* INPUT FIELDS SMALLER */
+    #amountPaid {
+        padding: 6px 10px;
+        font-size: 13px;
+        margin-bottom: 6px !important;
+    }
+
+    /* CHANGE TEXT COMPACT */
+    .text-danger.fw-bold {
+        font-size: 13px;
+        margin-bottom: 6px !important;
+    }
+
+    /* BUTTON SMALLER HEIGHT */
+    .checkout-btn,
+    .btn-outline-danger {
+        padding: 8px;
+        font-size: 13px;
+    }
+}
+    </style>
+
+</head>
+
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
+
+    <div class="container-fluid">
+
+        <h2 class="text-white fw-bold navbar-title d-flex align-items-center gap-2 m-0">
+            <img src="../assets/logo.jpg"
+                style="width:36px; height:36px; border-radius:50%; border:2px solid white;">
+            <span style="font-size:16px;">R. Taipan Hardware - Cashier Dashboard</span>
+        </h2>
+
+      <div class="d-flex flex-wrap align-items-center ms-auto gap-2">
+
+            <input type="text"
+                id="liveSearch"
+                class="form-control form-control-sm"
+                style="width: 200px;"
+                placeholder="Search products..."
+                onkeyup="filterProducts()">
+
+            <a href="onlineOrders.php"
+                class="btn btn-outline-light btn-sm position-relative px-3">
+
+                <i class="bi bi-globe"></i>
+
+                <span style="font-size:13px;">Online Orders</span>
+
+                <?php if ($order_count > 0): ?>
+                    <span class="badge bg-danger position-absolute top-0 start-100 translate-middle">
+                        <?php echo $order_count; ?>
+                    </span>
+                <?php endif; ?>
+
+            </a>
+
+            <span class="text-white small px-2">
+                 <i class="bi bi-person-circle"></i>
+                <b><?php echo htmlspecialchars($_SESSION['username']); ?></b>
+            </span>
+
+          
+        <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
+            <i class="bi bi-box-arrow-right"></i> Logout
+        </a>
+
+
+        </div>
+
+    </div>
+
+</nav>
+
+<!-- MAIN -->
+<div class="main-wrapper">
+
+    <!-- PRODUCTS -->
+    <div class="product-section">
+
+        <div class="row g-3" id="product-list">
+
+            <?php while ($row = mysqli_fetch_assoc($products)): ?>
+
+                <?php
+                $imagePath = !empty($row['image'])
+                    ? "../" . $row['image']
+                    : "../assets/no-image.jpg";
+                ?>
+
+                <div class="col-4 col-md-3 product-item"
+     data-name="<?php echo strtolower($row['product_name']); ?>">
+
+                    <div class="card border-0 shadow-sm p-3 h-100">
+
+                        <img src="<?php echo $imagePath; ?>"
+                            class="prod-img mb-3"
+                            alt="Product">
+
+                        <h6 class="fw-bold text-truncate">
+
+                            <?php echo htmlspecialchars($row['product_name']); ?>
+
+                        </h6>
+
+                        <p class="text-primary fw-bold mb-1">
+
+                            ₱<?php echo number_format($row['price'], 2); ?>
+
+                        </p>
+
+                        <small class="text-muted">
+
+                            Stock:
+                            <?php echo $row['stock']; ?>
+
+                        </small>
+
+                        <div class="mt-2">
+
+                            <?php if ($row['type'] == 'variant'): ?>
+                           <?php endif; ?>
+
+                        </div>
+
+<button class="btn btn-primary btn-sm w-100 mt-3" 
+    onclick="addToCart(
+        '<?php echo ($row['type'] == 'variant' ? 'v_' : 'm_') . $row['id']; ?>', 
+        '<?php echo addslashes(str_replace("'", "\'", $row['product_name'])); ?>', 
+        <?php echo (float)$row['price']; ?>, 
+        <?php echo (int)$row['stock']; ?>
+    )">
+    Add to Cart
+</button>
+
+                    </div>
+
+                </div>
+
+            <?php endwhile; ?>
+
+        </div>
+
+    </div>
+
+    <!-- CART -->
+    <div class="cart-section">
+
+        <h5 class="fw-bold mb-3">
+
+            <i class="bi bi-cart3"></i>
+
+            Current Order
+
+        </h5>
+
+        <input type="text"
+            id="customerName"
+            class="form-control mb-3"
+            placeholder="Sold To">
+
+        <div class="cart-items">
+
+            <table class="table align-middle">
+
+                <tbody id="cart-table"></tbody>
+
+            </table>
+
+        </div>
+
+        <div class="border-top pt-3">
+
+            <div class="d-flex justify-content-between mb-2">
+
+                <h5 class="fw-bold">TOTAL</h5>
+
+                <h4 class="text-primary fw-bold">
+
+                    ₱<span id="total">0.00</span>
+
+                </h4>
+
+            </div>
+
+            <input type="number"
+                id="amountPaid"
+                class="form-control mb-2"
+                placeholder="Paid Amount"
+                onkeyup="calcChange()">
+
+            <div class="d-flex justify-content-between mb-3 text-danger fw-bold">
+
+                <span>CHANGE</span>
+
+                <span>
+
+                    ₱<span id="change">0.00</span>
+
+                </span>
+
+            </div>
+
+            <button id="checkout-btn"
+                class="btn btn-success w-100 checkout-btn"
+                onclick="checkout()"
+                disabled>
+                CHECKOUT & PRINT
+            </button>
+            <button class="btn btn-outline-danger w-100 mt-2"
+    onclick="clearCart()">
+    CLEAR CART
+</button>
+
+        </div>
+
+    </div>
+
+</div>
+<script>
+let cart = [];
+
+function addToCart(id, name, price, stock) {
+    let item = cart.find(i => i.id === id);
+    if (item) {
+        if (item.qty >= stock) { alert("Out of stock!"); return; }
+        item.qty++;
+    } else {
+        if (stock <= 0) { alert("Out of stock!"); return; }
+        cart.push({ id, name, price, qty: 1, stock_limit: stock });
+    }
+    renderCart();
+}
+function clearCart() {
+    if (!confirm("Are you sure you want to clear the cart?")) return;
+
+    cart = [];
+    document.getElementById("customerName").value = "";
+    document.getElementById("amountPaid").value = "";
+    document.getElementById("change").innerText = "0.00";
+
+    renderCart();
+}
+function renderCart() {
+    let html = "";
+    let total = 0;
+    cart.forEach(item => {
+        let subtotal = item.price * item.qty;
+        total += subtotal;
+        html += `<tr>
+            <td style="width:45%;">${item.name}</td>
+            <td class="text-center">
+                <button class="btn btn-outline-secondary btn-sm qty-btn" onclick="updateQty('${item.id}', -1)">-</button>
+                <span class="mx-2 fw-bold">${item.qty}</span>
+                <button class="btn btn-outline-secondary btn-sm qty-btn" onclick="updateQty('${item.id}', 1)">+</button>
+            </td>
+            <td class="text-end fw-bold">₱${subtotal.toFixed(2)}</td>
+        </tr>`;
+    });
+    document.getElementById("cart-table").innerHTML = html;
+    document.getElementById("total").innerText = total.toFixed(2);
+    document.getElementById("checkout-btn").disabled = (cart.length === 0);
+    calcChange();
+}
+
+function updateQty(id, delta) {
+    let item = cart.find(i => i.id === id);
+    if (!item) return;
+    item.qty += delta;
+    if (item.qty > item.stock_limit) item.qty = item.stock_limit;
+    if (item.qty <= 0) cart = cart.filter(i => i.id !== id);
+    renderCart();
+}
+
+function calcChange() {
+    let total = parseFloat(document.getElementById("total").innerText) || 0;
+    let paid = parseFloat(document.getElementById("amountPaid").value) || 0;
+    document.getElementById("change").innerText = Math.max(0, paid - total).toFixed(2);
+}
+
+function printReceipt(transactionId) {
+    let receiptWindow = window.open('', '', 'width=350,height=700');
+    let cartHTML = "";
+    let totalQty = 0;
+    cart.forEach(item => {
+        totalQty += item.qty;
+        cartHTML += `
+            <tr>
+                <td colspan="2" style="padding-top:6px;">
+                    <b>${item.name}</b>
+                </td>
+            </tr>
+            <tr>
+                <td style="font-size:12px;">
+                    ${item.qty} x ₱${item.price.toFixed(2)}
+                </td>
+                <td align="right" style="font-size:12px;">
+                    ₱${(item.price * item.qty).toFixed(2)}
+                </td>
+            </tr>
+        `;
+    });
+    let today = new Date();
+    let formattedDate =
+        today.toLocaleDateString() + " " +
+        today.toLocaleTimeString();
+    let cashierName = "<?php echo htmlspecialchars($_SESSION['username']); ?>";
+    let soldTo = document.getElementById("customerName").value || "Walk-in Customer";
+    let total = parseFloat(document.getElementById("total").innerText) || 0;
+    let paid = parseFloat(document.getElementById("amountPaid").value) || 0;
+    let change = paid - total;
+    receiptWindow.document.write(`
+    <html>
+    <head>
+        <title>Receipt</title>
+        <style>
+            body{
+                font-family: 'Courier New', monospace;
+                width: 280px;
+                margin: auto;
+                padding: 10px;
+                color:#000;
+            }
+            .center{
+                text-align:center;
+            }
+            .line{
+                border-top:1px dashed #000;
+                margin:8px 0;
+            }
+            table{
+                width:100%;
+                border-collapse:collapse;
+            }
+            td{
+                vertical-align:top;
+                font-size:13px;
+            }
+            .totals td{
+                padding:2px 0;
+            }
+            .bold{
+                font-weight:bold;
+            }
+            .small{
+                font-size:12px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="center">
+            <h3 style="margin:0;">R. TAIPAN HARDWARE</h3>
+
+            <div class="small">
+               190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal <br>
+               contact: 0907 456 5632
+            </div>
+        </div>
+        <div class="line"></div>
+        <table>
+            <tr>
+             <div class="center">
+              <h3 style="margin:0;">OFFICIAL RECEIPT</h3>
+               </div>
+               <div class="line"></div>
+
+                <td>Date</td>
+                <td align="right">${formattedDate}</td>
+            </tr>
+            <tr>
+                <td>Trans No.</td>
+                <td align="right">${transactionId}</td>
+            </tr>
+            <tr>
+                <td>Cashier</td>
+                <td align="right">${cashierName}</td>
+            </tr>
+            <tr>
+                <td>Sold To</td>
+                <td align="right">${soldTo}</td>
+            </tr>
+
+        </table>
+        <div class="line"></div>
+        <table>
+            ${cartHTML}
+        </table>
+        <div class="line"></div>
+        <table class="totals">
+            <tr>
+                <td>Total Items</td>
+                <td align="right">${totalQty}</td>
+            </tr>
+            <tr>
+                <td class="bold">TOTAL AMOUNT</td>
+                <td align="right" class="bold">
+                    ₱${total.toFixed(2)}
+                </td>
+            </tr>
+            <tr>
+                <td>AMOUNT PAID</td>
+                <td align="right">
+                    ₱${paid.toFixed(2)}
+                </td>
+            </tr>
+            <tr>
+                <td class="bold">CHANGE</td>
+                <td align="right" class="bold">
+                    ₱${change.toFixed(2)}
+                </td>
+            </tr>
+        </table>
+        <div class="line"></div>
+        <div class="center small">
+            Thank you for your purchase!<br>
+            Please come again.
+        </div>
+        <script>
+            window.print();
+            window.onafterprint = function(){
+                window.close();
+            }
+        <\/script>
+
+    </body>
+
+    </html>
+    `);
+
+    receiptWindow.document.close();
+}
+
+function checkout() {
+    let total = parseFloat(document.getElementById("total").innerText);
+    let paid = parseFloat(document.getElementById("amountPaid").value);
+    
+    if (cart.length === 0) { alert("Cart is empty."); return; }
+    if (!paid || paid < total) { alert("Invalid payment amount."); return; }
+
+    fetch("pos_checkout.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cart: cart, total: total, paid: paid, change: paid - total })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === "success") {
+            printReceipt(data.transaction_id);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            alert(data.message);
+        }
+    })
+    .catch(error => { console.error(error); alert("Checkout failed."); });
+}
+function filterProducts() {
+    // Kunin ang tinype ng user at gawing lowercase
+    let searchInput = document.getElementById("liveSearch").value.toLowerCase();
+    
+    // Kunin ang lahat ng product items sa page
+    let products = document.querySelectorAll(".product-item");
+
+    // I-loop ang bawat product para i-check kung tugma sa hinahanap
+    products.forEach(product => {
+        let productName = product.getAttribute("data-name");
+        
+        if (productName.includes(searchInput)) {
+            // Ipakita ang product kung may match
+            product.style.display = ""; 
+        } else {
+            // Itago ang product kung walang match
+            product.style.display = "none"; 
+        }
+    });
+}
+</script>
+</body>
+</html>
