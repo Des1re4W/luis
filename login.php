@@ -21,7 +21,7 @@ function logAction($conn, $user_id, $username, $role, $action, $details) {
 if (isset($_POST['login'])) {
 
     // Clean input
-    $email = trim($_POST['email'] ?? '');
+    $username = trim(mysqli_real_escape_string($conn, $_POST['username']));
     $password = trim($_POST['password']);
 
     // Get user by username
