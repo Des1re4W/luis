@@ -1,6 +1,6 @@
 <?php
 session_start();
-include "../config/db.php";
+require_once __DIR__ . '/config/db.php';
 
 // 1. Check login
 if (!isset($_SESSION['user_id'])) {

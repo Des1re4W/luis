@@ -1,6 +1,6 @@
 <?php
 session_start();
-include "../config/db.php";
+require_once __DIR__ . '/config/db.php';
 
 // SECURITY GUARD: Siguraduhin na owner o admin lang ang makakapasok
 if (!isset($_SESSION['role']) || ($_SESSION['role'] !== "owner" && $_SESSION['role'] !== "admin")) {
