@@ -1,6 +1,6 @@
 <?php
 session_start();
-include "config/db.php"; // Siguraduhin na tama ang path ng db.php
+require_once __DIR__ . '/config/db.php'; // Siguraduhin na tama ang path ng db.php
 
 if (isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];

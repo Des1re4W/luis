@@ -1,6 +1,6 @@
 <?php
 session_start();
-include "../config/db.php";
+require_once __DIR__ . '/config/db.php';
 
 // Siguraduhing may ID na ipinasok sa URL (e.g., buynow.php?id=5)
 if (isset($_GET['id'])) {
