@@ -21,13 +21,11 @@ const SMTP_USERNAME = 'rtaipancss@gmail.com';
 const SMTP_PASSWORD = 'untvtpzeiqyrkrpx';
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
-function h($value)
-{
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+function h($value) {
+    return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function sendResetOtp(string $email, string $otp): bool
-{
+function sendResetOtp(string $email, string $otp): bool {
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -61,8 +59,7 @@ function sendResetOtp(string $email, string $otp): bool
     }
 }
 
-function clearResetSession(): void
-{
+function clearResetSession(): void {
     unset(
         $_SESSION['pw_reset_email'],
         $_SESSION['pw_reset_otp_hash'],
@@ -83,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $message = "Please enter a valid email address.";
             $messageType = "danger";
-        } elseif (!empty($_SESSION['pw_reset_last_sent']) && time() - (int) $_SESSION['pw_reset_last_sent'] < 60) {
+        } elseif (!empty($_SESSION['pw_reset_last_sent']) && time() - (int)$_SESSION['pw_reset_last_sent'] < 60) {
             $message = "Please wait 60 seconds before requesting another OTP.";
             $messageType = "warning";
         } else {
@@ -92,15 +89,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "A system error occurred. Please try again later.";
                 $messageType = "danger";
             } else {
-                $stmt->execute([$email]);
-                $user = $stmt->fetch(PDO::FETCH_ASSOC);
+                $stmt->bind_param("s", $email);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $user = $result->fetch_assoc();
                 $stmt->close();
 
                 if (!$user) {
                     $message = "No active account was found with that email address.";
                     $messageType = "danger";
                 } else {
-                    $otp = (string) random_int(100000, 999999);
+                    $otp = (string)random_int(100000, 999999);
                     if (sendResetOtp($user['email'], $otp)) {
                         clearResetSession();
                         $_SESSION['pw_reset_email'] = $user['email'];
@@ -127,14 +126,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             clearResetSession();
             $message = "Your OTP session has expired. Please request a new OTP.";
             $messageType = "warning";
-        } elseif (time() > (int) $_SESSION['pw_reset_expires']) {
+        } elseif (time() > (int)$_SESSION['pw_reset_expires']) {
             clearResetSession();
             $message = "Your OTP has expired. Please request a new one.";
             $messageType = "warning";
         } elseif (!preg_match('/^\d{6}$/', $otp)) {
             $message = "Enter the 6-digit OTP sent to your email.";
             $messageType = "danger";
-        } elseif ((int) ($_SESSION['pw_reset_attempts'] ?? 0) >= 5) {
+        } elseif ((int)($_SESSION['pw_reset_attempts'] ?? 0) >= 5) {
             clearResetSession();
             $message = "Too many incorrect attempts. Please request a new OTP.";
             $messageType = "danger";
@@ -144,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "OTP verified. You may now create a new password.";
             $messageType = "success";
         } else {
-            $_SESSION['pw_reset_attempts'] = (int) ($_SESSION['pw_reset_attempts'] ?? 0) + 1;
+            $_SESSION['pw_reset_attempts'] = (int)($_SESSION['pw_reset_attempts'] ?? 0) + 1;
             $message = "Incorrect OTP. Please try again.";
             $messageType = "danger";
         }
@@ -202,235 +201,136 @@ if (!empty($_SESSION['pw_reset_email'])) {
 ?>
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password | R. Taipan Hardware</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <style>
-        :root {
-            --navy: #001f4d;
-            --blue: #0d6efd
-        }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forgot Password | R. Taipan Hardware</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+:root{--navy:#001f4d;--blue:#0d6efd}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:linear-gradient(135deg,#edf3fb,#f8fafc);font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px}
+.reset-card{width:100%;max-width:480px;background:#fff;border-radius:18px;padding:clamp(22px,5vw,38px);box-shadow:0 12px 38px rgba(0,31,77,.12)}
+.brand-icon{width:66px;height:66px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:29px;margin:0 auto 16px}
+h1{font-size:clamp(1.4rem,4vw,1.8rem);font-weight:700;color:var(--navy);text-align:center}
+.subtitle{text-align:center;color:#6c757d;font-size:.95rem;margin-bottom:24px}
+.form-control{min-height:48px;border-radius:10px}
 
-        * {
-            box-sizing: border-box
-        }
+/* Pagtugma ng background ng eye button sa textfield */
+.input-group .btn-outline-secondary {
+    background-color: #fff;
+    border-color: #dee2e6;
+    color: #6c757d;
+}
+.input-group .btn-outline-secondary:hover {
+    background-color: #e9ecef;
+    border-color: #dee2e6;
+    color: #495057;
+}
 
-        body {
-            margin: 0;
-            min-height: 100vh;
-            background: linear-gradient(135deg, #edf3fb, #f8fafc);
-            font-family: Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px
-        }
-
-        .reset-card {
-            width: 100%;
-            max-width: 480px;
-            background: #fff;
-            border-radius: 18px;
-            padding: clamp(22px, 5vw, 38px);
-            box-shadow: 0 12px 38px rgba(0, 31, 77, .12)
-        }
-
-        .brand-icon {
-            width: 66px;
-            height: 66px;
-            border-radius: 50%;
-            background: var(--navy);
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 29px;
-            margin: 0 auto 16px
-        }
-
-        h1 {
-            font-size: clamp(1.4rem, 4vw, 1.8rem);
-            font-weight: 700;
-            color: var(--navy);
-            text-align: center
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #6c757d;
-            font-size: .95rem;
-            margin-bottom: 24px
-        }
-
-        .form-control {
-            min-height: 48px;
-            border-radius: 10px
-        }
-
-        /* Pagtugma ng background ng eye button sa textfield */
-        .input-group .btn-outline-secondary {
-            background-color: #fff;
-            border-color: #dee2e6;
-            color: #6c757d;
-        }
-
-        .input-group .btn-outline-secondary:hover {
-            background-color: #e9ecef;
-            border-color: #dee2e6;
-            color: #495057;
-        }
-
-        .btn-primary {
-            background: var(--navy);
-            border-color: var(--navy);
-            min-height: 48px;
-            border-radius: 10px;
-            font-weight: 600
-        }
-
-        .btn-primary:hover {
-            background: #06336f;
-            border-color: #06336f
-        }
-
-        .alert {
-            border-radius: 10px;
-            font-size: .92rem
-        }
-
-        .back-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            color: var(--navy);
-            text-decoration: none;
-            font-weight: 600
-        }
-
-        .back-link:hover {
-            text-decoration: underline
-        }
-
-        @media(max-width:420px) {
-            body {
-                padding: 12px
-            }
-
-            .reset-card {
-                border-radius: 14px
-            }
-
-            .subtitle {
-                font-size: .88rem
-            }
-        }
-    </style>
+.btn-primary{background:var(--navy);border-color:var(--navy);min-height:48px;border-radius:10px;font-weight:600}
+.btn-primary:hover{background:#06336f;border-color:#06336f}
+.alert{border-radius:10px;font-size:.92rem}
+.back-link{display:block;text-align:center;margin-top:20px;color:var(--navy);text-decoration:none;font-weight:600}
+.back-link:hover{text-decoration:underline}
+@media(max-width:420px){body{padding:12px}.reset-card{border-radius:14px}.subtitle{font-size:.88rem}}
+</style>
 </head>
-
 <body>
-    <main class="reset-card">
-        <div class="brand-icon"><i class="bi bi-shield-lock"></i></div>
-        <h1>Forgot Password?</h1>
-        <p class="subtitle">
-            <?php if ($showPasswordForm): ?>
-                OTP verified. Set a new password for your account.
-            <?php elseif ($showOtpForm): ?>
-                Enter the 6-digit code sent to <strong><?= h($maskedEmail) ?></strong>.
-            <?php else: ?>
-                Enter your registered email address and we'll send you a one-time verification code.
-            <?php endif; ?>
-        </p>
-
-        <?php if ($message !== ''): ?>
-            <div class="alert alert-<?= h($messageType) ?>"><?= h($message) ?></div>
-        <?php endif; ?>
-
+<main class="reset-card">
+    <div class="brand-icon"><i class="bi bi-shield-lock"></i></div>
+    <h1>Forgot Password?</h1>
+    <p class="subtitle">
         <?php if ($showPasswordForm): ?>
-            <form method="POST" autocomplete="off">
-                <input type="hidden" name="action" value="reset_password">
-
-                <!-- New Password Field na may Toggle Eye Symbol -->
-                <div class="mb-3">
-                    <label for="new_password" class="form-label fw-semibold">New Password</label>
-                    <div class="input-group">
-                        <input type="password" class="form-control" id="new_password" name="new_password" minlength="8"
-                            required autocomplete="new-password" placeholder="At least 8 characters">
-                        <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword">
-                            <i class="bi bi-eye" id="iconNewPassword"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Confirm New Password Field na may Toggle Eye Symbol -->
-                <div class="mb-3">
-                    <label for="confirm_password" class="form-label fw-semibold">Confirm New Password</label>
-                    <div class="input-group">
-                        <input type="password" class="form-control" id="confirm_password" name="confirm_password"
-                            minlength="8" required autocomplete="new-password" placeholder="Re-enter new password">
-                        <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword">
-                            <i class="bi bi-eye" id="iconConfirmPassword"></i>
-                        </button>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary w-100">Change Password</button>
-            </form>
+            OTP verified. Set a new password for your account.
         <?php elseif ($showOtpForm): ?>
-            <form method="POST" autocomplete="off">
-                <input type="hidden" name="action" value="verify_otp">
-                <div class="mb-3">
-                    <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
-                    <input type="text" class="form-control text-center" id="otp" name="otp" inputmode="numeric"
-                        pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="Enter OTP"
-                        autocomplete="one-time-code" style="letter-spacing:8px;font-size:1.25rem">
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
-            </form>
-            <form method="POST" class="mt-3">
-                <input type="hidden" name="action" value="send_otp">
-                <input type="hidden" name="email" value="<?= h($_SESSION['pw_reset_email']) ?>">
-                <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
-            </form>
+            Enter the 6-digit code sent to <strong><?= h($maskedEmail) ?></strong>.
         <?php else: ?>
-            <form method="POST" autocomplete="off">
-                <input type="hidden" name="action" value="send_otp">
-                <div class="mb-3">
-                    <label for="email" class="form-label fw-semibold">Registered Email Address</label>
-                    <input type="email" class="form-control" id="email" name="email" required maxlength="255"
-                        autocomplete="email" placeholder="name@example.com">
-                </div>
-                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-envelope me-2"></i>Send OTP</button>
-            </form>
+            Enter your registered email address and we'll send you a one-time verification code.
         <?php endif; ?>
+    </p>
 
-        <a href="login.php" class="back-link"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
-    </main>
+    <?php if ($message !== ''): ?>
+        <div class="alert alert-<?= h($messageType) ?>"><?= h($message) ?></div>
+    <?php endif; ?>
 
     <?php if ($showPasswordForm): ?>
-        <script>
-            function setupPasswordToggle(toggleBtnId, fieldId, iconId) {
-                const btn = document.getElementById(toggleBtnId);
-                const field = document.getElementById(fieldId);
-                const icon = document.getElementById(iconId);
+        <form method="POST" autocomplete="off">
+            <input type="hidden" name="action" value="reset_password">
+            
+            <!-- New Password Field na may Toggle Eye Symbol -->
+            <div class="mb-3">
+                <label for="new_password" class="form-label fw-semibold">New Password</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="new_password" name="new_password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters">
+                    <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword">
+                        <i class="bi bi-eye" id="iconNewPassword"></i>
+                    </button>
+                </div>
+            </div>
 
-                if (btn && field && icon) {
-                    btn.addEventListener('click', function () {
-                        const type = field.getAttribute('type') === 'password' ? 'text' : 'password';
-                        field.setAttribute('type', type);
-                        icon.classList.toggle('bi-eye');
-                        icon.classList.toggle('bi-eye-slash');
-                    });
-                }
-            }
+            <!-- Confirm New Password Field na may Toggle Eye Symbol -->
+            <div class="mb-3">
+                <label for="confirm_password" class="form-label fw-semibold">Confirm New Password</label>
+                <div class="input-group">
+                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" minlength="8" required autocomplete="new-password" placeholder="Re-enter new password">
+                    <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword">
+                        <i class="bi bi-eye" id="iconConfirmPassword"></i>
+                    </button>
+                </div>
+            </div>
 
-            setupPasswordToggle('toggleNewPassword', 'new_password', 'iconNewPassword');
-            setupPasswordToggle('toggleConfirmPassword', 'confirm_password', 'iconConfirmPassword');
-        </script>
+            <button type="submit" class="btn btn-primary w-100">Change Password</button>
+        </form>
+    <?php elseif ($showOtpForm): ?>
+        <form method="POST" autocomplete="off">
+            <input type="hidden" name="action" value="verify_otp">
+            <div class="mb-3">
+                <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
+                <input type="text" class="form-control text-center" id="otp" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="Enter OTP" autocomplete="one-time-code" style="letter-spacing:8px;font-size:1.25rem">
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
+        </form>
+        <form method="POST" class="mt-3">
+            <input type="hidden" name="action" value="send_otp">
+            <input type="hidden" name="email" value="<?= h($_SESSION['pw_reset_email']) ?>">
+            <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
+        </form>
+    <?php else: ?>
+        <form method="POST" autocomplete="off">
+            <input type="hidden" name="action" value="send_otp">
+            <div class="mb-3">
+                <label for="email" class="form-label fw-semibold">Registered Email Address</label>
+                <input type="email" class="form-control" id="email" name="email" required maxlength="255" autocomplete="email" placeholder="name@example.com">
+            </div>
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-envelope me-2"></i>Send OTP</button>
+        </form>
     <?php endif; ?>
-</body>
 
+    <a href="login.php" class="back-link"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
+</main>
+
+<?php if ($showPasswordForm): ?>
+<script>
+    function setupPasswordToggle(toggleBtnId, fieldId, iconId) {
+        const btn = document.getElementById(toggleBtnId);
+        const field = document.getElementById(fieldId);
+        const icon = document.getElementById(iconId);
+
+        if (btn && field && icon) {
+            btn.addEventListener('click', function () {
+                const type = field.getAttribute('type') === 'password' ? 'text' : 'password';
+                field.setAttribute('type', type);
+                icon.classList.toggle('bi-eye');
+                icon.classList.toggle('bi-eye-slash');
+            });
+        }
+    }
+
+    setupPasswordToggle('toggleNewPassword', 'new_password', 'iconNewPassword');
+    setupPasswordToggle('toggleConfirmPassword', 'confirm_password', 'iconConfirmPassword');
+</script>
+<?php endif; ?>
+</body>
 </html>
