@@ -5,11 +5,9 @@ require_once __DIR__ . '/config/db.php';
 
 $error = "";
 
-// AUDIT TRAIL LOGGING - PDO VERSION
+// Audit trail logging using PDO
 function logAction($conn, $user_id, $username, $role, $action, $details) {
     try {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-
         $sql = "INSERT INTO audit_log
                 (user_id, username, role, action, details, ip_address)
                 VALUES (:user_id, :username, :role, :action, :details, :ip)";
@@ -21,10 +19,9 @@ function logAction($conn, $user_id, $username, $role, $action, $details) {
             ':role' => $role,
             ':action' => $action,
             ':details' => $details,
-            ':ip' => $ip
+            ':ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
         ]);
     } catch (PDOException $e) {
-        // Keep an audit-table problem from preventing login.
         error_log('Audit log error: ' . $e->getMessage());
     }
 }
@@ -34,27 +31,22 @@ if (isset($_POST['login'])) {
     $password = $_POST['password'] ?? '';
 
     try {
-        // FIND ACTIVE USER
-        $query = "SELECT * FROM users
-                  WHERE username = :username
-                  AND status = 'Active'
-                  LIMIT 1";
+        $sql = "SELECT * FROM users
+                WHERE username = :username
+                AND status = 'Active'
+                LIMIT 1";
 
-        $stmt = $conn->prepare($query);
+        $stmt = $conn->prepare($sql);
         $stmt->execute([':username' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user && password_verify($password, $user['password'])) {
-
-            // PREVENT SESSION FIXATION
             session_regenerate_id(true);
 
-            // SESSION DATA
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['username'] = $user['username'];
             $_SESSION['role'] = $user['role'];
 
-            // AUDIT TRAIL
             logAction(
                 $conn,
                 $user['id'],
@@ -64,7 +56,6 @@ if (isset($_POST['login'])) {
                 'User successfully logged into the system'
             );
 
-            // ROUTING BASED ON ROLE
             if ($user['role'] === 'owner') {
                 header('Location: owner/dashboard.php');
                 exit();
@@ -78,11 +69,9 @@ if (isset($_POST['login'])) {
                 header('Location: dashboard.php');
                 exit();
             }
-
         } else {
             $error = "Invalid username or password";
         }
-
     } catch (PDOException $e) {
         error_log('Login database error: ' . $e->getMessage());
         $error = "Unable to process login. Please try again later.";
