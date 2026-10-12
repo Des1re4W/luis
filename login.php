@@ -21,8 +21,8 @@ function logAction($conn, $user_id, $username, $role, $action, $details) {
 if (isset($_POST['login'])) {
 
     // Clean input
-    $username = trim(mysqli_real_escape_string($conn, $_POST['username']));
-    $password = trim($_POST['password']);
+    $email = trim($_POST['email'] ?? '');
+    $password = trim($_POST['password'] ?? '');
 
     // Get user by username
     $query = "SELECT * FROM users WHERE username = '$username' AND status = 'Active' LIMIT 1";
