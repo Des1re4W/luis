@@ -10,13 +10,24 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'owner') {
 $owner_name = $_SESSION['username'] ?? "owner";
 
 // DATA
-$sales_query = mysqli_query($conn, "SELECT SUM(total_amount) as total_sales FROM orders WHERE status = 'completed'");
-$sales_data = mysqli_fetch_assoc($sales_query);
+try {
+    $sales_data = $conn->query(
+        "SELECT COALESCE(SUM(total_amount), 0) AS total_sales
+         FROM orders WHERE status = 'completed'"
+    )->fetch();
 
-$pending_query = mysqli_query($conn, "SELECT COUNT(*) as pending_count FROM orders WHERE status = 'pending'");
-$pending_data = mysqli_fetch_assoc($pending_query);
+    $pending_data = $conn->query(
+        "SELECT COUNT(*) AS pending_count
+         FROM orders WHERE status = 'pending'"
+    )->fetch();
 
-$orders_query = mysqli_query($conn, "SELECT * FROM orders ORDER BY order_date DESC LIMIT 5");
+    $orders_query = $conn->query(
+        "SELECT * FROM orders ORDER BY order_date DESC LIMIT 5"
+    );
+} catch (PDOException $e) {
+    error_log('Dashboard error: ' . $e->getMessage());
+    die("Unable to load dashboard data.");
+}
 ?>
 
 <!DOCTYPE html>
