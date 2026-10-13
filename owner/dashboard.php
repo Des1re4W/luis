@@ -29,7 +29,6 @@ try {
     die("Unable to load dashboard data.");
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
