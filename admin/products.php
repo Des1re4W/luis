@@ -498,7 +498,7 @@ try {
                                                 <i class="bi bi-boxes"></i> Variants
                                             </a>
 
-                                            <a href="editProduct.php?id=<?php echo $p_id; ?>"
+                                            <a href="editProduct.php?product_id=<?php echo $p_id; ?>"
                                                 class="btn btn-warning btn-sm fw-bold">
                                                 <i class="bi bi-pencil-square"></i> Edit
                                             </a>
