@@ -498,12 +498,12 @@ try {
                                                 <i class="bi bi-boxes"></i> Variants
                                             </a>
 
-                                            <a href="editProduct.php?id=<?php echo $p_id; ?>"
+                                            <a href="editProduct.php?product_id=<?php echo $p_id; ?>"
                                                 class="btn btn-warning btn-sm fw-bold">
                                                 <i class="bi bi-pencil-square"></i> Edit
                                             </a>
 
-                                            <a href="products.php?id=<?php echo $p_id; ?>"
+                                            <a href="products.php?product_id=<?php echo $p_id; ?>"
                                                 onclick="return confirm('Are you sure you want to delete this product?')"
                                                 class="btn btn-danger btn-sm fw-bold">
                                                 <i class="bi bi-trash"></i> Delete
