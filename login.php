@@ -144,7 +144,7 @@ if (isset($_POST['login'])) {
             <div class="text-center mb-3">
                 <img src="assets/logo.jpg"
                     style="width:70px; height:70px; border-radius:50%; object-fit:cover; border:2px solid #1f1b38;">
-                <h4 class="mt-3 mb-1">R. Taipan Hardware</h4>
+                <h4 class="mt-3 mb-1">BOBO LUIS</h4>
                 <small class="text-muted">Please login to continue</small>
             </div>
 
