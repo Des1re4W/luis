@@ -14,7 +14,6 @@ if (
 // Get admin username
 $admin_name = $_SESSION['username'] ?? 'Admin';
 ?>
-```
 
 <!DOCTYPE html>
 <html lang="en">
