@@ -406,36 +406,43 @@ body{
                     </tr>
                 </thead>
                 <tbody id="inventory-table">
-                <?php 
-                if (mysqli_num_rows($result) > 0) {
-                    while($row = mysqli_fetch_assoc($result)) { 
-                        
-                        if ($filter == 'low_stock') {
-                            $p_id = $row['product_id'];
-                            $p_name = $row['product_name'];
-                            $p_category = $row['category'];
-                            $p_image = $row['image'];
-                            $v_name = $row['variant_name'];
-                            $t_stock = $row['item_stock'];
-                            $price_range = "₱" . number_format($row['item_price'], 2);
-                        } else {
-                            $p_id = $row['id'];
-                            $p_name = $row['product_name'];
-                            $p_category = $row['category'];
-                            $p_image = $row['image'];
-                            $v_name = ($row['total_variants'] > 0) ? htmlspecialchars($row['variant_list']) : 'Standard Single Item (No Variants)';
-                            
-                            if ($row['total_variants'] > 0) {
-                                $price_range = "₱" . number_format($row['min_price'], 2);
-                                if($row['min_price'] != $row['max_price']) {
-                                    $price_range .= " - ₱" . number_format($row['max_price'], 2);
-                                }
-                            } else {
-                                $price_range = "₱" . number_format($row['price'], 2);
-                            }
-                            $t_stock = $row['total_stock'];
-                        }
-                ?>
+                <?php
+$row = $result->fetch(PDO::FETCH_ASSOC);
+
+if ($row !== false) {
+    do {
+        if ($filter == 'low_stock') {
+            $p_id = $row['product_id'];
+            $p_name = $row['product_name'];
+            $p_category = $row['category'];
+            $p_image = $row['image'];
+            $v_name = $row['variant_name'];
+            $t_stock = $row['item_stock'];
+            $price_range = "₱" . number_format((float)$row['item_price'], 2);
+
+        } else {
+            $p_id = $row['id'];
+            $p_name = $row['product_name'];
+            $p_category = $row['category'];
+            $p_image = $row['image'];
+
+            $v_name = ((int)$row['total_variants'] > 0)
+                ? htmlspecialchars($row['variant_list'] ?? '', ENT_QUOTES, 'UTF-8')
+                : 'Standard Single Item (No Variants)';
+
+            if ((int)$row['total_variants'] > 0) {
+                $price_range = "₱" . number_format((float)$row['min_price'], 2);
+
+                if ((float)$row['min_price'] != (float)$row['max_price']) {
+                    $price_range .= " - ₱" . number_format((float)$row['max_price'], 2);
+                }
+            } else {
+                $price_range = "₱" . number_format((float)$row['price'], 2);
+            }
+
+            $t_stock = $row['total_stock'];
+        }
+?>
                     <tr>
                         <td class="text-center">
                             <img src="../<?php echo !empty($p_image) ? $p_image : 'assets/no-image.jpg'; ?>" alt="Product Image">
@@ -491,7 +498,7 @@ body{
                         </td>
                     </tr>
                 <?php 
-                    } 
+                    } while ($row = $result->fetch(PDO::FETCH_ASSOC));
                 } else {
                     echo "<tr><td colspan='7' class='text-center py-4 text-muted'>No low stock items found.</td></tr>";
                 }
