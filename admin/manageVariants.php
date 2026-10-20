@@ -123,15 +123,17 @@ if (isset($_POST['add_variant'])) {
 
     $stmt = $conn->prepare($insert_sql);
 
-    if ($stmt->execute([
-        'product_id' => $product_id,
-        'variant_name' => $variant_name,
-        'variant_description' => $variant_description,
-        'cost_price' => $cost_price,
-        'price' => $price,
-        'stock' => $stock,
-        'variant_image' => $variant_image_path
-    ])) {
+    if (
+        $stmt->execute([
+            'product_id' => $product_id,
+            'variant_name' => $variant_name,
+            'variant_description' => $variant_description,
+            'cost_price' => $cost_price,
+            'price' => $price,
+            'stock' => $stock,
+            'variant_image' => $variant_image_path
+        ])
+    ) {
         logVariantAction(
             $conn,
             $admin_user_id,
@@ -286,10 +288,12 @@ if (isset($_GET['delete_id'])) {
                 WHERE id = :variant_id AND product_id = :product_id
             ");
 
-            if ($stmt->execute([
-                'variant_id' => $delete_id,
-                'product_id' => $product_id
-            ])) {
+            if (
+                $stmt->execute([
+                    'variant_id' => $delete_id,
+                    'product_id' => $product_id
+                ])
+            ) {
                 logVariantAction(
                     $conn,
                     $admin_user_id,
@@ -323,208 +327,254 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Manage Product Variants</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
-<body class="bg-light py-4">
-<div class="container-fluid px-4" style="max-width: 1300px;">
 
-    <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm">
-        <div>
-            <h4 class="mb-0 fw-bold">Variants for: <span class="text-primary"><?php echo htmlspecialchars($product['product_name']); ?></span></h4>
-            <small class="text-muted">Main Product Category: <?php echo $product['category']; ?></small>
+<body class="bg-light py-4">
+    <div class="container-fluid px-4" style="max-width: 1300px;">
+
+        <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm">
+            <div>
+                <h4 class="mb-0 fw-bold">Variants for: <span
+                        class="text-primary"><?php echo htmlspecialchars($product['product_name']); ?></span></h4>
+                <small class="text-muted">Main Product Category: <?php echo $product['category']; ?></small>
+            </div>
+            <a href="products.php" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to
+                Inventory</a>
         </div>
-        <a href="products.php" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Inventory</a>
+
+        <?php if (isset($_SESSION['message'])): ?>
+            <div class="alert alert-success py-2 alert-dismissible fade show" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i>
+                <?php echo $_SESSION['message'];
+                unset($_SESSION['message']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['error_message'])): ?>
+            <div class="alert alert-danger py-2 alert-dismissible fade show" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <?php echo $_SESSION['error_message'];
+                unset($_SESSION['error_message']); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
+
+        <div class="row g-4">
+            <div class="col-lg-3 col-md-4">
+                <div class="card border-0 shadow-sm p-3 sticky-top" style="top: 20px; z-index: 10;">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-plus-square"></i> Add New Product Variant</h5>
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Variant Name</label>
+                            <input type="text" name="variant_name" class="form-control form-control-sm"
+                                placeholder="Product variant name" required>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
+                            <textarea name="variant_description" class="form-control form-control-sm" rows="3"
+                                placeholder="Product details"></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Cost Price (₱)</label>
+                            <input type="number" name="cost_price" min="0" step="0.01" required class="form-control">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Selling Price (₱)</label>
+                            <input type="number" name="price" min="0" step="0.01" required class="form-control">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Initial Stock Amount</label>
+                            <input type="number" name="stock" min="0" step="1" required class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold">Variant Specific Photo</label>
+                            <input type="file" name="variant_image" class="form-control form-control-sm"
+                                accept="image/*">
+                        </div>
+                        <button type="submit" name="add_variant" class="btn btn-primary btn-sm w-100 fw-bold">Save
+                            Variant</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="col-lg-9 col-md-8">
+                <div class="card border-0 shadow-sm p-3">
+                    <h5 class="fw-bold mb-3"><i class="bi bi-list-stars"></i> Current Variants Inventory Matrix</h5>
+                    <div class="table-responsive">
+                        <table class="table align-middle table-bordered small">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th class="text-center" style="width: 60px;">Photo</th>
+                                    <th style="width: 150px;">Variant Name</th>
+                                    <th>Variant Description (Customer Side)</th>
+                                    <th style="width: 110px;">Cost Price</th>
+                                    <th style="width: 110px;">Selling Price</th>
+                                    <th style="width: 80px;">Stock</th>
+                                    <th class="text-center" style="width: 130px;">Action Matrix</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (!empty($variants_res)): ?>
+                                    <?php foreach ($variants_res as $v): ?>
+                                        <tr>
+                                            <td class="text-center">
+                                                <?php if (!empty($v['variant_image'])): ?>
+                                                    <img src="../<?php echo htmlspecialchars($v['variant_image']); ?>"
+                                                        class="rounded"
+                                                        style="width:45px; height:45px; object-fit:cover; border:1px solid #ddd;">
+                                                <?php else: ?>
+                                                    <img src="../<?php echo htmlspecialchars($product['image'] ?? ''); ?>"
+                                                        class="rounded"
+                                                        style="width:45px; height:45px; object-fit:cover; opacity: 0.5;"
+                                                        title="Using product default image">
+                                                <?php endif; ?>
+                                            </td>
+
+                                            <td class="fw-bold text-dark">
+                                                <?php echo htmlspecialchars($v['variant_name'] ?? ''); ?>
+                                            </td>
+
+                                            <td>
+                                                <span class="text-muted small">
+                                                    <?php
+                                                    echo !empty($v['variant_description'])
+                                                        ? nl2br(htmlspecialchars($v['variant_description']))
+                                                        : '<i class="text-danger">No description configured. Fallback to main item text.</i>';
+                                                    ?>
+                                                </span>
+                                            </td>
+
+                                            <td class="text-secondary fw-bold">
+                                                ₱<?php echo number_format((float) $v['cost_price'], 2); ?>
+                                            </td>
+
+                                            <td class="text-success fw-bold">
+                                                ₱<?php echo number_format((float) $v['price'], 2); ?>
+                                            </td>
+
+                                            <td class="fw-bold">
+                                                <?php echo (int) $v['stock']; ?>
+                                            </td>
+
+                                            <td class="text-center">
+                                                <div class="btn-group gap-1">
+                                                    <button type="button"
+                                                        class="btn btn-warning btn-sm px-2 py-1 fw-bold text-white btn-edit-variant"
+                                                        data-id="<?php echo (int) $v['id']; ?>"
+                                                        data-name="<?php echo htmlspecialchars($v['variant_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                                        data-desc="<?php echo htmlspecialchars($v['variant_description'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                                        data-cost="<?php echo htmlspecialchars((string) $v['cost_price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                        data-price="<?php echo htmlspecialchars((string) $v['price'], ENT_QUOTES, 'UTF-8'); ?>"
+                                                        data-stock="<?php echo (int) $v['stock']; ?>">
+                                                        <i class="bi bi-pencil-square"></i> Edit
+                                                    </button>
+
+                                                    <a href="manageVariants.php?product_id=<?php echo (int) $product_id; ?>&delete_id=<?php echo (int) $v['id']; ?>"
+                                                        class="btn btn-danger btn-sm px-2 py-1"
+                                                        onclick="return confirm('Are you sure you want to delete this variant?')">
+                                                        <i class="bi bi-trash"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+
+                                <?php else: ?>
+                                    <tr>
+                                        <td colspan="7" class="text-center py-4 text-muted fw-bold">
+                                            No variants created yet for this item. Fill out the form to start.
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <?php if(isset($_SESSION['message'])): ?>
-        <div class="alert alert-success py-2 alert-dismissible fade show" role="alert">
-            <i class="bi bi-check-circle-fill me-2"></i> <?php echo $_SESSION['message']; unset($_SESSION['message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    <?php endif; ?>
-    
-    <?php if(isset($_SESSION['error_message'])): ?>
-        <div class="alert alert-danger py-2 alert-dismissible fade show" role="alert">
-            <i class="bi bi-exclamation-triangle-fill me-2"></i> <?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    <?php endif; ?>
-
-    <div class="row g-4">
-        <div class="col-lg-3 col-md-4">
-            <div class="card border-0 shadow-sm p-3 sticky-top" style="top: 20px; z-index: 10;">
-                <h5 class="fw-bold mb-3"><i class="bi bi-plus-square"></i> Add New Product Variant</h5>
+    <div class="modal fade" id="editVariantModal" tabindex="-1" aria-labelledby="editVariantModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-white">
+                    <h5 class="modal-title fw-bold" id="editVariantModalLabel">📝 Edit Variant Configuration</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
                 <form method="POST" enctype="multipart/form-data">
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Variant Name</label>
-                        <input type="text" name="variant_name" class="form-control form-control-sm" placeholder="Product variant name" required>
+                    <div class="modal-body">
+                        <input type="hidden" name="edit_variant_id" id="edit_variant_id">
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Variant Name</label>
+                            <input type="text" name="edit_variant_name" id="edit_variant_name" class="form-control"
+                                required>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
+                            <textarea name="edit_variant_description" id="edit_variant_description" class="form-control"
+                                rows="3"></textarea>
+                        </div>
+
+                        <div class="row mb-2">
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Cost Price (₱)</label>
+                                <input type="number" name="edit_cost_price" id="edit_cost_price" step="0.01"
+                                    class="form-control" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-bold">Selling Price (₱)</label>
+                                <input type="number" name="edit_price" id="edit_price" step="0.01" class="form-control"
+                                    required>
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Current Available Stock</label>
+                            <input type="number" name="edit_stock" id="edit_stock" class="form-control" required>
+                        </div>
+
+                        <div class="mb-1">
+                            <label class="form-label small fw-bold">Change Variant Image (Optional)</label>
+                            <input type="file" name="edit_variant_image" class="form-control" accept="image/*">
+                        </div>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
-                        <textarea name="variant_description" class="form-control form-control-sm" rows="3" placeholder="Product details"></textarea>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+                        <button type="submit" name="update_variant"
+                            class="btn btn-warning btn-sm text-white fw-bold">Update Changes</button>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Cost Price (₱)</label>
-                        <input type="number" name="cost_price" min="0" step="0.01" required class="form-control">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Selling Price (₱)</label>
-                        <input type="number" name="price" min="0" step="0.01" required class="form-control">
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Initial Stock Amount</label>
-                        <input type="number" name="stock" min="0" step="1" required class="form-control">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Variant Specific Photo</label>
-                        <input type="file" name="variant_image" class="form-control form-control-sm" accept="image/*">
-                    </div>
-                    <button type="submit" name="add_variant" class="btn btn-primary btn-sm w-100 fw-bold">Save Variant</button>
                 </form>
             </div>
         </div>
-
-        <div class="col-lg-9 col-md-8">
-            <div class="card border-0 shadow-sm p-3">
-                <h5 class="fw-bold mb-3"><i class="bi bi-list-stars"></i> Current Variants Inventory Matrix</h5>
-                <div class="table-responsive">
-                    <table class="table align-middle table-bordered small">
-                        <thead class="table-dark">
-                            <tr>
-                                <th class="text-center" style="width: 60px;">Photo</th>
-                                <th style="width: 150px;">Variant Name</th>
-                                <th>Variant Description (Customer Side)</th>
-                                <th style="width: 110px;">Cost Price</th>
-                                <th style="width: 110px;">Selling Price</th>
-                                <th style="width: 80px;">Stock</th>
-                                <th class="text-center" style="width: 130px;">Action Matrix</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php if(mysqli_num_rows($variants_res) > 0): ?>
-                                <?php while($v = mysqli_fetch_assoc($variants_res)): ?>
-                                    <tr>
-                                        <td class="text-center">
-                                            <?php if(!empty($v['variant_image'])): ?>
-                                                <img src="../<?php echo $v['variant_image']; ?>" class="rounded" style="width:45px; height:45px; object-fit:cover; border:1px solid #ddd;">
-                                            <?php else: ?>
-                                                <img src="../<?php echo $product['image']; ?>" class="rounded" style="width:45px; height:45px; object-fit:cover; opacity: 0.5;" title="Using product default image">
-                                            <?php endif; ?>
-                                        </td>
-                                        <td class="fw-bold text-dark"><?php echo htmlspecialchars($v['variant_name']); ?></td>
-                                        <td>
-                                            <span class="text-muted small">
-                                                <?php echo !empty($v['variant_description']) ? nl2br(htmlspecialchars($v['variant_description'])) : '<i class="text-danger">No description configured. Fallback to main item text.</i>'; ?>
-                                            </span>
-                                        </td>
-                                        <td class="text-secondary fw-bold">₱<?php echo number_format($v['cost_price'], 2); ?></td>
-                                        <td class="text-success fw-bold">₱<?php echo number_format($v['price'], 2); ?></td>
-                                        <td class="fw-bold"><?php echo $v['stock']; ?></td>
-                                        <td class="text-center">
-                                            <div class="btn-group gap-1">
-                                                <button type="button" 
-                                                        class="btn btn-warning btn-sm px-2 py-1 fw-bold text-white btn-edit-variant"
-                                                        data-id="<?php echo $v['id']; ?>"
-                                                        data-name="<?php echo htmlspecialchars($v['variant_name']); ?>"
-                                                        data-desc="<?php echo htmlspecialchars($v['variant_description']); ?>"
-                                                        data-cost="<?php echo $v['cost_price']; ?>"
-                                                        data-price="<?php echo $v['price']; ?>"
-                                                        data-stock="<?php echo $v['stock']; ?>">
-                                                    <i class="bi bi-pencil-square"></i> Edit
-                                                </button>
-
-                                                <a href="manageVariants.php?product_id=<?php echo $product_id; ?>&delete_id=<?php echo $v['id']; ?>" 
-                                                   class="btn btn-danger btn-sm px-2 py-1" 
-                                                   onclick="return confirm('Are you sure you want to delete this variant?')">
-                                                    <i class="bi bi-trash"></i>
-                                                </a>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                <?php endwhile; ?>
-                            <?php else: ?>
-                                <tr>
-                                    <td colspan="7" class="text-center py-4 text-muted fw-bold">No variants created yet for this item. Fill out the form to start.</td>
-                                </tr>
-                            <?php endif; ?>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
     </div>
-</div>
 
-<div class="modal fade" id="editVariantModal" tabindex="-1" aria-labelledby="editVariantModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header bg-warning text-white">
-                <h5 class="modal-title fw-bold" id="editVariantModalLabel">📝 Edit Variant Configuration</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <form method="POST" enctype="multipart/form-data">
-                <div class="modal-body">
-                    <input type="hidden" name="edit_variant_id" id="edit_variant_id">
-                    
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Variant Name</label>
-                        <input type="text" name="edit_variant_name" id="edit_variant_name" class="form-control" required>
-                    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.querySelectorAll('.btn-edit-variant').forEach(button => {
+            button.addEventListener('click', function () {
+                document.getElementById('edit_variant_id').value = this.getAttribute('data-id');
+                document.getElementById('edit_variant_name').value = this.getAttribute('data-name');
+                document.getElementById('edit_variant_description').value = this.getAttribute('data-desc');
+                document.getElementById('edit_cost_price').value = this.getAttribute('data-cost');
+                document.getElementById('edit_price').value = this.getAttribute('data-price');
+                document.getElementById('edit_stock').value = this.getAttribute('data-stock');
 
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
-                        <textarea name="edit_variant_description" id="edit_variant_description" class="form-control" rows="3"></textarea>
-                    </div>
-
-                    <div class="row mb-2">
-                        <div class="col-6">
-                            <label class="form-label small fw-bold">Cost Price (₱)</label>
-                            <input type="number" name="edit_cost_price" id="edit_cost_price" step="0.01" class="form-control" required>
-                        </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-bold">Selling Price (₱)</label>
-                            <input type="number" name="edit_price" id="edit_price" step="0.01" class="form-control" required>
-                        </div>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Current Available Stock</label>
-                        <input type="number" name="edit_stock" id="edit_stock" class="form-control" required>
-                    </div>
-
-                    <div class="mb-1">
-                        <label class="form-label small fw-bold">Change Variant Image (Optional)</label>
-                        <input type="file" name="edit_variant_image" class="form-control" accept="image/*">
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-                    <button type="submit" name="update_variant" class="btn btn-warning btn-sm text-white fw-bold">Update Changes</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-document.querySelectorAll('.btn-edit-variant').forEach(button => {
-    button.addEventListener('click', function() {
-        document.getElementById('edit_variant_id').value = this.getAttribute('data-id');
-        document.getElementById('edit_variant_name').value = this.getAttribute('data-name');
-        document.getElementById('edit_variant_description').value = this.getAttribute('data-desc');
-        document.getElementById('edit_cost_price').value = this.getAttribute('data-cost');
-        document.getElementById('edit_price').value = this.getAttribute('data-price');
-        document.getElementById('edit_stock').value = this.getAttribute('data-stock');
-        
-        var editModal = new bootstrap.Modal(document.getElementById('editVariantModal'));
-        editModal.show();
-    });
-});
-</script>
+                var editModal = new bootstrap.Modal(document.getElementById('editVariantModal'));
+                editModal.show();
+            });
+        });
+    </script>
 </body>
+
 </html>
