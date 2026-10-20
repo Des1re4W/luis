@@ -35,7 +35,7 @@ if (isset($_SESSION['user_id'])) {
 $_SESSION = [];
 session_destroy();
 
-header("Location: ../login.php");
+header("Location: ../editProduct.php");
 exit();
 ?>
 
