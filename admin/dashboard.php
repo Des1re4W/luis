@@ -1,14 +1,21 @@
+```php
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+// Check if the user is an admin
+if (
+    !isset($_SESSION['role']) ||
+    $_SESSION['role'] !== 'admin'
+) {
     header("Location: ../login.php");
     exit();
 }
 
-$admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
+// Get admin username
+$admin_name = $_SESSION['username'] ?? 'Admin';
 ?>
+```
 
 <!DOCTYPE html>
 <html lang="en">
