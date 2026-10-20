@@ -1,108 +1,42 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
-    header("Location: ../login.php");
-    exit();
-}
+if (isset($_SESSION['user_id'])) {
+    $username = $_SESSION['username'] ?? 'Unknown';
+    $role = $_SESSION['role'] ?? 'Unknown';
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+    $action = 'Logout';
+    $details = "User $username logged out successfully.";
 
-if (!isset($_GET['id'])) {
-    header("Location: products.php");
-    exit();
-}
+    try {
+        // Insert logout activity into audit_log using PDO
+        $stmt = $conn->prepare("
+            INSERT INTO audit_log
+                (username, role, action, details, ip_address)
+            VALUES
+                (:username, :role, :action, :details, :ip_address)
+        ");
 
-$id = mysqli_real_escape_string($conn, $_GET['id']);
-$get = mysqli_query($conn, "SELECT * FROM products WHERE id='$id'");
-$row = mysqli_fetch_assoc($get);
-
-if (!$row) {
-    header("Location: products.php");
-    exit();
-}
-
-$message = "";
-
-if (isset($_POST['update'])) {
-    $name = mysqli_real_escape_string($conn, $_POST['product_name']);
-    $cost_price = mysqli_real_escape_string($conn, $_POST['cost_price']);
-    $price = mysqli_real_escape_string($conn, $_POST['price']);
-    $category = mysqli_real_escape_string($conn, $_POST['category']);
-    $stock = mysqli_real_escape_string($conn, $_POST['stock']);
-    $description = mysqli_real_escape_string($conn, $_POST['product_description']);
-
-    // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
-    if (floatval($cost_price) > floatval($price)) {
-        $message = "<div class='alert alert-danger'>Error: Cost price cannot be higher than the selling price!</div>";
-    } else {
-        // Check kung may bagong image na inupload[cite: 10]
-        if ($_FILES['image']['name'] != "") {
-            $image = $_FILES['image']['name'];
-            $tmp = $_FILES['image']['tmp_name'];
-            $folder = "../uploads/" . $image;
-            move_uploaded_file($tmp, $folder);
-            $db_path = "uploads/" . $image;
-
-            $query = "UPDATE products SET product_name='$name', cost_price='$cost_price', price='$price', category='$category', stock='$stock', product_description='$description', image='$db_path' WHERE id='$id'";
-        } else {
-            $query = "UPDATE products SET product_name='$name', cost_price='$cost_price', price='$price', category='$category', stock='$stock', product_description='$description' WHERE id='$id'";
-        }
-
-       if (mysqli_query($conn, $query)) {
-            // ==========================================
-            // DETAILED AUDIT TRAIL LOGGING (COMPARE CHANGES)[cite: 10]
-            // ==========================================
-            $changes = [];
-
-            if ($row['product_name'] !== $_POST['product_name']) {
-                $changes[] = "name ('{$row['product_name']}' to '$name')";
-            }
-            if (floatval($row['cost_price']) !== floatval($cost_price)) {
-                $changes[] = "cost price ({$row['cost_price']} to $cost_price)";
-            }
-            if (floatval($row['price']) !== floatval($price)) {
-                $changes[] = "selling price ({$row['price']} to $price)";
-            }
-            if ($row['category'] !== $category) {
-                $changes[] = "category ('{$row['category']}' to '$category')";
-            }
-            if (intval($row['stock']) !== intval($stock)) {
-                $changes[] = "stock ({$row['stock']} to $stock)";
-            }
-            if ($row['product_description'] !== $_POST['product_description']) {
-                $changes[] = "description";
-            }
-            if ($_FILES['image']['name'] != "") {
-                $changes[] = "image";
-            }
-
-            $username = $_SESSION['username'] ?? 'Admin';
-            $role = $_SESSION['role'] ?? 'admin';
-            $action = 'Update Product';
-            
-            $safe_p_name = mysqli_real_escape_string($conn, $name);
-            
-            if (count($changes) > 0) {
-                $details = "Updated product '$safe_p_name': changed " . implode(", ", $changes);
-            } else {
-                $details = "Updated product '$safe_p_name' with no property changes";
-            }
-
-            $ip_address = $_SERVER['REMOTE_ADDR'];
-            $safe_details = mysqli_real_escape_string($conn, $details);
-
-            $log_query = "INSERT INTO audit_log (username, role, action, details, ip_address, timestamp) 
-                          VALUES ('$username', '$role', '$action', '$safe_details', '$ip_address', NOW())";
-            mysqli_query($conn, $log_query);
-            // ==========================================
-
-            header("Location: products.php?msg=Product updated successfully");
-            exit();
-        } else {
-            $message = "<div class='alert alert-danger'>Error updating product: " . mysqli_error($conn) . "</div>";
-        }
+        $stmt->execute([
+            ':username' => $username,
+            ':role' => $role,
+            ':action' => $action,
+            ':details' => $details,
+            ':ip_address' => $ip_address
+        ]);
+    } catch (PDOException $e) {
+        // Log the error without preventing logout
+        error_log("Logout audit log error: " . $e->getMessage());
     }
 }
+
+// Destroy the session even if audit logging fails
+$_SESSION = [];
+session_destroy();
+
+header("Location: login.php");
+exit();
 ?>
 
 <!DOCTYPE html>

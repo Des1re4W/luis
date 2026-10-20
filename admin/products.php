@@ -407,8 +407,7 @@ try {
                             <th class="text-center" style="width: 80px;">Image</th>
                             <th>Product Name</th>
                             <th>Category</th>
-                            <th><?php echo ($filter == 'low_stock') ? 'Specific Item / Variant' : 'Variants List'; ?>
-                            </th>
+                            <th><?php echo ($filter == 'low_stock') ? 'Specific Item / Variant' : 'Variants List'; ?></th>
                             <th class="text-center">
                                 <?php echo ($filter == 'low_stock') ? 'Stock Level' : 'Main Stock'; ?></th>
                             <th><?php echo ($filter == 'low_stock') ? 'Price' : 'Price Range / Single Price'; ?></th>
