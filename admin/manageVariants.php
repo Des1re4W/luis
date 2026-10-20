@@ -2,81 +2,145 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-$admin_user = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
-$admin_role = isset($_SESSION['role']) ? $_SESSION['role'] : "admin";
-$admin_user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
-$ip_address = $_SERVER['REMOTE_ADDR'];
+$admin_user = $_SESSION['username'] ?? 'Admin';
+$admin_role = $_SESSION['role'] ?? 'admin';
+$admin_user_id = $_SESSION['user_id'] ?? 0;
+$ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
 
-$product_id = isset($_GET['product_id']) ? intval($_GET['product_id']) : 0;
+$product_id = filter_input(INPUT_GET, 'product_id', FILTER_VALIDATE_INT) ?: 0;
 
-// Kunin ang info ng main product
-$p_res = mysqli_query($conn, "SELECT * FROM products WHERE id = '$product_id'");
-$product = mysqli_fetch_assoc($p_res);
+// Get main product
+$stmt = $conn->prepare("SELECT * FROM products WHERE id = :id");
+$stmt->execute(['id' => $product_id]);
+$product = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$product) {
     echo "Product not found!";
     exit();
 }
 
-// LOGIC PARA SA ADD NEW VARIANT WITH DUPLICATION CHECK
+// Helper function for audit logging
+function logVariantAction($conn, $user_id, $username, $role, $action, $details, $ip_address)
+{
+    $sql = "INSERT INTO audit_log
+            (user_id, username, role, action, details, ip_address)
+            VALUES (:user_id, :username, :role, :action, :details, :ip_address)";
+
+    $stmt = $conn->prepare($sql);
+
+    return $stmt->execute([
+        'user_id' => $user_id,
+        'username' => $username,
+        'role' => $role,
+        'action' => $action,
+        'details' => $details,
+        'ip_address' => $ip_address
+    ]);
+}
+
+// ADD NEW VARIANT
 if (isset($_POST['add_variant'])) {
-    $variant_name = mysqli_real_escape_string($conn, trim($_POST['variant_name']));
-    $variant_description = mysqli_real_escape_string($conn, trim($_POST['variant_description']));
-    $cost_price = floatval($_POST['cost_price']);
-    $price = floatval($_POST['price']);
-    $stock = intval($_POST['stock']);
-    $variant_image_path = "";
+    $variant_name = trim($_POST['variant_name'] ?? '');
+    $variant_description = trim($_POST['variant_description'] ?? '');
+    $cost_price = (float) ($_POST['cost_price'] ?? 0);
+    $price = (float) ($_POST['price'] ?? 0);
+    $stock = (int) ($_POST['stock'] ?? 0);
+    $variant_image_path = '';
+
+    if ($variant_name === '') {
+        $_SESSION['error_message'] = "Error: Variant name is required!";
+        header("Location: manageVariants.php?product_id=$product_id");
+        exit();
+    }
 
     if ($cost_price < 0 || $price < 0 || $stock < 0) {
-        echo "<script>alert('Error: Negative values are not allowed!'); window.history.back();</script>";
+        $_SESSION['error_message'] = "Error: Negative values are not allowed!";
+        header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if ($cost_price > $price) {
-        $_SESSION['error_message'] = "Error: Cost price cannot be higher than the selling price!";
+        $_SESSION['error_message'] =
+            "Error: Cost price cannot be higher than the selling price!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // RIGID PREVENT DUPLICATION LOGIC
-    $check_dup = mysqli_query($conn, "SELECT id FROM product_variants WHERE product_id = '$product_id' AND LOWER(variant_name) = LOWER('$variant_name')");
-    if (mysqli_num_rows($check_dup) > 0) {
-        $_SESSION['error_message'] = "Error: The variant name '$variant_name' already exist!";
+    // Check duplicate variant names (case-insensitive)
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM product_variants
+        WHERE product_id = :product_id
+          AND LOWER(variant_name) = LOWER(:variant_name)
+    ");
+    $stmt->execute([
+        'product_id' => $product_id,
+        'variant_name' => $variant_name
+    ]);
+
+    if ($stmt->fetch(PDO::FETCH_ASSOC)) {
+        $_SESSION['error_message'] =
+            "Error: The variant name '$variant_name' already exists!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // Pag-handle sa file upload ng variant image
-    if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] == 0) {
-        $target_dir = "../uploads/";
-        if (!file_exists($target_dir)) {
-            mkdir($target_dir, 0777, true);
+    // Handle variant image upload
+    if (
+        isset($_FILES['variant_image']) &&
+        $_FILES['variant_image']['error'] === UPLOAD_ERR_OK
+    ) {
+        $target_dir = __DIR__ . '/../uploads/';
+
+        if (!is_dir($target_dir)) {
+            mkdir($target_dir, 0755, true);
         }
-        $filename = time() . "_" . basename($_FILES["variant_image"]["name"]);
+
+        $original_name = basename($_FILES['variant_image']['name']);
+        $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
+        $filename = uniqid('', true) . '_' . $safe_name;
         $target_file = $target_dir . $filename;
-        
-        if (move_uploaded_file($_FILES["variant_image"]["tmp_name"], $target_file)) {
-            $variant_image_path = "uploads/" . $filename;
+
+        if (move_uploaded_file($_FILES['variant_image']['tmp_name'], $target_file)) {
+            $variant_image_path = 'uploads/' . $filename;
         }
     }
 
-    $insert_sql = "INSERT INTO product_variants (product_id, variant_name, variant_description, cost_price, price, stock, variant_image) 
-                   VALUES ('$product_id', '$variant_name', '$variant_description', '$cost_price', '$price', '$stock', '$variant_image_path')";
-    
-    if (mysqli_query($conn, $insert_sql)) {
-        // --- AUDIT LOGGING FOR ADD ---
-        $audit_action = "Add Variant";
-        $audit_details = mysqli_real_escape_string($conn, "Added new variant '$variant_name' for product '{$product['product_name']}'");
-        
-        $audit_query = "INSERT INTO audit_log (user_id, username, role, action, details, ip_address) 
-                        VALUES ('$admin_user_id', '$admin_user', '$admin_role', '$audit_action', '$audit_details', '$ip_address')";
-        mysqli_query($conn, $audit_query);
+    // Insert variant
+    $insert_sql = "
+        INSERT INTO product_variants
+        (product_id, variant_name, variant_description,
+         cost_price, price, stock, variant_image)
+        VALUES
+        (:product_id, :variant_name, :variant_description,
+         :cost_price, :price, :stock, :variant_image)
+    ";
+
+    $stmt = $conn->prepare($insert_sql);
+
+    if ($stmt->execute([
+        'product_id' => $product_id,
+        'variant_name' => $variant_name,
+        'variant_description' => $variant_description,
+        'cost_price' => $cost_price,
+        'price' => $price,
+        'stock' => $stock,
+        'variant_image' => $variant_image_path
+    ])) {
+        logVariantAction(
+            $conn,
+            $admin_user_id,
+            $admin_user,
+            $admin_role,
+            'Add Variant',
+            "Added new variant '$variant_name' for product '{$product['product_name']}'",
+            $ip_address
+        );
 
         $_SESSION['message'] = "Variant added successfully!";
         header("Location: manageVariants.php?product_id=$product_id");
@@ -84,14 +148,20 @@ if (isset($_POST['add_variant'])) {
     }
 }
 
-// LOGIC PARA SA UPDATE / EDIT VARIANT
+// UPDATE / EDIT VARIANT
 if (isset($_POST['update_variant'])) {
-    $v_id = intval($_POST['edit_variant_id']);
-    $v_name = mysqli_real_escape_string($conn, trim($_POST['edit_variant_name']));
-    $v_desc = mysqli_real_escape_string($conn, trim($_POST['edit_variant_description']));
-    $v_cost = floatval($_POST['edit_cost_price']);
-    $v_price = floatval($_POST['edit_price']);
-    $v_stock = intval($_POST['edit_stock']);
+    $v_id = filter_input(INPUT_POST, 'edit_variant_id', FILTER_VALIDATE_INT) ?: 0;
+    $v_name = trim($_POST['edit_variant_name'] ?? '');
+    $v_desc = trim($_POST['edit_variant_description'] ?? '');
+    $v_cost = (float) ($_POST['edit_cost_price'] ?? 0);
+    $v_price = (float) ($_POST['edit_price'] ?? 0);
+    $v_stock = (int) ($_POST['edit_stock'] ?? 0);
+
+    if ($v_id <= 0 || $v_name === '') {
+        $_SESSION['error_message'] = "Error: A valid variant ID and name are required!";
+        header("Location: manageVariants.php?product_id=$product_id");
+        exit();
+    }
 
     if ($v_cost < 0 || $v_price < 0 || $v_stock < 0) {
         $_SESSION['error_message'] = "Error: Negative values are not allowed!";
@@ -99,49 +169,90 @@ if (isset($_POST['update_variant'])) {
         exit();
     }
 
-    // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if ($v_cost > $v_price) {
-        $_SESSION['error_message'] = "Error: Cost price cannot be higher than the selling price!";
+        $_SESSION['error_message'] =
+            "Error: Cost price cannot be higher than the selling price!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // Prevent duplication tuwing nag-e-edit (maliban sa kanyang sarili)
-    $check_dup_edit = mysqli_query($conn, "SELECT id FROM product_variants WHERE product_id = '$product_id' AND LOWER(variant_name) = LOWER('$v_name') AND id != '$v_id'");
-    if (mysqli_num_rows($check_dup_edit) > 0) {
-        $_SESSION['error_message'] = "Error: The variant name '$v_name' cannot be updated because it is already exist!";
+    // Check duplicate names, excluding the current variant
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM product_variants
+        WHERE product_id = :product_id
+          AND LOWER(variant_name) = LOWER(:variant_name)
+          AND id <> :variant_id
+    ");
+    $stmt->execute([
+        'product_id' => $product_id,
+        'variant_name' => $v_name,
+        'variant_id' => $v_id
+    ]);
+
+    if ($stmt->fetch(PDO::FETCH_ASSOC)) {
+        $_SESSION['error_message'] =
+            "Error: The variant name '$v_name' already exists!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    $update_sql = "UPDATE product_variants SET 
-                    variant_name='$v_name', 
-                    variant_description='$v_desc', 
-                    cost_price='$v_cost', 
-                    price='$v_price', 
-                    stock='$v_stock'";
+    $update_sql = "
+        UPDATE product_variants
+        SET variant_name = :variant_name,
+            variant_description = :variant_description,
+            cost_price = :cost_price,
+            price = :price,
+            stock = :stock
+    ";
 
-    // Kung may bagong picture na pinili habang nag-e-edit
-    if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] == 0) {
-        $target_dir = "../uploads/";
-        $filename = time() . "_" . basename($_FILES["edit_variant_image"]["name"]);
+    $params = [
+        'variant_name' => $v_name,
+        'variant_description' => $v_desc,
+        'cost_price' => $v_cost,
+        'price' => $v_price,
+        'stock' => $v_stock,
+        'variant_id' => $v_id,
+        'product_id' => $product_id
+    ];
+
+    // Replace image only if a new one is uploaded
+    if (
+        isset($_FILES['edit_variant_image']) &&
+        $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK
+    ) {
+        $target_dir = __DIR__ . '/../uploads/';
+
+        if (!is_dir($target_dir)) {
+            mkdir($target_dir, 0755, true);
+        }
+
+        $original_name = basename($_FILES['edit_variant_image']['name']);
+        $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
+        $filename = uniqid('', true) . '_' . $safe_name;
         $target_file = $target_dir . $filename;
-        if (move_uploaded_file($_FILES["edit_variant_image"]["tmp_name"], $target_file)) {
-            $img_path = "uploads/" . $filename;
-            $update_sql .= ", variant_image='$img_path'";
+
+        if (move_uploaded_file($_FILES['edit_variant_image']['tmp_name'], $target_file)) {
+            $img_path = 'uploads/' . $filename;
+            $update_sql .= ", variant_image = :variant_image";
+            $params['variant_image'] = $img_path;
         }
     }
 
-    $update_sql .= " WHERE id='$v_id' AND product_id='$product_id'";
-    
-    if (mysqli_query($conn, $update_sql)) {
-        // --- AUDIT LOGGING FOR UPDATE ---
-        $audit_action = "Update Variant";
-        $audit_details = mysqli_real_escape_string($conn, "Updated variant '$v_name' for product '{$product['product_name']}'");
+    $update_sql .= " WHERE id = :variant_id AND product_id = :product_id";
 
-        $audit_query = "INSERT INTO audit_log (user_id, username, role, action, details, ip_address) 
-                        VALUES ('$admin_user_id', '$admin_user', '$admin_role', '$audit_action', '$audit_details', '$ip_address')";
-        mysqli_query($conn, $audit_query);
+    $stmt = $conn->prepare($update_sql);
+
+    if ($stmt->execute($params)) {
+        logVariantAction(
+            $conn,
+            $admin_user_id,
+            $admin_user,
+            $admin_role,
+            'Update Variant',
+            "Updated variant '$v_name' for product '{$product['product_name']}'",
+            $ip_address
+        );
 
         $_SESSION['message'] = "Variant updated successfully!";
         header("Location: manageVariants.php?product_id=$product_id");
@@ -149,34 +260,66 @@ if (isset($_POST['update_variant'])) {
     }
 }
 
-// LOGIC PARA SA DELETE VARIANT
+// DELETE VARIANT
 if (isset($_GET['delete_id'])) {
-    $delete_id = intval($_GET['delete_id']);
-    
-    // Kunin muna ang pangalan ng variant bago burahin para sa audit log
-    $get_v_name = mysqli_query($conn, "SELECT variant_name FROM product_variants WHERE id = '$delete_id'");
-    $v_data = mysqli_fetch_assoc($get_v_name);
-    $deleted_v_name = $v_data ? $v_data['variant_name'] : 'Unknown';
+    $delete_id = filter_input(INPUT_GET, 'delete_id', FILTER_VALIDATE_INT) ?: 0;
 
-    if (mysqli_query($conn, "DELETE FROM product_variants WHERE id = '$delete_id'")) {
-        // --- AUDIT LOGGING FOR DELETE ---
-        $audit_action = "Delete Variant";
-        $audit_details = mysqli_real_escape_string($conn, "Deleted variant '$deleted_v_name' from product '{$product['product_name']}'");
+    if ($delete_id > 0) {
+        // Get variant name for audit logging, scoped to this product
+        $stmt = $conn->prepare("
+            SELECT variant_name
+            FROM product_variants
+            WHERE id = :variant_id AND product_id = :product_id
+        ");
+        $stmt->execute([
+            'variant_id' => $delete_id,
+            'product_id' => $product_id
+        ]);
 
-        $audit_query = "INSERT INTO audit_log (user_id, username, role, action, details, ip_address) 
-                        VALUES ('$admin_user_id', '$admin_user', '$admin_role', '$audit_action', '$audit_details', '$ip_address')";
-        mysqli_query($conn, $audit_query);
+        $v_data = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        $_SESSION['message'] = "Variant deleted successfully!";
+        if ($v_data) {
+            $deleted_v_name = $v_data['variant_name'];
+
+            $stmt = $conn->prepare("
+                DELETE FROM product_variants
+                WHERE id = :variant_id AND product_id = :product_id
+            ");
+
+            if ($stmt->execute([
+                'variant_id' => $delete_id,
+                'product_id' => $product_id
+            ])) {
+                logVariantAction(
+                    $conn,
+                    $admin_user_id,
+                    $admin_user,
+                    $admin_role,
+                    'Delete Variant',
+                    "Deleted variant '$deleted_v_name' from product '{$product['product_name']}'",
+                    $ip_address
+                );
+
+                $_SESSION['message'] = "Variant deleted successfully!";
+            }
+        }
     }
-    
+
     header("Location: manageVariants.php?product_id=$product_id");
     exit();
 }
 
-// Kunin lahat ng kasalukuyang variants ng product na ito
-$variants_res = mysqli_query($conn, "SELECT * FROM product_variants WHERE product_id = '$product_id' ORDER BY id DESC");
+// Get all variants for this product
+$stmt = $conn->prepare("
+    SELECT *
+    FROM product_variants
+    WHERE product_id = :product_id
+    ORDER BY id DESC
+");
+$stmt->execute(['product_id' => $product_id]);
+$variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
