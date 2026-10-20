@@ -200,18 +200,14 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                         Low Stock
                     </h4>
 
-                    ```php
                     <?php
                     try {
-                        // Products without variants
                         $stmt = $conn->query("
         SELECT COUNT(*) 
         FROM products 
         WHERE stock <= 10
     ");
                         $simpleCount = (int) $stmt->fetchColumn();
-
-                        // Products with variants
                         $stmt = $conn->query("
         SELECT COUNT(*) 
         FROM product_variants 
@@ -219,7 +215,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
     ");
                         $variantCount = (int) $stmt->fetchColumn();
 
-                        // Total low-stock items
                         $lowStockTotal = $simpleCount + $variantCount;
 
                         echo "<h2>" . $lowStockTotal . "</h2>";
@@ -229,7 +224,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                         echo "<h2>--</h2>";
                     }
                     ?>
-                    ```
 
                     <small>Products & Variants with 10 or fewer stocks</small>
                 </div>
@@ -239,7 +233,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
             <div class="col-12 col-md-4">
                 <div class="card bg-primary text-white card-box">
                     <h4>Total Products</h4>
-                    ```php
                     <?php
                     try {
                         // Count main products
@@ -264,7 +257,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                         echo "<h2>--</h2>";
                     }
                     ?>
-                    ```
                     <small>Products + Variant Items</small>
                 </div>
             </div>
@@ -274,7 +266,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                 <div class="card bg-success text-white card-box">
                     <h4>Total Orders</h4>
 
-                    ```php
                     <?php
                     try {
                         $stmt = $conn->query("
@@ -290,7 +281,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                         echo "<h2>--</h2>";
                     }
                     ?>
-                    ```
 
                     <small>Online Orders</small>
                 </div>
