@@ -2,7 +2,8 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role'] ) || $_SESSION['role'] != "admin") {
+// Check admin access
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
@@ -11,79 +12,196 @@ if (!isset($_SESSION['role'] ) || $_SESSION['role'] != "admin") {
 // DELETE PRODUCT LOGIC WITH AUDIT TRAIL
 // ==========================================
 if (isset($_GET['id']) || isset($_GET['delete_id'])) {
-    $delete_id = isset($_GET['id']) ? intval($_GET['id']) : intval($_GET['delete_id']);
-    
-    $p_get = mysqli_query($conn, "SELECT product_name FROM products WHERE id = '$delete_id'");
-    $p_data = mysqli_fetch_assoc($p_get);
-    $deleted_p_name = $p_data['product_name'] ?? 'Unknown Product';
+    $delete_id = filter_var(
+        $_GET['id'] ?? $_GET['delete_id'],
+        FILTER_VALIDATE_INT
+    );
 
-    if (mysqli_query($conn, "DELETE FROM products WHERE id = '$delete_id'")) {
+    if ($delete_id === false || $delete_id === null || $delete_id <= 0) {
+        $_SESSION['message'] = "Invalid product ID.";
+        header("Location: products.php");
+        exit();
+    }
+
+    try {
+        // Get product name before deleting
+        $stmt = $conn->prepare(
+            "SELECT product_name FROM products WHERE id = :id"
+        );
+        $stmt->execute([':id' => $delete_id]);
+        $p_data = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$p_data) {
+            $_SESSION['message'] = "Product not found.";
+            header("Location: products.php");
+            exit();
+        }
+
+        $deleted_p_name = $p_data['product_name'] ?? 'Unknown Product';
+
+        // Delete product
+        $stmt = $conn->prepare(
+            "DELETE FROM products WHERE id = :id"
+        );
+        $stmt->execute([':id' => $delete_id]);
+
+        // Record deletion in audit log
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
         $action = 'Delete Product';
-        
-        $safe_p_name = mysqli_real_escape_string($conn, $deleted_p_name);
-        $details = "Deleted product: " . $safe_p_name;
-        $ip_address = $_SERVER['REMOTE_ADDR'];
+        $details = "Deleted product: " . $deleted_p_name;
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 
-        $log_query = "INSERT INTO audit_log (username, role, action, details, ip_address, timestamp) 
-                      VALUES ('$username', '$role', '$action', '$details', '$ip_address', NOW())";
-        mysqli_query($conn, $log_query);
+        $log_stmt = $conn->prepare("
+            INSERT INTO audit_log
+                (username, role, action, details, ip_address, timestamp)
+            VALUES
+                (:username, :role, :action, :details, :ip_address, CURRENT_TIMESTAMP)
+        ");
+
+        $log_stmt->execute([
+            ':username' => $username,
+            ':role' => $role,
+            ':action' => $action,
+            ':details' => $details,
+            ':ip_address' => $ip_address
+        ]);
 
         $_SESSION['message'] = "Product deleted successfully!";
+        header("Location: products.php");
+        exit();
+
+    } catch (PDOException $e) {
+        error_log("Delete product error: " . $e->getMessage());
+        $_SESSION['message'] = "Unable to delete product. Check whether it is linked to other records.";
         header("Location: products.php");
         exit();
     }
 }
 
-$search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$filter = isset($_GET['filter']) ? $_GET['filter'] : '';
+// ==========================================
+// SEARCH AND FILTER
+// ==========================================
+$search = trim($_GET['search'] ?? '');
+$filter = $_GET['filter'] ?? '';
 
-if ($filter == 'low_stock') {
-    // LOW STOCK QUERY: Direktang kinukuha ang main items na walang variants at ang mga variants na mababa ang stock
-    $query = "(
-                SELECT p.id as product_id, NULL as variant_id, p.product_name, p.category, p.image, 
-                       'Standard Single Item (No Variants)' as variant_name, p.stock as item_stock, p.price as item_price
+try {
+    if ($filter === 'low_stock') {
+
+        // Low-stock products without variants + low-stock variants
+        $query = "
+            SELECT *
+            FROM (
+                SELECT
+                    p.id AS product_id,
+                    NULL AS variant_id,
+                    p.product_name,
+                    p.category,
+                    p.image,
+                    'Standard Single Item (No Variants)' AS variant_name,
+                    p.stock AS item_stock,
+                    p.price AS item_price
                 FROM products p
-                WHERE p.id NOT IN (SELECT DISTINCT product_id FROM product_variants) 
-                  AND p.stock <= 10 AND p.stock > 0
-              )
-              UNION ALL
-              (
-                SELECT p.id as product_id, v.id as variant_id, p.product_name, p.category, 
-                       p.image as image, 
-                       v.variant_name, v.stock as item_stock, v.price as item_price
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM product_variants v
+                    WHERE v.product_id = p.id
+                )
+                  AND p.stock <= 10
+                  AND p.stock > 0
+
+                UNION ALL
+
+                SELECT
+                    p.id AS product_id,
+                    v.id AS variant_id,
+                    p.product_name,
+                    p.category,
+                    p.image,
+                    v.variant_name,
+                    v.stock AS item_stock,
+                    v.price AS item_price
                 FROM product_variants v
-                JOIN products p ON v.product_id = p.id
-                WHERE v.stock <= 10 AND v.stock > 0
-              )";
+                JOIN products p ON p.id = v.product_id
+                WHERE v.stock <= 10
+                  AND v.stock > 0
+            ) AS low_stock_items
+        ";
 
-    if ($search != '') {
-        $query = "SELECT * FROM ($query) as low_stock_items WHERE (product_name LIKE '%$search%' OR category LIKE '%$search%' OR variant_name LIKE '%$search%')";
+        $params = [];
+
+        if ($search !== '') {
+            $query .= "
+                WHERE (
+                    product_name ILIKE :search_name
+                    OR category ILIKE :search_category
+                    OR variant_name ILIKE :search_variant
+                )
+            ";
+
+            $searchTerm = '%' . $search . '%';
+            $params = [
+                ':search_name' => $searchTerm,
+                ':search_category' => $searchTerm,
+                ':search_variant' => $searchTerm
+            ];
+        }
+
+        $query .= " ORDER BY product_id DESC";
+
+    } else {
+
+        // Normal inventory list
+        $query = "
+            SELECT
+                p.*,
+                COUNT(v.id) AS total_variants,
+                p.price AS min_price,
+                CASE
+                    WHEN COUNT(v.id) > 0 THEN MAX(v.price)
+                    ELSE p.price
+                END AS max_price,
+                p.stock AS total_stock,
+                STRING_AGG(v.variant_name, ', ') AS variant_list
+            FROM products p
+            LEFT JOIN product_variants v ON p.id = v.product_id
+            WHERE 1 = 1
+        ";
+
+        $params = [];
+
+        if ($search !== '') {
+            $query .= "
+                AND (
+                    p.product_name ILIKE :search_name
+                    OR p.category ILIKE :search_category
+                )
+            ";
+
+            $searchTerm = '%' . $search . '%';
+            $params = [
+                ':search_name' => $searchTerm,
+                ':search_category' => $searchTerm
+            ];
+        }
+
+        $query .= "
+            GROUP BY p.id
+            ORDER BY p.id DESC
+        ";
     }
-    
-    $query .= " ORDER BY product_id DESC";
 
-} else {
-    // NORMAL INVENTORY LIST QUERY
-    $query = "SELECT p.*, 
-                     COUNT(v.id) as total_variants,
-                     p.price as min_price,
-                     IF(COUNT(v.id) > 0, MAX(v.price), p.price) as max_price,
-                     p.stock as total_stock,
-                     GROUP_CONCAT(v.variant_name SEPARATOR ', ') as variant_list
-              FROM products p
-              LEFT JOIN product_variants v ON p.id = v.product_id
-              WHERE 1=1";
+    // Execute query using PDO
+    $stmt = $conn->prepare($query);
+    $stmt->execute($params);
 
-    if ($search != '') {
-        $query .= " AND (p.product_name LIKE '%$search%' OR p.category LIKE '%$search%')";
-    }
+    // Keep $result available for your existing HTML
+    $result = $stmt;
 
-    $query .= " GROUP BY p.id ORDER BY p.id DESC";
+} catch (PDOException $e) {
+    error_log("Products query error: " . $e->getMessage());
+    die("Unable to load products. Please try again later.");
 }
-
-$result = mysqli_query($conn, $query);
 ?>
 
 <!DOCTYPE html>
