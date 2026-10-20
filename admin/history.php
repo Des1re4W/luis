@@ -1,26 +1,44 @@
+
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
-$date_selected = isset($_GET['filter_date']) ? $_GET['filter_date'] : '';
-$where_online = " WHERE 1=1 ";
-$where_pos = " WHERE 1=1 ";
-if (!empty($date_selected)) {
-    // Para sa orders table (Online)
-    $where_online .= " AND DATE(order_date) = '$date_selected'";
-    // Para sa pos_transaction table (Walk-in)
-    $where_pos .= " AND DATE(transaction_date) = '$date_selected'";
-}
-// get online orders
-$orders = mysqli_query($conn, "SELECT * FROM orders $where_online ORDER BY id DESC");
 
-// get POS transact
-$pos = mysqli_query($conn, "SELECT * FROM pos_transaction $where_pos ORDER BY id DESC");
+$date_selected = $_GET['filter_date'] ?? '';
+
+$where_online = '';
+$where_pos = '';
+
+$params_online = [];
+$params_pos = [];
+
+if (!empty($date_selected)) {
+    // Online orders
+    $where_online = " WHERE CAST(order_date AS DATE) = :filter_date";
+    $params_online['filter_date'] = $date_selected;
+
+    // Walk-in POS transactions
+    $where_pos = " WHERE CAST(transaction_date AS DATE) = :filter_date";
+    $params_pos['filter_date'] = $date_selected;
+}
+
+// Get online orders
+$sql_orders = "SELECT * FROM orders" . $where_online . " ORDER BY id DESC";
+$stmt_orders = $conn->prepare($sql_orders);
+$stmt_orders->execute($params_online);
+$orders = $stmt_orders->fetchAll(PDO::FETCH_ASSOC);
+
+// Get POS transactions
+$sql_pos = "SELECT * FROM pos_transaction" . $where_pos . " ORDER BY id DESC";
+$stmt_pos = $conn->prepare($sql_pos);
+$stmt_pos->execute($params_pos);
+$pos = $stmt_pos->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
