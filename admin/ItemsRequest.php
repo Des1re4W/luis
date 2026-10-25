@@ -22,7 +22,7 @@ if (isset($_POST['send_email_update'])) {
     
     $check_req = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme, o.cart, o.order_date 
                                 FROM customer_requests cr 
-                                JOIN orders o ON cr.order_number = o.id 
+                                JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
                                 WHERE cr.id = ? AND cr.status != 'Pending'");
     $check_req->execute([$req_id]);
     
@@ -154,7 +154,7 @@ if (isset($_POST['update_status'])) {
     if (in_array($status, ['Approved', 'Declined', 'Completed'])) {
         $check_req = $pdo->prepare("SELECT cr.*, o.cart, o.payment_method 
                                      FROM customer_requests cr 
-                                     JOIN orders o ON cr.order_number = o.id 
+                                     JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
                                      WHERE cr.id = ?");
         $check_req->execute([$req_id]);
         
@@ -229,7 +229,7 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
     if (in_array($status, ['Approved', 'Completed'])) {
         $check_req = $pdo->prepare("SELECT cr.*, o.cart, o.payment_method 
                                      FROM customer_requests cr 
-                                     JOIN orders o ON cr.order_number = o.id 
+                                     JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
                                      WHERE cr.id = ?");
         $check_req->execute([$req_id]);
         
@@ -305,7 +305,7 @@ if (isset($_POST['submit_refund'])) {
 
         $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme 
                                    FROM customer_requests cr 
-                                   JOIN orders o ON cr.order_number = o.id 
+                                   JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
                                    WHERE cr.id = ?");
         $get_info->execute([$req_id]);
         
@@ -372,8 +372,9 @@ if (isset($_POST['submit_refund'])) {
     exit();
 }
 
-$cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
-$exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
+// Inayos ang mga JOIN query sa ibaba gamit ang CAST(cr.order_number AS INTEGER)
+$cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
+$exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
 ?>
 <!DOCTYPE html>
 <html lang="en">
