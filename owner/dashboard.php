@@ -142,16 +142,14 @@ body{
 <nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
     <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
-            <img src="../assets/logo.jpg"
-                 style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;" onerror="this.style.display='none'">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu -->
+        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu (Visible lang sa mobile gamit ang d-lg-none) -->
         <div class="d-flex align-items-center text-white gap-3">
-            <span class="d-none d-sm-inline">
+            <span>
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
             </span>
-            <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+            <button class="btn btn-outline-light btn-sm d-lg-none" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
                 <i class="bi bi-list fs-5"></i>
             </button>
         </div>
@@ -275,7 +273,7 @@ document.addEventListener("DOMContentLoaded", function() {
             appSidebar.classList.toggle('show');
         });
         
-        // Close sidebar when clicking outside on mobile/desktop toggle
+        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             if (window.innerWidth < 992) {
                 if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
