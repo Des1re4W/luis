@@ -11,7 +11,7 @@ if (isset($_SESSION['user_id'])) {
 
     try {
         // Insert logout activity into audit_log using PDO
-        $stmt = $PDO->prepare("
+        $stmt = $conn->prepare("
             INSERT INTO audit_log
                 (username, role, action, details, ip_address)
             VALUES
