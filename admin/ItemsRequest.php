@@ -9,7 +9,7 @@ require '../libs/src/Exception.php';
 require '../libs/src/PHPMailer.php';
 require '../libs/src/SMTP.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
     header("Location: ../login.php");
     exit();
 }
@@ -20,13 +20,14 @@ $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
 if (isset($_POST['send_email_update'])) {
     $req_id = (int)$_POST['ticket_id'];
     
-    $check_req = mysqli_query($conn, "SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme, o.cart 
-                                      FROM customer_requests cr 
-                                      JOIN orders o ON cr.order_number = o.id 
-                                      WHERE cr.id = $req_id AND cr.status != 'Pending'");
+    $check_req = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme, o.cart, o.order_date 
+                                FROM customer_requests cr 
+                                JOIN orders o ON cr.order_number = o.id 
+                                WHERE cr.id = ? AND cr.status != 'Pending'");
+    $check_req->execute([$req_id]);
     
-    if (mysqli_num_rows($check_req) > 0) {
-        $ticket_data = mysqli_fetch_assoc($check_req);
+    if ($check_req->rowCount() > 0) {
+        $ticket_data = $check_req->fetch(PDO::FETCH_ASSOC);
         
         $customer_email = $ticket_data['email'];
         $customer_name = $ticket_data['fullname'] . ' ' . $ticket_data['surname'];
@@ -99,25 +100,6 @@ if (isset($_POST['send_email_update'])) {
                 }
             } else {
                 if ($current_status == 'Approved') {
-                    $thermal_items_html = "";
-                    $cart_array = json_decode($ticket_data['cart'], true);
-                    if (is_array($cart_array)) {
-                        foreach ($cart_array as $cart_item) {
-                            $c_name = $cart_item['name'] ?? 'Product';
-                            $c_qty = (int)($cart_item['qty'] ?? 1);
-                            $c_price = (float)($cart_item['price'] ?? 0);
-                            $c_subtotal = $c_price * $c_qty;
-                            
-                            $thermal_items_html .= "
-                                <tr>
-                                    <td style='padding: 3px 0; font-family: monospace; font-size: 12px;'>{$c_name} (x{$c_qty})</td>
-                                    <td align='right' style='padding: 3px 0; font-family: monospace; font-size: 12px;'>₱" . number_format($c_subtotal, 2) . "</td>
-                                </tr>
-                            ";
-                        }
-                    }
-
-                    $order_date_val = $ticket_data['order_date'] ?? date('Y-m-d H:i:s');
                     $item_to_replace_text = !empty($ticket_data['item_to_replace']) ? nl2br(htmlspecialchars($ticket_data['item_to_replace'])) : 'N/A';
 
                     $mail->Body = "
@@ -149,7 +131,8 @@ if (isset($_POST['send_email_update'])) {
             }
 
             $mail->send();
-            mysqli_query($conn, "UPDATE customer_requests SET email_status = '$current_status' WHERE id = $req_id");
+            $update_mail = $pdo->prepare("UPDATE customer_requests SET email_status = ? WHERE id = ?");
+            $update_mail->execute([$current_status, $req_id]);
             $_SESSION['msg'] = "🎉 Email notification successfully sent to $customer_name!";
 
         } catch (Exception $e) {
@@ -165,60 +148,70 @@ if (isset($_POST['send_email_update'])) {
 // --- 2. STATUS UPDATE LOGIC (Kasama ang pag-save ng Decline Reason) ---
 if (isset($_POST['update_status'])) {
     $req_id = (int)$_POST['ticket_id'];
-    $status = mysqli_real_escape_string($conn, $_POST['status']);
-    $decline_reason = isset($_POST['decline_reason']) ? mysqli_real_escape_string($conn, $_POST['decline_reason']) : '';
+    $status = $_POST['status'];
+    $decline_reason = isset($_POST['decline_reason']) ? trim($_POST['decline_reason']) : '';
     
     if (in_array($status, ['Approved', 'Declined', 'Completed'])) {
-        $check_req = mysqli_query($conn, "SELECT cr.*, o.cart, o.payment_method 
-                                          FROM customer_requests cr 
-                                          JOIN orders o ON cr.order_number = o.id 
-                                          WHERE cr.id = $req_id");
+        $check_req = $pdo->prepare("SELECT cr.*, o.cart, o.payment_method 
+                                     FROM customer_requests cr 
+                                     JOIN orders o ON cr.order_number = o.id 
+                                     WHERE cr.id = ?");
+        $check_req->execute([$req_id]);
         
-        if (mysqli_num_rows($check_req) > 0) {
-            $ticket_data = mysqli_fetch_assoc($check_req);
+        if ($check_req->rowCount() > 0) {
+            $ticket_data = $check_req->fetch(PDO::FETCH_ASSOC);
             $request_type = $ticket_data['request_type'];
             $order_number = $ticket_data['order_number'];
-            $account = $ticket_data['account']; 
-            $reason = strtolower($ticket_data['reason']);
-            $item_to_replace = $ticket_data['item_to_replace'];
-            $product_image = $ticket_data['product_image'];
             $cart_array = json_decode($ticket_data['cart'], true);
 
-            mysqli_begin_transaction($conn);
-
             try {
-                $extra_updates = ($status === 'Completed') ? ", email_status = 'Completed'" : "";
+                $pdo->beginTransaction();
+
+                $extra_updates_sql = "";
+                $extra_params = [];
                 
-                // Kapag Declined, i-save ang reason sa admin_notes column para magamit sa email
-                if ($status === 'Declined' && !empty($decline_reason)) {
-                    $extra_updates .= ", admin_notes = '$decline_reason'";
+                if ($status === 'Completed') {
+                    $extra_updates_sql .= ", email_status = ?";
+                    $extra_params[] = 'Completed';
                 }
                 
-                mysqli_query($conn, "UPDATE customer_requests SET status = '$status' $extra_updates WHERE id = $req_id");
+                if ($status === 'Declined' && !empty($decline_reason)) {
+                    $extra_updates_sql .= ", admin_notes = ?";
+                    $extra_params[] = $decline_reason;
+                }
+                
+                $extra_params[] = $status;
+                $extra_params[] = $req_id;
 
-                if ($status === 'Approved') {
-                    if ($request_type === 'cancel') {
-                        if (is_array($cart_array)) {
-                            foreach ($cart_array as $item) {
-                                $qty = (int)$item['qty'];
-                                $product_id = mysqli_real_escape_string($conn, $item['id']);
-                                $variant_id = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
+                $update_stmt = $pdo->prepare("UPDATE customer_requests SET status = ?" . $extra_updates_sql . " WHERE id = ?");
+                $update_stmt->execute($extra_params);
 
-                                if ($variant_id) {
-                                    mysqli_query($conn, "UPDATE product_variants SET stock = stock + $qty WHERE id = $variant_id");
-                                } else {
-                                    mysqli_query($conn, "UPDATE products SET stock = stock + $qty WHERE id = '$product_id'");
-                                }
+                if ($status === 'Approved' && $request_type === 'cancel') {
+                    if (is_array($cart_array)) {
+                        foreach ($cart_array as $item) {
+                            $qty = (int)$item['qty'];
+                            $product_id = $item['id'];
+                            $variant_id = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
+
+                            if ($variant_id) {
+                                $up_var = $pdo->prepare("UPDATE product_variants SET stock = stock + ? WHERE id = ?");
+                                $up_var->execute([$qty, $variant_id]);
+                            } else {
+                                $up_prod = $pdo->prepare("UPDATE products SET stock = stock + ? WHERE id = ?");
+                                $up_prod->execute([$qty, $product_id]);
                             }
                         }
-                        mysqli_query($conn, "UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = $order_number");
                     }
+                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = ?");
+                    $up_ord->execute([$order_number]);
                 }
 
-                mysqli_commit($conn);
+                $pdo->commit();
                 $_SESSION['msg'] = "🎉 Ticket #$req_id status successfully updated to $status!";
             } catch (Exception $e) {
-                mysqli_rollback($conn);
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $_SESSION['msg'] = "❌ Failed to update status: " . $e->getMessage();
             }
         }
@@ -231,46 +224,53 @@ if (isset($_POST['update_status'])) {
 // --- QUICK GET STATUS UPDATE HANDLER (Para sa Approve links) ---
 if (isset($_GET['id']) && isset($_GET['status'])) {
     $req_id = (int)$_GET['id'];
-    $status = mysqli_real_escape_string($conn, $_GET['status']);
+    $status = $_GET['status'];
     
     if (in_array($status, ['Approved', 'Completed'])) {
-        $check_req = mysqli_query($conn, "SELECT cr.*, o.cart, o.payment_method 
-                                          FROM customer_requests cr 
-                                          JOIN orders o ON cr.order_number = o.id 
-                                          WHERE cr.id = $req_id");
+        $check_req = $pdo->prepare("SELECT cr.*, o.cart, o.payment_method 
+                                     FROM customer_requests cr 
+                                     JOIN orders o ON cr.order_number = o.id 
+                                     WHERE cr.id = ?");
+        $check_req->execute([$req_id]);
         
-        if (mysqli_num_rows($check_req) > 0) {
-            $ticket_data = mysqli_fetch_assoc($check_req);
+        if ($check_req->rowCount() > 0) {
+            $ticket_data = $check_req->fetch(PDO::FETCH_ASSOC);
             $request_type = $ticket_data['request_type'];
             $order_number = $ticket_data['order_number'];
             $cart_array = json_decode($ticket_data['cart'], true);
 
-            mysqli_begin_transaction($conn);
-
             try {
-                mysqli_query($conn, "UPDATE customer_requests SET status = '$status' WHERE id = $req_id");
+                $pdo->beginTransaction();
+
+                $up_req = $pdo->prepare("UPDATE customer_requests SET status = ? WHERE id = ?");
+                $up_req->execute([$status, $req_id]);
 
                 if ($status === 'Approved' && $request_type === 'cancel') {
                     if (is_array($cart_array)) {
                         foreach ($cart_array as $item) {
                             $qty = (int)$item['qty'];
-                            $product_id = mysqli_real_escape_string($conn, $item['id']);
+                            $product_id = $item['id'];
                             $variant_id = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
 
                             if ($variant_id) {
-                                mysqli_query($conn, "UPDATE product_variants SET stock = stock + $qty WHERE id = $variant_id");
+                                $up_var = $pdo->prepare("UPDATE product_variants SET stock = stock + ? WHERE id = ?");
+                                $up_var->execute([$qty, $variant_id]);
                             } else {
-                                mysqli_query($conn, "UPDATE products SET stock = stock + $qty WHERE id = '$product_id'");
+                                $up_prod = $pdo->prepare("UPDATE products SET stock = stock + ? WHERE id = ?");
+                                $up_prod->execute([$qty, $product_id]);
                             }
                         }
                     }
-                    mysqli_query($conn, "UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = $order_number");
+                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = ?");
+                    $up_ord->execute([$order_number]);
                 }
 
-                mysqli_commit($conn);
+                $pdo->commit();
                 $_SESSION['msg'] = "🎉 Ticket #$req_id status successfully updated to $status!";
             } catch (Exception $e) {
-                mysqli_rollback($conn);
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
                 $_SESSION['msg'] = "❌ Failed to update status: " . $e->getMessage();
             }
         }
@@ -284,7 +284,7 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
 // --- 3. REFUND SUBMISSION LOGIC ---
 if (isset($_POST['submit_refund'])) {
     $req_id = (int)$_POST['ticket_id'];
-    $ref_no = mysqli_real_escape_string($conn, $_POST['refund_reference']);
+    $ref_no = trim($_POST['refund_reference']);
     
     $proof_filename = "";
     if (isset($_FILES['refund_receipt']) && $_FILES['refund_receipt']['error'] === UPLOAD_ERR_OK) {
@@ -300,15 +300,17 @@ if (isset($_POST['submit_refund'])) {
     }
 
     if (!empty($proof_filename)) {
-        mysqli_query($conn, "UPDATE customer_requests SET status = 'Completed', refund_status = 'Refunded', refund_receipt = '$proof_filename', refund_reference = '$ref_no', email_status = 'Completed' WHERE id = $req_id");
+        $up_ref = $pdo->prepare("UPDATE customer_requests SET status = 'Completed', refund_status = 'Refunded', refund_receipt = ?, refund_reference = ?, email_status = 'Completed' WHERE id = ?");
+        $up_ref->execute([$proof_filename, $ref_no, $req_id]);
 
-        $get_info = mysqli_query($conn, "SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme 
-                                         FROM customer_requests cr 
-                                         JOIN orders o ON cr.order_number = o.id 
-                                         WHERE cr.id = $req_id");
+        $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme 
+                                   FROM customer_requests cr 
+                                   JOIN orders o ON cr.order_number = o.id 
+                                   WHERE cr.id = ?");
+        $get_info->execute([$req_id]);
         
-        if (mysqli_num_rows($get_info) > 0) {
-            $t_data = mysqli_fetch_assoc($get_info);
+        if ($get_info->rowCount() > 0) {
+            $t_data = $get_info->fetch(PDO::FETCH_ASSOC);
             $customer_email = $t_data['email'];
             $customer_name = $t_data['fullname'] . ' ' . $t_data['surname'];
             $order_number = $t_data['order_number'];
@@ -370,8 +372,8 @@ if (isset($_POST['submit_refund'])) {
     exit();
 }
 
-$cancel_result   = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
-$exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
+$cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
+$exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON cr.order_number = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -382,15 +384,47 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background: #f4f6f9; margin: 0; overflow-x: hidden; }
-        .sidebar { position: fixed; top: 0; left: 0; width: 260px; height: 100vh; background: #001f4d; padding: 20px; overflow-y: auto; z-index: 1040; display: flex; flex-direction: column; transition: transform 0.3s ease; }
-        .sidebar h2 { color: white; text-align: center; font-weight: bold; margin-bottom: 40px; line-height: 1.3; font-size: 1.5rem; }
+        body { background: #f4f6f9; margin: 0; overflow-x: hidden; padding-top: 56px; }
+        
+        .navbar-custom {
+            height: 56px;
+            z-index: 1100;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: #051c3c !important;
+        }
+
+        .sidebar { 
+            position: fixed; 
+            top: 56px; 
+            left: 0; 
+            width: 260px; 
+            height: calc(100vh - 56px); 
+            background: #001f4d; 
+            padding: 20px; 
+            overflow-y: auto; 
+            z-index: 1040; 
+            display: flex; 
+            flex-direction: column; 
+            box-shadow: 4px 0 15px rgba(0,0,0,0.15);
+            transition: transform 0.3s ease; 
+        }
+
         .sidebar a { color: white; text-decoration: none; padding: 12px 14px; border-radius: 8px; margin-bottom: 8px; transition: 0.3s; font-size: 15px; display: block; font-weight: 500; }
         .sidebar a i { margin-right: 8px; }
         .sidebar a:hover { background: #0d6efd; padding-left: 20px; }
         .sidebar .active { background: #0d6efd; }
         .logout-section { margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); }
-        .main { margin-left: 260px; padding: 20px; min-height: 100vh; transition: margin 0.3s ease; }
+        
+        .main { 
+            margin-left: 260px; 
+            padding: 20px; 
+            min-height: calc(100vh - 56px); 
+            transition: margin 0.3s ease; 
+        }
+        
         .card-custom { border: none; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
         .nav-pills .nav-link { color: #495057; font-weight: 500; border-radius: 8px; margin-right: 5px; font-size: 0.9rem; }
         .nav-pills .nav-link.active { background-color: #0d6efd; color: white; }
@@ -410,7 +444,7 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
         .line { border-top: 1px dashed #000; margin: 10px 0; }
 
         @media (max-width: 991.98px) {
-            .sidebar { transform: translateX(-100%); width: 260px; }
+            .sidebar { transform: translateX(-100%); }
             .sidebar.show { transform: translateX(0); }
             .main { margin-left: 0; padding: 15px 10px; }
         }
@@ -418,13 +452,23 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
 </head>
 <body>
 
-<nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-    <span class="navbar-brand fw-bold fs-6"><i class="bi bi-headset"></i> Admin Service Request</span>
-    <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle"><i class="bi bi-list fs-4"></i></button>
+<nav class="navbar navbar-dark navbar-custom px-3 d-lg-none">
+    <div class="d-flex align-items-center w-100 justify-content-between">
+        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-headset"></i> Admin Service Request</span>
+        <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle"><i class="bi bi-list fs-4"></i></button>
+    </div>
+</nav>
+
+<nav class="navbar navbar-dark navbar-custom px-3 d-none d-lg-flex">
+    <div class="d-flex align-items-center w-100 justify-content-between">
+        <span class="navbar-brand fw-bold mb-0">Admin Panel</span>
+        <div class="d-flex align-items-center text-white gap-3">
+            <span>Welcome, <strong><?= htmlspecialchars($admin_name); ?></strong></span>
+        </div>
+    </div>
 </nav>
 
 <div class="sidebar" id="appSidebar">
-    <h2>Admin<br> Dashboard</h2>
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
     <a href="products.php"><i class="bi bi-box-seam"></i> Inventory</a>
     <a href="orders.php"><i class="bi bi-receipt"></i> Orders</a>
@@ -476,10 +520,13 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if(mysqli_num_rows($cancel_result) == 0): ?>
+                            <?php 
+                            $cancel_rows = $cancel_result->fetchAll(PDO::FETCH_ASSOC);
+                            if(count($cancel_rows) == 0): 
+                            ?>
                                 <tr><td colspan="8" class="text-center text-muted py-3">No cancellation requests found.</td></tr>
                             <?php endif; ?>
-                            <?php while($row = mysqli_fetch_assoc($cancel_result)): ?>
+                            <?php foreach($cancel_rows as $row): ?>
                                 <tr>
                                     <td class="fw-bold text-primary">#<?php echo htmlspecialchars($row['order_number']); ?></td>
                                     <td><?php echo htmlspecialchars($row['account']); ?></td>
@@ -605,7 +652,38 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
                                 </div>
                                 <?php endif; ?>
 
-                            <?php endwhile; ?>
+                                <!-- REFUND PAYMENT MODAL -->
+                                <?php if($row['status'] == 'Approved' && ($pay_method === 'GCASH' || $pay_method === 'MAYA')): ?>
+                                <div class="modal fade" id="refundModal<?php echo $row['id']; ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form action="ItemsRequest.php" method="POST" enctype="multipart/form-data">
+                                                <div class="modal-header bg-warning text-dark">
+                                                    <h5 class="modal-title fw-bold">Process Refund for Ticket #<?php echo $row['id']; ?></h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body text-start">
+                                                    <input type="hidden" name="ticket_id" value="<?php echo $row['id']; ?>">
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-bold small">E-Wallet Reference Number</label>
+                                                        <input type="text" name="refund_reference" class="form-control" placeholder="Enter transaction reference number..." required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-bold small">Upload Refund Receipt / Proof</label>
+                                                        <input type="file" name="refund_receipt" class="form-control" accept="image/*" required>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" name="submit_refund" class="btn btn-warning btn-sm fw-bold">Submit Refund & Complete</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -629,10 +707,13 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if(mysqli_num_rows($exchange_result) == 0): ?>
+                            <?php 
+                            $exchange_rows = $exchange_result->fetchAll(PDO::FETCH_ASSOC);
+                            if(count($exchange_rows) == 0): 
+                            ?>
                                 <tr><td colspan="9" class="text-center text-muted py-3">No ticket requests found.</td></tr>
                             <?php endif; ?>
-                            <?php while($row = mysqli_fetch_assoc($exchange_result)): ?>
+                            <?php foreach($exchange_rows as $row): ?>
                                 <tr>
                                     <td class="fw-bold text-primary">#<?php echo htmlspecialchars($row['order_number']); ?></td>
                                     <td><?php echo htmlspecialchars($row['account']); ?></td>
@@ -775,7 +856,7 @@ $exchange_result = mysqli_query($conn, "SELECT cr.*, o.order_date, o.fullname, o
                                 </div>
                                 <?php endif; ?>
 
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
