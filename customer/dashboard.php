@@ -1,52 +1,115 @@
 <?php
 session_start();
+
 require_once __DIR__ . '/config/db.php';
+
 if (!isset($_SESSION['cart'])) {
     $_SESSION['cart'] = [];
 }
-$search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$category = isset($_GET['category']) ? mysqli_real_escape_string($conn, $_GET['category']) : '';
-$sort = isset($_GET['sort']) ? $_GET['sort'] : ''; 
-$is_home = (empty($search) && empty($category) && empty($sort));   
 
-$sql = "SELECT p.*, 
-               IFNULL(SUM(oi.qty), 0) AS total_sold,
-               p.price AS min_price,
-               p.price AS max_price,
-               IF(COUNT(v.id) > 0, SUM(v.stock), p.stock) AS total_stock,
-               COUNT(v.id) AS variant_count
-        FROM products p 
-        LEFT JOIN order_items oi ON p.id = oi.product_id 
-        LEFT JOIN product_variants v ON p.id = v.product_id
+$search = trim($_GET['search'] ?? '');
+$category = trim($_GET['category'] ?? '');
+$sort = $_GET['sort'] ?? '';
+
+$is_home = (
+    empty($search) &&
+    empty($category) &&
+    empty($sort)
+);
+
+// Base SQL query
+$sql = "SELECT
+            p.*,
+            COALESCE(SUM(DISTINCT oi.qty), 0) AS total_sold,
+            p.price AS min_price,
+            p.price AS max_price,
+            CASE
+                WHEN COUNT(DISTINCT v.id) > 0
+                THEN (
+                    SELECT SUM(v2.stock)
+                    FROM product_variants v2
+                    WHERE v2.product_id = p.id
+                )
+                ELSE p.stock
+            END AS total_stock,
+            COUNT(DISTINCT v.id) AS variant_count
+        FROM products p
+        LEFT JOIN order_items oi
+            ON p.id = oi.product_id
+        LEFT JOIN product_variants v
+            ON p.id = v.product_id
         WHERE 1=1";
 
-if ($search != '') {
-    $sql .= " AND p.product_name LIKE '%$search%'";
+$params = [];
+
+// Search filter
+if ($search !== '') {
+    $sql .= " AND p.product_name LIKE :search";
+    $params[':search'] = '%' . $search . '%';
 }
 
-if ($category != '') {
-    $sql .= " AND p.category='$category' GROUP BY p.id";
-} else {
-    $sql .= " GROUP BY p.id";
+// Category filter
+if ($category !== '') {
+    $sql .= " AND p.category = :category";
+    $params[':category'] = $category;
 }
+
+$sql .= " GROUP BY p.id";
+
 $sort_label = "";
+
+// Sorting
 switch ($sort) {
-    case 'price_low': $sql .= " ORDER BY min_price ASC"; $sort_label = "(Price: Low to High)"; break;
-    case 'price_high': $sql .= " ORDER BY max_price DESC"; $sort_label = "(Price: High to Low)"; break;
-    case 'az': $sql .= " ORDER BY p.product_name ASC"; $sort_label = "(A-Z)"; break;
-    case 'za': $sql .= " ORDER BY p.product_name DESC"; $sort_label = "(Z-A)"; break;
-    case 'newest': $sql .= " ORDER BY p.id DESC"; $sort_label = "(Newest)"; break;
-    case 'oldest': $sql .= " ORDER BY p.id ASC"; $sort_label = "(Oldest)"; break;
+    case 'price_low':
+        $sql .= " ORDER BY min_price ASC";
+        $sort_label = "(Price: Low to High)";
+        break;
+
+    case 'price_high':
+        $sql .= " ORDER BY max_price DESC";
+        $sort_label = "(Price: High to Low)";
+        break;
+
+    case 'az':
+        $sql .= " ORDER BY p.product_name ASC";
+        $sort_label = "(A-Z)";
+        break;
+
+    case 'za':
+        $sql .= " ORDER BY p.product_name DESC";
+        $sort_label = "(Z-A)";
+        break;
+
+    case 'newest':
+        $sql .= " ORDER BY p.id DESC";
+        $sort_label = "(Newest)";
+        break;
+
+    case 'oldest':
+        $sql .= " ORDER BY p.id ASC";
+        $sort_label = "(Oldest)";
+        break;
+
     default:
-        if ($category == '' && !isset($_GET['view']) && $sort == '') {
+        if (
+            $category === '' &&
+            !isset($_GET['view']) &&
+            $sort === ''
+        ) {
             $sql .= " ORDER BY total_sold DESC LIMIT 8";
         } else {
             $sql .= " ORDER BY p.id DESC";
         }
+        break;
 }
 
-$result = mysqli_query($conn, $sql);
+// Execute PDO query
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+
+$result = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
