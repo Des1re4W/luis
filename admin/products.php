@@ -11,9 +11,9 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 // ==========================================
 // DELETE PRODUCT LOGIC WITH AUDIT TRAIL
 // ==========================================
-if (isset($_GET['id']) || isset($_GET['delete_id'])) {
+if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id'])) {
     $delete_id = filter_var(
-        $_GET['id'] ?? $_GET['delete_id'],
+        $_GET['id'] ?? $_GET['delete_id'] ?? $_GET['product_id'],
         FILTER_VALIDATE_INT
     );
 
@@ -24,8 +24,8 @@ if (isset($_GET['id']) || isset($_GET['delete_id'])) {
     }
 
     try {
-        // Get product name before deleting
-        $stmt = $conn->prepare(
+        // FIXED: $conn -> $pdo
+        $stmt = $pdo->prepare(
             "SELECT product_name FROM products WHERE id = :id"
         );
         $stmt->execute([':id' => $delete_id]);
@@ -40,7 +40,7 @@ if (isset($_GET['id']) || isset($_GET['delete_id'])) {
         $deleted_p_name = $p_data['product_name'] ?? 'Unknown Product';
 
         // Delete product
-        $stmt = $conn->prepare(
+        $stmt = $pdo->prepare(
             "DELETE FROM products WHERE id = :id"
         );
         $stmt->execute([':id' => $delete_id]);
@@ -52,7 +52,7 @@ if (isset($_GET['id']) || isset($_GET['delete_id'])) {
         $details = "Deleted product: " . $deleted_p_name;
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 
-        $log_stmt = $conn->prepare("
+        $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
                 (username, role, action, details, ip_address, timestamp)
             VALUES
@@ -191,11 +191,10 @@ try {
         ";
     }
 
-    // Execute query using PDO
-    $stmt = $conn->prepare($query);
+    // Execute query using PDO ($pdo instead of $conn)
+    $stmt = $pdo->prepare($query);
     $stmt->execute($params);
 
-    // Keep $result available for your existing HTML
     $result = $stmt;
 
 } catch (PDOException $e) {
@@ -514,7 +513,7 @@ try {
                             <?php
                             } while ($row = $result->fetch(PDO::FETCH_ASSOC));
                         } else {
-                            echo "<tr><td colspan='7' class='text-center py-4 text-muted'>No low stock items found.</td></tr>";
+                            echo "<tr><td colspan='7' class='text-center py-4 text-muted'>No products found.</td></tr>";
                         }
                         ?>
                     </tbody>
@@ -556,7 +555,6 @@ try {
                     appSidebar.classList.toggle('show');
                 });
 
-                // Isara ang sidebar kapag nag-click sa labas nito sa mobile view
                 document.addEventListener('click', function (event) {
                     if (window.innerWidth < 992) {
                         if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
