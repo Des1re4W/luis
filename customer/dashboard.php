@@ -1,77 +1,65 @@
 <?php
+// Start session if not already started in db.php
 require_once __DIR__ . '/../config/db.php';
 
-header('Content-Type: text/html; charset=UTF-8');
+// Initialize variables to avoid undefined variable warnings
+$category = $_GET['category'] ?? '';
+$sort = $_GET['sort'] ?? '';
+$is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
+$sort_label = '';
 
-$search = trim($_POST['search'] ?? '');
-
+// Handle your main product listing query safely using PDO (matching your db.php connection)
 try {
-    $sql = "SELECT id, product_name, category, price, stock, image
-            FROM products
-            WHERE product_name LIKE :search
-            ORDER BY product_name ASC";
+    $sql = "SELECT p.id, p.product_name, p.category, p.price, p.stock, p.image, 
+                   MIN(v.price) as min_price, MAX(v.price) as max_price, 
+                   COUNT(v.id) as variant_count, 
+                   COALESCE(SUM(oi.quantity), 0) as total_sold
+            FROM products p
+            LEFT JOIN product_variants v ON p.id = v.product_id
+            LEFT JOIN order_items oi ON p.id = oi.product_id
+            WHERE 1=1";
+
+    $params = [];
+
+    if ($category != '') {
+        $sql .= " AND p.category = :category";
+        $params[':category'] = $category;
+    }
+
+    $sql .= " GROUP BY p.id";
+
+    // Sorting logic
+    if ($sort == 'price_low') {
+        $sql .= " ORDER BY LEAST(p.price, COALESCE(MIN(v.price), p.price)) ASC";
+        $sort_label = "(Price: Low to High)";
+    } elseif ($sort == 'price_high') {
+        $sql .= " ORDER BY GREATEST(p.price, COALESCE(MAX(v.price), p.price)) DESC";
+        $sort_label = "(Price: High to Low)";
+    } elseif ($sort == 'az') {
+        $sql .= " ORDER BY p.product_name ASC";
+        $sort_label = "(A-Z)";
+    } elseif ($sort == 'za') {
+        $sql .= " ORDER BY p.product_name DESC";
+        $sort_label = "(Z-A)";
+    } elseif ($sort == 'newest') {
+        $sql .= " ORDER BY p.id DESC";
+        $sort_label = "(Newest Arrivals)";
+    } elseif ($sort == 'oldest') {
+        $sql .= " ORDER BY p.id ASC";
+        $sort_label = "(Oldest Stock)";
+    } else {
+        $sql .= " ORDER BY total_sold DESC"; // Default top selling
+    }
 
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([
-        ':search' => '%' . $search . '%'
-    ]);
-
+    $stmt->execute($params);
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if (empty($products)) {
-        echo '<p class="text-center text-muted">No products found.</p>';
-        exit;
-    }
-
-    foreach ($products as $product) {
-        $id = (int) $product['id'];
-        $name = htmlspecialchars(
-            $product['product_name'],
-            ENT_QUOTES,
-            'UTF-8'
-        );
-        $category = htmlspecialchars(
-            $product['category'] ?? '',
-            ENT_QUOTES,
-            'UTF-8'
-        );
-        $price = number_format((float) $product['price'], 2);
-        $stock = (int) $product['stock'];
-
-        $image = !empty($product['image'])
-            ? htmlspecialchars($product['image'], ENT_QUOTES, 'UTF-8')
-            : 'assets/no-image.jpg';
-
-        echo '
-        <div class="product-item">
-            <img src="' . $image . '" alt="' . $name . '">
-
-            <h5>' . $name . '</h5>
-
-            <p>' . $category . '</p>
-
-            <p>₱' . $price . '</p>
-
-            <p>Stock: ' . $stock . '</p>
-
-            <button
-                type="button"
-                class="btn btn-primary"
-                onclick="openProductModal(' . $id . ')">
-                View Details
-            </button>
-        </div>';
-    }
-
 } catch (PDOException $e) {
-    error_log('Live search error: ' . $e->getMessage());
-    http_response_code(500);
-    echo '<p class="text-danger">Unable to search products.</p>';
+    error_log('Dashboard product load error: ' . $e->getMessage());
+    $products = [];
 }
 ?>
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
