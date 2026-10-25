@@ -301,7 +301,6 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                     appSidebar.classList.toggle('show');
                 });
 
-                // Isara ang sidebar kapag nag-click sa labas nito sa mobile view
                 document.addEventListener('click', function (event) {
                     if (window.innerWidth < 992) {
                         if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
