@@ -35,8 +35,6 @@ if (isset($_POST['login'])) {
                 WHERE username = :username
                 AND status = 'Active'
                 LIMIT 1";
-
-        // CHANGED: $conn -> $pdo
         $stmt = $pdo->prepare($sql);
         $stmt->execute([':username' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
