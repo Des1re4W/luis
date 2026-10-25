@@ -1,22 +1,21 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
-
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "cashier") {
+require_once __DIR__ . '/../config/db.php';
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== "cashier") {
     header("Location: ../login.php");
     exit();
 }
 
-// 1. QUERY: Kinukuha lahat ng orders na sent to cashier para makita ang status update
-$online_orders = mysqli_query($conn, "SELECT * FROM orders WHERE sent_to_cashier = 1 ORDER BY id DESC");
-
-// 2. REMOVE LOGIC: Inaalis sa view ng cashier (sent_to_cashier = 0)
 if (isset($_POST['remove_order'])) {
-    $order_id = mysqli_real_escape_string($conn, $_POST['order_id']);
-    mysqli_query($conn, "UPDATE orders SET sent_to_cashier = 0 WHERE id = '$order_id'");
+    $order_id = (int)$_POST['order_id'];
+    $stmt = $pdo->prepare("UPDATE orders SET sent_to_cashier = 0 WHERE id = ?");
+    $stmt->execute([$order_id]);
     header("Location: onlineOrders.php");
     exit();
 }
+
+$online_orders_stmt = $pdo->query("SELECT * FROM orders WHERE sent_to_cashier = 1 ORDER BY id DESC");
+$online_orders = $online_orders_stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -61,12 +60,12 @@ if (isset($_POST['remove_order'])) {
 <div class="container py-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold"><i class="bi bi-printer-fill me-2 text-primary"></i>Online Orders</h2>
-        <a href="dashboard.php" class="btn btn-outline-secondary">Back to POS</a> 
+        <a href="dashboard_2.php" class="btn btn-outline-secondary">Back to POS</a> 
     </div>
 
     <div class="row g-4">
-        <?php if (mysqli_num_rows($online_orders) > 0): ?>
-            <?php while($row = mysqli_fetch_assoc($online_orders)): ?>
+        <?php if (count($online_orders) > 0): ?>
+            <?php foreach($online_orders as $row): ?>
                 <div class="col-md-6 col-lg-4">
                     <div class="card order-card h-100">
                         <div class="card-body">
@@ -74,9 +73,9 @@ if (isset($_POST['remove_order'])) {
                                 <h5 class="fw-bold mb-0">Order #<?php echo $row['id']; ?></h5>
                                 <span class="badge bg-primary"><?php echo strtoupper($row['status']); ?></span>
                             </div>
-                            <p class="mb-1 small"><strong>Customer Name:</strong> <?php echo $row['fullname']; ?></p>
-                            <p class="mb-1 small"><strong>Customer Surname:</strong> <?php echo $row['surname']; ?></p>
-                            <p class="mb-3 small text-muted"><?php echo $row['full_address']; ?></p>
+                            <p class="mb-1 small"><strong>Customer Name:</strong> <?php echo htmlspecialchars($row['fullname']); ?></p>
+                            <p class="mb-1 small"><strong>Customer Surname:</strong> <?php echo htmlspecialchars($row['surname']); ?></p>
+                            <p class="mb-3 small text-muted"><?php echo htmlspecialchars($row['full_address']); ?></p>
                             
                             <div class="d-grid gap-2">
                                 <button class="btn btn-dark" onclick='viewReceipt(<?php echo json_encode($row); ?>)'>
@@ -95,7 +94,12 @@ if (isset($_POST['remove_order'])) {
                         </div>
                     </div>
                 </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <div class="col-12 text-center py-5 text-muted">
+                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                <p>No online orders sent to cashier at the moment.</p>
+            </div>
         <?php endif; ?>
     </div>
 </div>
@@ -147,7 +151,7 @@ function viewReceipt(data) {
         itemsHtml += `
             <tr>
                 <td style="padding: 3px 0;">
-                    ${name.toUpperCase()}<br>
+                    ${(name || '').toUpperCase()}<br>
                     <small>${qty} x ${price.toFixed(2)}</small>
                 </td>
                 <td align="right">₱${subtotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -214,9 +218,9 @@ function viewReceipt(data) {
         <div style="font-size: 12px;">
             ORDER ID: #${data.id}<br>
             DATE: ${data.order_date}<br>
-            CUSTOMER: ${data.fullname.toUpperCase()} ${data.surname.toUpperCase()}<br>
-            CONTACT: ${data.contact_number}<br>
-            ADDRESS: ${data.full_address.toUpperCase()}<br>
+            CUSTOMER: ${(data.fullname || '').toUpperCase()} ${(data.surname || '').toUpperCase()}<br>
+            CONTACT: ${data.contact_number || ''}<br>
+            ADDRESS: ${(data.full_address || '').toUpperCase()}<br>
             LANDMARK: ${landmarkText}
         </div>
         <div class="line"></div>
