@@ -1,14 +1,26 @@
 <?php
 session_start();
+
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-$damaged_result = $pdo->query("SELECT * FROM damaged_items ORDER BY id DESC");
+try {
+    $stmt = $pdo->query(
+        "SELECT * FROM damaged_items ORDER BY id DESC"
+    );
+
+    $damaged_result = $stmt->fetchAll();
+
+} catch (PDOException $e) {
+    error_log("Damaged items query failed: " . $e->getMessage());
+    die("Unable to load damaged items. Please try again later.");
+}
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
