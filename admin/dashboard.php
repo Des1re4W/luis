@@ -202,27 +202,27 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
 
                     <?php
                     try {
-                        $stmt = $conn->query("
+    $stmt = $pdo->query("
         SELECT COUNT(*) 
         FROM products 
         WHERE stock <= 10
     ");
-                        $simpleCount = (int) $stmt->fetchColumn();
-                        $stmt = $conn->query("
+    $simpleCount = (int) $stmt->fetchColumn();
+    $stmt = $pdo->query("
         SELECT COUNT(*) 
         FROM product_variants 
         WHERE stock <= 10
     ");
-                        $variantCount = (int) $stmt->fetchColumn();
+    $variantCount = (int) $stmt->fetchColumn();
 
-                        $lowStockTotal = $simpleCount + $variantCount;
+    $lowStockTotal = $simpleCount + $variantCount;
 
-                        echo "<h2>" . $lowStockTotal . "</h2>";
+    echo "<h2>" . $lowStockTotal . "</h2>";
 
-                    } catch (PDOException $e) {
-                        error_log("Low stock query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
+} catch (PDOException $e) {
+    error_log("Low stock query error: " . $e->getMessage());
+    echo "<h2>--</h2>";
+}
                     ?>
 
                     <small>Products & Variants with 10 or fewer stocks</small>
@@ -235,27 +235,27 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                     <h4>Total Products</h4>
                     <?php
                     try {
-                        // Count main products
-                        $stmt = $conn->query("
+    // Count main products
+    $stmt = $pdo->query("
         SELECT COUNT(*) FROM products
     ");
-                        $productCount = (int) $stmt->fetchColumn();
+    $productCount = (int) $stmt->fetchColumn();
 
-                        // Count product variants
-                        $stmt = $conn->query("
+    // Count product variants
+    $stmt = $pdo->query("
         SELECT COUNT(*) FROM product_variants
     ");
-                        $variantCount = (int) $stmt->fetchColumn();
+    $variantCount = (int) $stmt->fetchColumn();
 
-                        // Combined inventory count
-                        $totalInventoryItems = $productCount + $variantCount;
+    // Combined inventory count
+    $totalInventoryItems = $productCount + $variantCount;
 
-                        echo "<h2>" . $totalInventoryItems . "</h2>";
+    echo "<h2>" . $totalInventoryItems . "</h2>";
 
-                    } catch (PDOException $e) {
-                        error_log("Total products query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
+} catch (PDOException $e) {
+    error_log("Total products query error: " . $e->getMessage());
+    echo "<h2>--</h2>";
+}
                     ?>
                     <small>Products + Variant Items</small>
                 </div>
@@ -267,19 +267,19 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
                     <h4>Total Orders</h4>
 
                     <?php
-                    try {
-                        $stmt = $conn->query("
+                    ttry {
+    $stmt = $pdo->query("
         SELECT COUNT(*) FROM orders
     ");
 
-                        $totalOrders = (int) $stmt->fetchColumn();
+    $totalOrders = (int) $stmt->fetchColumn();
 
-                        echo "<h2>" . $totalOrders . "</h2>";
+    echo "<h2>" . $totalOrders . "</h2>";
 
-                    } catch (PDOException $e) {
-                        error_log("Total orders query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
+} catch (PDOException $e) {
+    error_log("Total orders query error: " . $e->getMessage());
+    echo "<h2>--</h2>";
+}
                     ?>
 
                     <small>Online Orders</small>
