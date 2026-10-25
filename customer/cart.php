@@ -48,7 +48,6 @@ foreach ($cart as $item) {
                     <tbody>
     <?php 
     foreach ($cart as $key => $item): 
-        // Pinalitan ang mysqli ng PDO ($pdo) para makuha ang stock nang wasto[cite: 3, 5, 8]
         if (!empty($item['variant_id'])) {
             $stmt = $pdo->prepare("SELECT stock FROM product_variants WHERE id = :id");
             $stmt->execute([':id' => $item['variant_id']]);
