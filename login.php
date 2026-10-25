@@ -36,7 +36,8 @@ if (isset($_POST['login'])) {
                 AND status = 'Active'
                 LIMIT 1";
 
-        $stmt = $conn->prepare($sql);
+        // CHANGED: $conn -> $pdo
+        $stmt = $pdo->prepare($sql);
         $stmt->execute([':username' => $username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -48,7 +49,7 @@ if (isset($_POST['login'])) {
             $_SESSION['role'] = $user['role'];
 
             logAction(
-                $conn,
+                $pdo, // CHANGED: $conn -> $pdo
                 $user['id'],
                 $user['username'],
                 $user['role'],
