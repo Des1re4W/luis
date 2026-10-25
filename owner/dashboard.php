@@ -9,7 +9,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'owner') {
 
 $owner_name = $_SESSION['username'] ?? "owner";
 
-// DATA (Pinalitan ng PDO queries)
+// DATA
 $sales_query = $pdo->query("SELECT SUM(total_amount) as total_sales FROM orders WHERE status = 'completed'");
 $sales_data = $sales_query->fetch(PDO::FETCH_ASSOC);
 
@@ -142,19 +142,18 @@ body{
 <nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
     <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
-            <button class="btn btn-outline-light btn-sm d-lg-none me-2" type="button" id="sidebarToggle">
-                <i class="bi bi-list fs-5"></i>
-            </button>
             <img src="../assets/logo.jpg"
                  style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;" onerror="this.style.display='none'">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- PUSH RIGHT -->
-        <div class="d-flex align-items-center text-white gap-2">
-            <i class="bi bi-person-circle"></i>
+        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu -->
+        <div class="d-flex align-items-center text-white gap-3">
             <span class="d-none d-sm-inline">
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
             </span>
+            <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                <i class="bi bi-list fs-5"></i>
+            </button>
         </div>
     </div>
 </nav>
@@ -276,7 +275,7 @@ document.addEventListener("DOMContentLoaded", function() {
             appSidebar.classList.toggle('show');
         });
         
-        // Close sidebar when clicking outside on mobile
+        // Close sidebar when clicking outside on mobile/desktop toggle
         document.addEventListener('click', function(event) {
             if (window.innerWidth < 992) {
                 if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
