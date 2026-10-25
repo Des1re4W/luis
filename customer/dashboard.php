@@ -9,55 +9,66 @@ $is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
 $sort_label = '';
 
 // Handle your main product listing query safely using PDO (matching your db.php connection)
+
 try {
-    $sql = "SELECT p.id, p.product_name, p.category, p.price, p.stock, p.image,
-               v.min_price, v.max_price,
-               COALESCE(v.variant_count, 0) AS variant_count,
-               COALESCE(s.total_sold, 0)    AS total_sold
-        FROM products p
-        LEFT JOIN (
-            SELECT product_id,
-                   MIN(price) AS min_price,
-                   MAX(price) AS max_price,
-                   COUNT(*)   AS variant_count
-            FROM product_variants
-            GROUP BY product_id
-        ) v ON v.product_id = p.id
-        LEFT JOIN (
-            SELECT product_id, SUM(quantity) AS total_sold
-            FROM order_items
-            GROUP BY product_id
-        ) s ON s.product_id = p.id
-        WHERE 1=1";
+    // Test the products table only, without related-table joins.
+    $sql = "
+        SELECT
+            id,
+            product_name,
+            category,
+            price,
+            stock,
+            image,
+            price AS min_price,
+            price AS max_price,
+            0 AS variant_count,
+            0 AS total_sold
+        FROM public.products
+        WHERE 1 = 1
+    ";
 
     $params = [];
 
-    if ($category != '') {
-        $sql .= " AND p.category = :category";
+    if ($category !== '') {
+        $sql .= " AND category = :category";
         $params[':category'] = $category;
     }
 
-    // Sorting
-    if ($sort == 'price_low') {
-        $sql .= " ORDER BY LEAST(p.price, COALESCE(v.min_price, p.price)) ASC";
-        $sort_label = "(Price: Low to High)";
-    } elseif ($sort == 'price_high') {
-        $sql .= " ORDER BY GREATEST(p.price, COALESCE(v.max_price, p.price)) DESC";
-        $sort_label = "(Price: High to Low)";
-    } elseif ($sort == 'az') {
-        $sql .= " ORDER BY p.product_name ASC";
-        $sort_label = "(A-Z)";
-    } elseif ($sort == 'za') {
-        $sql .= " ORDER BY p.product_name DESC";
-        $sort_label = "(Z-A)";
-    } elseif ($sort == 'newest') {
-        $sql .= " ORDER BY p.id DESC";
-        $sort_label = "(Newest Arrivals)";
-    } elseif ($sort == 'oldest') {
-        $sql .= " ORDER BY p.id ASC";
-        $sort_label = "(Oldest Stock)";
-    } else {
-        $sql .= " ORDER BY total_sold DESC";
+    switch ($sort) {
+        case 'price_low':
+            $sql .= " ORDER BY price ASC";
+            $sort_label = "(Price: Low to High)";
+            break;
+
+        case 'price_high':
+            $sql .= " ORDER BY price DESC";
+            $sort_label = "(Price: High to Low)";
+            break;
+
+        case 'az':
+            $sql .= " ORDER BY product_name ASC";
+            $sort_label = "(A-Z)";
+            break;
+
+        case 'za':
+            $sql .= " ORDER BY product_name DESC";
+            $sort_label = "(Z-A)";
+            break;
+
+        case 'newest':
+            $sql .= " ORDER BY id DESC";
+            $sort_label = "(Newest Arrivals)";
+            break;
+
+        case 'oldest':
+            $sql .= " ORDER BY id ASC";
+            $sort_label = "(Oldest Stock)";
+            break;
+
+        default:
+            $sql .= " ORDER BY id DESC";
+            break;
     }
 
     $stmt = $pdo->prepare($sql);
@@ -65,6 +76,15 @@ try {
     $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
+    error_log('Dashboard product load error: ' . $e->getMessage());
+
+    echo '<div class="alert alert-danger m-3">Database error: '
+        . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
+        . '</div>';
+
+    $products = [];
+}
+ catch (PDOException $e) {
     error_log('Dashboard product load error: ' . $e->getMessage());
     $products = [];
 }
