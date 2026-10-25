@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/db.php';[cite: 3]
+require_once __DIR__ . '/../config/db.php';
 
 // ADMIN ACCESS ONLY
 if (!isset($_SESSION['role']) || strtolower($_SESSION['role']) !== 'admin') {
