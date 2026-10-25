@@ -1,114 +1,75 @@
 <?php
-session_start();
-
 require_once __DIR__ . '/config/db.php';
 
-if (!isset($_SESSION['cart'])) {
-    $_SESSION['cart'] = [];
+header('Content-Type: text/html; charset=UTF-8');
+
+$search = trim($_POST['search'] ?? '');
+
+try {
+    $sql = "SELECT id, product_name, category, price, stock, image
+            FROM products
+            WHERE product_name LIKE :search
+            ORDER BY product_name ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':search' => '%' . $search . '%'
+    ]);
+
+    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($products)) {
+        echo '<p class="text-center text-muted">No products found.</p>';
+        exit;
+    }
+
+    foreach ($products as $product) {
+        $id = (int) $product['id'];
+        $name = htmlspecialchars(
+            $product['product_name'],
+            ENT_QUOTES,
+            'UTF-8'
+        );
+        $category = htmlspecialchars(
+            $product['category'] ?? '',
+            ENT_QUOTES,
+            'UTF-8'
+        );
+        $price = number_format((float) $product['price'], 2);
+        $stock = (int) $product['stock'];
+
+        $image = !empty($product['image'])
+            ? htmlspecialchars($product['image'], ENT_QUOTES, 'UTF-8')
+            : 'assets/no-image.jpg';
+
+        echo '
+        <div class="product-item">
+            <img src="' . $image . '" alt="' . $name . '">
+
+            <h5>' . $name . '</h5>
+
+            <p>' . $category . '</p>
+
+            <p>₱' . $price . '</p>
+
+            <p>Stock: ' . $stock . '</p>
+
+            <button
+                type="button"
+                class="btn btn-primary"
+                onclick="openProductModal(' . $id . ')">
+                View Details
+            </button>
+        </div>';
+    }
+
+} catch (PDOException $e) {
+    error_log('Live search error: ' . $e->getMessage());
+    http_response_code(500);
+    echo '<p class="text-danger">Unable to search products.</p>';
 }
-
-$search = trim($_GET['search'] ?? '');
-$category = trim($_GET['category'] ?? '');
-$sort = $_GET['sort'] ?? '';
-
-$is_home = (
-    empty($search) &&
-    empty($category) &&
-    empty($sort)
-);
-
-// Base SQL query
-$sql = "SELECT
-            p.*,
-            COALESCE(SUM(DISTINCT oi.qty), 0) AS total_sold,
-            p.price AS min_price,
-            p.price AS max_price,
-            CASE
-                WHEN COUNT(DISTINCT v.id) > 0
-                THEN (
-                    SELECT SUM(v2.stock)
-                    FROM product_variants v2
-                    WHERE v2.product_id = p.id
-                )
-                ELSE p.stock
-            END AS total_stock,
-            COUNT(DISTINCT v.id) AS variant_count
-        FROM products p
-        LEFT JOIN order_items oi
-            ON p.id = oi.product_id
-        LEFT JOIN product_variants v
-            ON p.id = v.product_id
-        WHERE 1=1";
-
-$params = [];
-
-// Search filter
-if ($search !== '') {
-    $sql .= " AND p.product_name LIKE :search";
-    $params[':search'] = '%' . $search . '%';
-}
-
-// Category filter
-if ($category !== '') {
-    $sql .= " AND p.category = :category";
-    $params[':category'] = $category;
-}
-
-$sql .= " GROUP BY p.id";
-
-$sort_label = "";
-
-// Sorting
-switch ($sort) {
-    case 'price_low':
-        $sql .= " ORDER BY min_price ASC";
-        $sort_label = "(Price: Low to High)";
-        break;
-
-    case 'price_high':
-        $sql .= " ORDER BY max_price DESC";
-        $sort_label = "(Price: High to Low)";
-        break;
-
-    case 'az':
-        $sql .= " ORDER BY p.product_name ASC";
-        $sort_label = "(A-Z)";
-        break;
-
-    case 'za':
-        $sql .= " ORDER BY p.product_name DESC";
-        $sort_label = "(Z-A)";
-        break;
-
-    case 'newest':
-        $sql .= " ORDER BY p.id DESC";
-        $sort_label = "(Newest)";
-        break;
-
-    case 'oldest':
-        $sql .= " ORDER BY p.id ASC";
-        $sort_label = "(Oldest)";
-        break;
-
-    default:
-        if (
-            $category === '' &&
-            !isset($_GET['view']) &&
-            $sort === ''
-        ) {
-            $sql .= " ORDER BY total_sold DESC LIMIT 8";
-        } else {
-            $sql .= " ORDER BY p.id DESC";
-        }
-        break;
-}
-
-// Execute PDO query
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-
-$result = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
+
 
 
 <!DOCTYPE html>
