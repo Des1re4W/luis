@@ -24,7 +24,7 @@ if (!$product) {
     exit();
 }
 
-// Helper function for audit logging (Updated parameter to $pdo)
+// Helper function for audit logging
 function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $ip_address)
 {
     $sql = "INSERT INTO audit_log
