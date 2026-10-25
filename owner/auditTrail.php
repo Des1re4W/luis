@@ -1,41 +1,41 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/../config/db.php';
 
-// SECURITY GUARD: Owner lang ang pwedeng makakita ng Audit Trail
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== "owner") {
     header("Location: ../login.php");
     exit();
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
-// ==========================================
-// FILTERS & QUERY PARA SA AUDIT TRAIL
-// ==========================================
+
+
 $role_filter = $_GET['role_filter'] ?? 'all';
 $action_filter = $_GET['action_filter'] ?? 'all';
 $date_filter = $_GET['date_filter'] ?? '';
 
 $where_clauses = ["1=1"];
+$params = [];
 
 if ($role_filter !== 'all') {
-    $role = mysqli_real_escape_string($conn, $role_filter);
-    $where_clauses[] = "role = '$role'";
+    $where_clauses[] = "role = ?";
+    $params[] = $role_filter;
 }
 
 if ($action_filter !== 'all') {
-    $action = mysqli_real_escape_string($conn, $action_filter);
-    $where_clauses[] = "action LIKE '%$action%'";
+    $where_clauses[] = "action LIKE ?";
+    $params[] = '%' . $action_filter . '%';
 }
 
 if (!empty($date_filter)) {
-    $date = mysqli_real_escape_string($conn, $date_filter);
-    $where_clauses[] = "DATE(timestamp) = '$date'";
+    $where_clauses[] = "DATE(timestamp) = ?";
+    $params[] = $date_filter;
 }
 
 $where_sql = implode(" AND ", $where_clauses);
-
 $query_string = "SELECT * FROM audit_log WHERE $where_sql ORDER BY timestamp DESC";
-$logs_query = mysqli_query($conn, $query_string);
+$stmt = $pdo->prepare($query_string);
+$stmt->execute($params);
+$logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -53,6 +53,7 @@ body{
     margin:0;
     overflow-x:hidden;
     background:#f8f9fa;
+    padding-top: 56px;
 }
 
 /* NAVBAR */
@@ -77,6 +78,8 @@ body{
     display:flex;
     flex-direction:column;
     box-shadow:4px 0 15px rgba(0,0,0,0.15);
+    transition: transform 0.3s ease;
+    z-index: 1040;
 }
 
 /* LINKS */
@@ -115,14 +118,10 @@ body{
 
 .main-content{
     margin-left:260px;
-    margin-top:56px;
-
     padding:20px;
-
-    width: calc(100% - 260px); 
-    min-height:100vh;
-
+    min-height:calc(100vh - 56px);
     box-sizing:border-box;
+    transition: margin 0.3s ease;
 }
 
 .sidebar::-webkit-scrollbar{
@@ -133,137 +132,158 @@ body{
     background:#0d6efd;
     border-radius:10px;
 }
+
+/* MOBILE RESPONSIVENESS */
+@media (max-width: 991.98px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.show {
+        transform: translateX(0);
+    }
+    .main-content {
+        margin-left: 0;
+    }
+}
 </style>
 </head>
 
 <body>
 
-<nav class="navbar navbar-dark px-3" style="background-color:#051c3c; height:56px; position:fixed; top:0; left:0; right:0; z-index:1100;">
-    <div class="d-flex align-items-center w-100">
+<nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
+    <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
-            <img src="../assets/logo.jpg"
-                 style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- PUSH RIGHT -->
-        <div class="ms-auto d-flex align-items-center text-white gap-2">
-            <i class="bi bi-person-circle"></i>
+        <div class="d-flex align-items-center text-white gap-3">
             <span>
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
             </span>
+            <button class="btn btn-outline-light btn-sm d-lg-none" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                <i class="bi bi-list fs-5"></i>
+            </button>
         </div>
     </div>
 </nav>
 
-
-<!-- 🔥 FIXED WRAPPER (IMPORTANT) -->
-<div class="app-wrapper">
-
-    <div class="sidebar">
-        <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
-        <a href="sales.php" class="sidebar-link"><i class="bi bi-cash-stack"></i> Sales</a>
-        <a href="inventory.php" class="sidebar-link"><i class="bi bi-box-seam"></i> Inventory Report</a>
-        <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
-        <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
-        <a href="auditTrail.php" class="sidebar-link active"><i class="bi bi-shield-lock"></i> Audit Trail</a>
-        <div class="mt-auto border-top border-secondary">
+<div class="sidebar" id="appSidebar">
+    <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
+    <a href="sales.php" class="sidebar-link"><i class="bi bi-cash-stack"></i> Sales</a>
+    <a href="inventory.php" class="sidebar-link"><i class="bi bi-box-seam"></i> Inventory Report</a>
+    <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
+    <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
+    <a href="auditTrail.php" class="sidebar-link active"><i class="bi bi-shield-lock"></i> Audit Trail</a>
+    <div class="logout-section">
         <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
             <i class="bi bi-box-arrow-right"></i> Logout
         </a>
     </div>
-    </div>
+</div>
 
-    <div class="main-content">
+<div class="main-content">
+    <div class="container-fluid p-0">
 
-        <div class="container-fluid p-0">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+            <div>
+                <h2 class="fw-bold text-dark m-0">
+                    <i class="bi bi-shield-lock text-danger"></i> System Audit Trail
+                </h2>
+                <small class="text-muted">View and monitor all activities and transactions within the system.</small>
+            </div>
+        </div>
 
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <h2 class="fw-bold text-dark m-0">
-                        <i class="bi bi-shield-logs text-danger"></i> System Audit Trail
-                    </h2>
-                    <small class="text-muted">View and monitor all activities and transactions within the system.</small>
+        <!-- FILTERS -->
+        <div class="card p-3 mb-4 shadow-sm border-0">
+            <form method="GET" action="auditTrail.php" class="row g-3 align-items-end">
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted">Role</label>
+                    <select name="role_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="all" <?= $role_filter=='all'?'selected':'' ?>>All Roles</option>
+                        <option value="admin" <?= $role_filter=='admin'?'selected':'' ?>>Admin</option>
+                        <option value="cashier" <?= $role_filter=='cashier'?'selected':'' ?>>Cashier</option>
+                    </select>
                 </div>
-            </div>
 
-            <!-- FILTERS -->
-            <div class="card p-3 mb-4 shadow-sm border-0">
-                <form method="GET" action="auditTrail.php" class="row g-3 align-items-end">
-
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold text-muted">Role</label>
-                        <select name="role_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-                            <option value="all">All Roles</option>
-                            <option value="admin">Admin</option>
-                            <option value="cashier">Cashier</option>
-                        </select>
-                    </div>
-
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold text-muted">Action</label>
-                        <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-                            <option value="all">All Actions</option>
-                            <option value="Login">Login / Logout</option>
-                            <option value="Stock">Stock</option>
-                            <option value="Checkout">Checkout</option>
-                            <option value="Order">Order</option>
-                        </select>
-                    </div>
-
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold text-muted">Date</label>
-                        <input type="date" name="date_filter" class="form-control form-control-sm" onchange="this.form.submit()">
-                    </div>
-
-                    <div class="col-md-3">
-                        <label class="form-label small fw-bold text-muted">Search</label>
-                        <input type="text" class="form-control form-control-sm" id="logSearch" onkeyup="filterLogs()">
-                    </div>
-
-                </form>
-            </div>
-
-            <!-- TABLE -->
-            <div class="card shadow-sm border-0">
-                <div class="card-body p-0 table-responsive">
-
-                    <table class="table table-hover align-middle mb-0 table-audit">
-                        <thead class="table-light small text-uppercase">
-                            <tr>
-                                <th>Timestamp</th>
-                                <th>User</th>
-                                <th>Role</th>
-                                <th>Action</th>
-                                <th>Details</th>
-                                <th class="text-end">IP</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                        <?php while($row = mysqli_fetch_assoc($logs_query)) { ?>
-                            <tr class="log-row">
-                                <td><?php echo $row['timestamp']; ?></td>
-                                <td><?php echo $row['username']; ?></td>
-                                <td><span class="badge bg-secondary"><?php echo $row['role']; ?></span></td>
-                                <td><?php echo $row['action']; ?></td>
-                                <td class="text-details"><?php echo $row['details']; ?></td>
-                                <td class="text-end"><?php echo $row['ip_address'] ?? 'N/A'; ?></td>
-                            </tr>
-                        <?php } ?>
-                        </tbody>
-
-                    </table>
-
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted">Action</label>
+                    <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="all" <?= $action_filter=='all'?'selected':'' ?>>All Actions</option>
+                        <option value="Login" <?= $action_filter=='Login'?'selected':'' ?>>Login / Logout</option>
+                        <option value="Stock" <?= $action_filter=='Stock'?'selected':'' ?>>Stock</option>
+                        <option value="Checkout" <?= $action_filter=='Checkout'?'selected':'' ?>>Checkout</option>
+                        <option value="Order" <?= $action_filter=='Order'?'selected':'' ?>>Order</option>
+                    </select>
                 </div>
-            </div>
 
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted">Date</label>
+                    <input type="date" name="date_filter" class="form-control form-control-sm" value="<?= htmlspecialchars($date_filter) ?>" onchange="this.form.submit()">
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-bold text-muted">Search</label>
+                    <input type="text" class="form-control form-control-sm" id="logSearch" onkeyup="filterLogs()" placeholder="Search logs...">
+                </div>
+
+            </form>
+        </div>
+
+        <!-- TABLE -->
+        <div class="card shadow-sm border-0">
+            <div class="card-body p-0 table-responsive">
+                <table class="table table-hover align-middle mb-0 table-audit">
+                    <thead class="table-light small text-uppercase">
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th>Action</th>
+                            <th>Details</th>
+                            <th class="text-end">IP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php if(count($logs) > 0) {
+                        foreach($logs as $row) { 
+                    ?>
+                        <tr class="log-row">
+                            <td><?php echo $row['timestamp']; ?></td>
+                            <td><?php echo htmlspecialchars($row['username']); ?></td>
+                            <td><span class="badge bg-secondary"><?php echo htmlspecialchars($row['role']); ?></span></td>
+                            <td><?php echo htmlspecialchars($row['action']); ?></td>
+                            <td class="text-details"><?php echo htmlspecialchars($row['details']); ?></td>
+                            <td class="text-end"><?php echo htmlspecialchars($row['ip_address'] ?? 'N/A'); ?></td>
+                        </tr>
+                    <?php } } else { ?>
+                        <tr><td colspan="6" class="text-center py-4 text-muted">No audit logs found.</td></tr>
+                    <?php } ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </div>
-
 </div>
 
 <script>
+document.addEventListener("DOMContentLoaded", function() {
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const appSidebar = document.getElementById('appSidebar');
+    if(sidebarToggle && appSidebar) {
+        sidebarToggle.addEventListener('click', function() {
+            appSidebar.classList.toggle('show');
+        });
+        document.addEventListener('click', function(event) {
+            if (window.innerWidth < 992) {
+                if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
+                    appSidebar.classList.remove('show');
+                }
+            }
+        });
+    }
+});
+
 function filterLogs() {
     let input = document.getElementById("logSearch").value.toLowerCase();
     document.querySelectorAll(".log-row").forEach(row => {
