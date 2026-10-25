@@ -9,7 +9,8 @@ if (!isset($_SESSION['role']) || strtolower($_SESSION['role']) !== 'admin') {
 }
 
 $admin_name = $_SESSION['username'] ?? 'Admin';
-$currentAdminId = (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? 0);
+// Siniguro natin na nasasalo ang iba't ibang posibleng session key para sa user ID
+$currentAdminId = (int)($_SESSION['user_id'] ?? $_SESSION['id'] ?? $_SESSION['admin_id'] ?? 0);
 
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -70,10 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
                         $adminRole = $_SESSION['role'] ?? 'admin';
 
-                        // Isinama ang user_id para hindi mag-error ang not-null constraint
                         $auditStmt = $pdo->prepare("INSERT INTO audit_log (user_id, username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)");
                         if ($auditStmt) {
-                            $auditStmt->execute([$currentAdminId, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
+                            $auditStmt->execute([$currentAdminId > 0 ? $currentAdminId : null, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
                         }
                     } else {
                         $error = "Failed to create account. Please try again.";
@@ -111,7 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $auditStmt = $pdo->prepare("INSERT INTO audit_log (user_id, username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)");
                         if ($auditStmt) {
-                            $auditStmt->execute([$currentAdminId, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
+                            $auditStmt->execute([$currentAdminId > 0 ? $currentAdminId : null, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
                         }
                     } else {
                         $error = "Failed to archive account.";
@@ -145,10 +145,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
                         $adminRole = $_SESSION['role'] ?? 'admin';
 
-                        // Isinama na rin dito ang $currentAdminId para sa user_id column
                         $auditStmt = $pdo->prepare("INSERT INTO audit_log (user_id, username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)");
                         if ($auditStmt) {
-                            $auditStmt->execute([$currentAdminId, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
+                            $auditStmt->execute([$currentAdminId > 0 ? $currentAdminId : null, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
                         }
                     } else {
                         $error = "Failed to unarchive account.";
