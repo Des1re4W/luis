@@ -60,7 +60,7 @@ $online_orders = $online_orders_stmt->fetchAll(PDO::FETCH_ASSOC);
 <div class="container py-5">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold"><i class="bi bi-printer-fill me-2 text-primary"></i>Online Orders</h2>
-        <a href="dashboard_2.php" class="btn btn-outline-secondary">Back to POS</a> 
+        <a href="dashboard.php" class="btn btn-outline-secondary">Back to POS</a> 
     </div>
 
     <div class="row g-4">
