@@ -144,7 +144,7 @@ try {
                 <a href="cart.php" class="btn btn-warning btn-sm position-relative me-3">
                     🛒 Cart
                     <?php 
-                        $cartCount = count($_SESSION['cart']);
+                        $cartCount = isset($_SESSION['cart']) ? count($_SESSION['cart']) : 0;
                         if ($cartCount > 0) { 
                     ?>
                         <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
@@ -188,8 +188,8 @@ try {
     </div>
 
     <div class="row row-cols-2 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4" id="productResults">
-        <?php if (mysqli_num_rows($result) > 0) { ?>
-            <?php while($row = mysqli_fetch_assoc($result)) { 
+        <?php if (!empty($products)) { ?>
+            <?php foreach($products as $row) { 
                 $price_display = "₱" . number_format($row['min_price'], 2);
                 if($row['variant_count'] > 0 && $row['min_price'] != $row['max_price']) {
                     $price_display .= " - ₱" . number_format($row['max_price'], 2);
@@ -334,7 +334,6 @@ function openProductModal(productId) {
 
         select.innerHTML = "";
 
-        // KAPAG WALANG VARIANTS ANG ITEM (DIRETSONG PRODUKTO)
         if(!data.variants || data.variants.length === 0) {
             dropdownContainer.classList.add('d-none'); 
             
@@ -352,7 +351,6 @@ function openProductModal(productId) {
             calculateLiveTotal();
             
         } else {
-            // KAPAG MAY VARIANTS ANG ITEM
             dropdownContainer.classList.remove('d-none'); 
             
             var defaultOpt = document.createElement('option');
@@ -490,7 +488,6 @@ function updateLinkParameters() {
     var productId = select.getAttribute('data-product-id');
     var qty = document.getElementById('modalQtyInput').value;
 
-    // FIXED: Tinanggal na ang reference parameters para sa Buy Now button
     if(dropdownContainer.classList.contains('d-none') || select.value === "MAIN_PRODUCT") {
         document.getElementById('modalAddToCartBtn').href = `addtocart.php?id=${productId}&qty=${qty}`;
     } else {
