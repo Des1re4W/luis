@@ -1,17 +1,13 @@
 <?php
-// Start session if not already started in db.php
 require_once __DIR__ . '/../config/db.php';
 
-// Initialize variables to avoid undefined variable warnings
 $category = $_GET['category'] ?? '';
 $sort = $_GET['sort'] ?? '';
 $is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
 $sort_label = '';
 
-// Handle your main product listing query safely using PDO (matching your db.php connection)
 
 try {
-    // Test the products table only, without related-table joins.
     $sql = "
         SELECT
             id,
