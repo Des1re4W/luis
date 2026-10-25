@@ -19,7 +19,7 @@ try {
             COALESCE(v.max_price, p.price) AS max_price,
             COALESCE(v.variant_count, 0) AS variant_count,
             COALESCE(s.total_sold, 0) AS total_sold
-        FROM products p
+        FROM products 
 
         LEFT JOIN (
             SELECT
