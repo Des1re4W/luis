@@ -1,9 +1,8 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/../config/db.php';
 
-// SECURITY GUARD: Siguraduhin na owner o admin lang ang makakapasok
-if (!isset($_SESSION['role']) || ($_SESSION['role'] !== "owner" && $_SESSION['role'] !== "admin")) {
+if (!isset($_SESSION['role'] ) || $_SESSION['role'] !== 'owner') {
     header("Location: ../login.php");
     exit();
 }
@@ -11,21 +10,25 @@ $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
 $low_stock_threshold = 10;
 
 // ==========================================
-// 1. DATA FETCHING PARA SA MGA SUMMARY CARDS (Kasama ang Variants)
+// 1. DATA FETCHING PARA SA MGA SUMMARY CARDS (PDO compatible)
 // ==========================================
-$count_query = mysqli_query($conn, "SELECT COUNT(*) as total FROM products UNION ALL SELECT COUNT(*) as total FROM product_variants");
-$total_products = 0; while($cq = mysqli_fetch_assoc($count_query)) { $total_products += $cq['total']; }
+$count_query = $pdo->query("SELECT COUNT(*) as total FROM products UNION ALL SELECT COUNT(*) as total FROM product_variants");
+$total_products = 0; 
+while($cq = $count_query->fetch(PDO::FETCH_ASSOC)) { $total_products += $cq['total']; }
 
-$stock_query = mysqli_query($conn, "SELECT SUM(stock) as total_stock FROM products UNION ALL SELECT SUM(stock) as total_stock FROM product_variants");
-$total_stock = 0; while($sq = mysqli_fetch_assoc($stock_query)) { $total_stock += $sq['total_stock']; }
+$stock_query = $pdo->query("SELECT SUM(stock) as total_stock FROM products UNION ALL SELECT SUM(stock) as total_stock FROM product_variants");
+$total_stock = 0; 
+while($sq = $stock_query->fetch(PDO::FETCH_ASSOC)) { $total_stock += $sq['total_stock']; }
 
-$low_query = mysqli_query($conn, "SELECT COUNT(*) as total FROM products WHERE stock <= $low_stock_threshold AND stock > 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock <= $low_stock_threshold AND stock > 0");
-$low_stock_count = 0; while($lq = mysqli_fetch_assoc($low_query)) { $low_stock_count += $lq['total']; }
+$low_query = $pdo->query("SELECT COUNT(*) as total FROM products WHERE stock <= $low_stock_threshold AND stock > 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock <= $low_stock_threshold AND stock > 0");
+$low_stock_count = 0; 
+while($lq = $low_query->fetch(PDO::FETCH_ASSOC)) { $low_stock_count += $lq['total']; }
 
-$out_query = mysqli_query($conn, "SELECT COUNT(*) as total FROM products WHERE stock = 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock = 0");
-$out_of_stock_count = 0; while($oq = mysqli_fetch_assoc($out_query)) { $out_of_stock_count += $oq['total']; }
+$out_query = $pdo->query("SELECT COUNT(*) as total FROM products WHERE stock = 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock = 0");
+$out_of_stock_count = 0; 
+while($oq = $out_query->fetch(PDO::FETCH_ASSOC)) { $out_of_stock_count += $oq['total']; }
 
-$inventory_query = mysqli_query($conn, "
+$inventory_query = $pdo->query("
     SELECT id, product_name, price, stock, 'Main Product' AS item_type FROM products
     UNION ALL
     SELECT v.id, v.variant_name AS product_name, v.price, v.stock, 'Variant Item' AS item_type 
@@ -45,156 +48,168 @@ $inventory_query = mysqli_query($conn, "
     
     <style>
     body { 
-    background-color: #f8fafc; 
-    font-family: 'Segoe UI', system-ui, sans-serif; 
-    overflow-x: hidden;
-}
-
-.wrapper {
-    display: flex;
-    width: 100%;
-    min-height: calc(100vh - 56px);
-}
-
-nav.navbar {
-    height: 56px;
-}
-.sidebar{
-    position:fixed;
-    top:56px; 
-    left:0;
-    width:260px;
-    height:calc(100vh - 56px);
-    background:#001f4d;
-    padding:20px;
-    overflow-y:auto;
-    display:flex;
-    flex-direction:column;
-    box-shadow:4px 0 15px rgba(0,0,0,0.15);
-}
-
-.sidebar-link {
-    color: #adb5bd;
-    text-decoration: none;
-
-    padding: 12px 14px;
-    margin-bottom: 8px;
-
-    border-radius: 12px;
-
-    font-size: 15px;
-    font-weight: 500;
-
-    display: flex;
-    align-items: center;
-
-    transition: all 0.25s ease;
-}
-
-.sidebar-link i {
-    margin-right: 10px;
-}
-.sidebar-link:hover {
-    background: #0d6efd;
-    color: #fff;
-    transform: translateX(4px);
-}
-
-
-.sidebar-link.active {
-    background: #0d6efd;
-    color: #fff;
-}
-
-
-.logout-section {
-    margin-top: auto;
-    padding-top: 15px;
-    border-top: 1px solid rgba(255,255,255,0.2);
-}
-.main-content {
-    flex: 1;
-    margin-left: 280px;   
-    margin-right: 0;      
-    padding: 20px;
-
-    width: calc(100% - 280px);
-    background: #f8f9fa;
-    min-height: 100vh;
-    overflow-x: hidden;
-}
-body {
-    padding-top: 56px;
-}
-
-.sidebar::-webkit-scrollbar {
-    width: 5px;
-}
-
-.sidebar::-webkit-scrollbar-thumb {
-    background: #0d6efd;
-    border-radius: 10px;
-}
-@media print {
-    body {
-        background: #fff;
+        background-color: #f8fafc; 
+        font-family: 'Segoe UI', system-ui, sans-serif; 
+        overflow-x: hidden;
+        padding-top: 56px;
     }
 
-    .sidebar,
-    nav,
-    .btn,
-    .filter-box {
-        display: none !important;
+    .wrapper {
+        display: flex;
+        width: 100%;
+        min-height: calc(100vh - 56px);
+    }
+
+    nav.navbar {
+        height: 56px;
+        z-index: 1100;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 56px; 
+        left: 0;
+        width: 260px;
+        height: calc(100vh - 56px);
+        background: #001f4d;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 4px 0 15px rgba(0,0,0,0.15);
+        transition: transform 0.3s ease;
+        z-index: 1040;
+    }
+
+    .sidebar-link {
+        color: #adb5bd;
+        text-decoration: none;
+        padding: 12px 14px;
+        margin-bottom: 8px;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        transition: all 0.25s ease;
+    }
+
+    .sidebar-link i {
+        margin-right: 10px;
+    }
+    .sidebar-link:hover {
+        background: #0d6efd;
+        color: #fff;
+        transform: translateX(4px);
+    }
+
+    .sidebar-link.active {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .logout-section {
+        margin-top: auto;
+        padding-top: 15px;
+        border-top: 1px solid rgba(255,255,255,0.2);
     }
 
     .main-content {
-        margin: 0;
-        padding: 0;
-        height: auto;
+        flex: 1;
+        margin-left: 260px;   
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: calc(100vh - 56px);
+        overflow-x: hidden;
+        transition: margin 0.3s ease;
     }
-}
-</style>
+
+    .sidebar::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+        background: #0d6efd;
+        border-radius: 10px;
+    }
+
+    /* MOBILE RESPONSIVENESS */
+    @media (max-width: 991.98px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.show {
+            transform: translateX(0);
+        }
+        .main-content {
+            margin-left: 0;
+        }
+    }
+
+    @media print {
+        body {
+            background: #fff;
+            padding-top: 0;
+        }
+
+        .sidebar,
+        nav,
+        .btn,
+        .filter-box {
+            display: none !important;
+        }
+
+        .main-content {
+            margin: 0;
+            padding: 0;
+            height: auto;
+        }
+    }
+    </style>
 </head>
 <body>
 
-<nav class="navbar navbar-dark px-3" style="background-color:#051c3c; height:56px; position:fixed; top:0; left:0; right:0; z-index:1100;">
-    <div class="d-flex align-items-center w-100">
+<nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
+    <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
-            <img src="../assets/logo.jpg"
-                 style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- PUSH RIGHT -->
-        <div class="ms-auto d-flex align-items-center text-white gap-2">
-            <i class="bi bi-person-circle"></i>
+        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu (Visible lang sa mobile gamit ang d-lg-none) -->
+        <div class="d-flex align-items-center text-white gap-3">
             <span>
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
             </span>
+            <button class="btn btn-outline-light btn-sm d-lg-none" type="button" id="sidebarToggle" aria-label="Toggle sidebar">
+                <i class="bi bi-list fs-5"></i>
+            </button>
         </div>
     </div>
 </nav>
 
-
 <div class="wrapper">
 
-    <div class="sidebar">
+    <div class="sidebar" id="appSidebar">
         <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
         <a href="sales.php" class="sidebar-link"><i class="bi bi-cash-stack"></i> Sales</a>
         <a href="inventory.php" class="sidebar-link active"><i class="bi bi-box-seam"></i> Inventory Report</a>
         <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
         <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
         <a href="auditTrail.php" class="sidebar-link"><i class="bi bi-shield-lock"></i> Audit Trail</a>
-         <div class="mt-auto border-top border-secondary">
-        <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
-            <i class="bi bi-box-arrow-right"></i> Logout
-        </a>
-    </div>
+        <div class="logout-section">
+            <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+        </div>
     </div>
 
     <div class="main-content">
         <div class="container-fluid p-0">
             
-            <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
                 <div>
                     <h2 class="fw-bold text-dark m-0">Inventory Report</h2>
                     <small class="text-muted">Real-time stock level monitoring for both Main Products and Variant Items.</small>
@@ -207,25 +222,25 @@ body {
 
             <div class="row g-3 mb-4">
                 <div class="col-6 col-lg-3">
-                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-primary border-4">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-primary border-4 h-100">
                         <div class="text-muted small fw-bold text-uppercase">Total Items</div>
                         <div class="fs-3 fw-bold text-dark mt-1"><?php echo number_format($total_products); ?></div>
                     </div>
                 </div>
                 <div class="col-6 col-lg-3">
-                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-success border-4">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-success border-4 h-100">
                         <div class="text-muted small fw-bold text-uppercase">Quantity On Hand</div>
                         <div class="fs-3 fw-bold text-dark mt-1"><?php echo number_format($total_stock); ?> Pcs</div>
                     </div>
                 </div>
                 <div class="col-6 col-lg-3">
-                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-warning border-4">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-warning border-4 h-100">
                         <div class="text-muted small fw-bold text-uppercase">Low Stock Warnings</div>
                         <div class="fs-3 fw-bold text-warning mt-1"><?php echo number_format($low_stock_count); ?> Items</div>
                     </div>
                 </div>
                 <div class="col-6 col-lg-3">
-                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-danger border-4">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-danger border-4 h-100">
                         <div class="text-muted small fw-bold text-uppercase">Out Of Stock</div>
                         <div class="fs-3 fw-bold text-danger mt-1"><?php echo number_format($out_of_stock_count); ?> Items</div>
                     </div>
@@ -234,7 +249,7 @@ body {
 
             <div class="card p-3 mb-4 shadow-sm border-0 filter-box">
                 <div class="row align-items-center">
-                    <div class="col-md-6">
+                    <div class="col-12">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
                             <input type="text" id="liveSearch" onkeyup="filterInventory()" class="form-control border-start-0" placeholder="Type product or variant name to search instantly...">
@@ -257,8 +272,10 @@ body {
                             </tr>
                         </thead>
                         <tbody>
-                            <?php if (mysqli_num_rows($inventory_query) > 0) {
-                                while($row = mysqli_fetch_assoc($inventory_query)) { 
+                            <?php 
+                            $rows = $inventory_query->fetchAll(PDO::FETCH_ASSOC);
+                            if (count($rows) > 0) {
+                                foreach($rows as $row) { 
                                     if ($row['stock'] == 0) {
                                         $status_badge = '<span class="badge bg-danger-subtle text-danger px-2 py-1 rounded">Out of Stock</span>';
                                     } elseif ($row['stock'] <= $low_stock_threshold) {
@@ -293,6 +310,26 @@ body {
 </div>
 
 <script>
+// Mobile Sidebar Toggle Script
+document.addEventListener("DOMContentLoaded", function() {
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const appSidebar = document.getElementById('appSidebar');
+    if(sidebarToggle && appSidebar) {
+        sidebarToggle.addEventListener('click', function() {
+            appSidebar.classList.toggle('show');
+        });
+        
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            if (window.innerWidth < 992) {
+                if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
+                    appSidebar.classList.remove('show');
+                }
+            }
+        });
+    }
+});
+
 // 1. LIVE SEARCH FILTER SYSTEM
 function filterInventory() {
     let input = document.getElementById("liveSearch").value.toLowerCase();
