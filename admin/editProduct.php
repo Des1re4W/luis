@@ -2,7 +2,8 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (isset($_SESSION['user_id'])) {
+// Only run logout logic if a logout trigger is requested (e.g., ?action=logout)
+if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['user_id'])) {
     $username = $_SESSION['username'] ?? 'Unknown';
     $role = $_SESSION['role'] ?? 'Unknown';
     $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
@@ -10,33 +11,32 @@ if (isset($_SESSION['user_id'])) {
     $details = "User $username logged out successfully.";
 
     try {
-        // Insert logout activity into audit_log using PDO
-        $stmt = $conn->prepare("
-            INSERT INTO audit_log
-                (username, role, action, details, ip_address)
-            VALUES
-                (:username, :role, :action, :details, :ip_address)
-        ");
+        // Ensure $conn exists before calling prepare()
+        if (isset($conn) && $conn instanceof PDO) {
+            $stmt = $conn->prepare("
+                INSERT INTO audit_log
+                    (username, role, action, details, ip_address)
+                VALUES
+                    (:username, :role, :action, :details, :ip_address)
+            ");
 
-        $stmt->execute([
-            ':username' => $username,
-            ':role' => $role,
-            ':action' => $action,
-            ':details' => $details,
-            ':ip_address' => $ip_address
-        ]);
+            $stmt->execute([
+                ':username' => $username,
+                ':role' => $role,
+                ':action' => $action,
+                ':details' => $details,
+                ':ip_address' => $ip_address
+            ]);
+        }
     } catch (PDOException $e) {
-        // Log the error without preventing logout
         error_log("Logout audit log error: " . $e->getMessage());
     }
+
+    $_SESSION = [];
+    session_destroy();
+    header("Location: login.php");
+    exit();
 }
-
-// Destroy the session even if audit logging fails
-$_SESSION = [];
-session_destroy();
-
-header("Location: ./editProduct.php");
-exit();
 ?>
 
 <!DOCTYPE html>
