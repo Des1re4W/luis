@@ -24,7 +24,6 @@ if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id']
     }
 
     try {
-        // FIXED: $conn -> $pdo
         $stmt = $pdo->prepare(
             "SELECT product_name FROM products WHERE id = :id"
         );
@@ -191,7 +190,7 @@ try {
         ";
     }
 
-    // Execute query using PDO ($pdo instead of $conn)
+    // FIXED: Changed $conn to $pdo
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
 
