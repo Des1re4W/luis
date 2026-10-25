@@ -1,21 +1,21 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] != "cashier") {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== "cashier") {
     header("Location: ../login.php");
     exit();
 }
 
-$notif_query = mysqli_query($conn, "
+$notif_query = $pdo->query("
     SELECT COUNT(*) AS total
     FROM orders
     WHERE sent_to_cashier = 1
 ");
-$notif_data = mysqli_fetch_assoc($notif_query);
-$order_count = $notif_data['total'];
+$notif_data = $notif_query->fetch(PDO::FETCH_ASSOC);
+$order_count = $notif_data['total'] ?? 0;
 
-$products = mysqli_query($conn, "
+$products_stmt = $pdo->query("
     SELECT
         p.id,
         p.product_name,
@@ -36,6 +36,7 @@ $products = mysqli_query($conn, "
     LEFT JOIN products p ON v.product_id = p.id
     ORDER BY product_name ASC
 ");
+$products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -203,9 +204,9 @@ max-height:45vh
 <div class="product-section">
 <div class="row g-2" id="product-list">
 
-<?php if($products && mysqli_num_rows($products)>0): ?>
+<?php if(!empty($products)): ?>
 
-<?php while($row=mysqli_fetch_assoc($products)): ?>
+<?php foreach($products as $row): ?>
 
 <?php
 $imagePath=!empty($row['image'])?"../".$row['image']:"../assets/no-image.jpg";
@@ -252,7 +253,7 @@ onclick='addToCart(
 </div>
 </div>
 
-<?php endwhile; ?>
+<?php endforeach; ?>
 
 <?php else: ?>
 
@@ -475,6 +476,7 @@ let change=paid>=total?paid-total:0;
 document.getElementById("change").innerText=
 change.toFixed(2);
 }
+
 function printReceipt(transactionId){
     let cartHTML="";
     let totalQty=0;
