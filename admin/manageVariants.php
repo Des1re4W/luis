@@ -14,8 +14,8 @@ $ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
 
 $product_id = filter_input(INPUT_GET, 'product_id', FILTER_VALIDATE_INT) ?: 0;
 
-// Get main product
-$stmt = $conn->prepare("SELECT * FROM products WHERE id = :id");
+// Get main product (Using $pdo)
+$stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
 $stmt->execute(['id' => $product_id]);
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -24,14 +24,14 @@ if (!$product) {
     exit();
 }
 
-// Helper function for audit logging
-function logVariantAction($conn, $user_id, $username, $role, $action, $details, $ip_address)
+// Helper function for audit logging (Updated parameter to $pdo)
+function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $ip_address)
 {
     $sql = "INSERT INTO audit_log
             (user_id, username, role, action, details, ip_address)
             VALUES (:user_id, :username, :role, :action, :details, :ip_address)";
 
-    $stmt = $conn->prepare($sql);
+    $stmt = $pdo->prepare($sql);
 
     return $stmt->execute([
         'user_id' => $user_id,
@@ -72,7 +72,7 @@ if (isset($_POST['add_variant'])) {
     }
 
     // Check duplicate variant names (case-insensitive)
-    $stmt = $conn->prepare("
+    $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
         WHERE product_id = :product_id
@@ -121,7 +121,7 @@ if (isset($_POST['add_variant'])) {
          :cost_price, :price, :stock, :variant_image)
     ";
 
-    $stmt = $conn->prepare($insert_sql);
+    $stmt = $pdo->prepare($insert_sql);
 
     if (
         $stmt->execute([
@@ -135,7 +135,7 @@ if (isset($_POST['add_variant'])) {
         ])
     ) {
         logVariantAction(
-            $conn,
+            $pdo,
             $admin_user_id,
             $admin_user,
             $admin_role,
@@ -179,7 +179,7 @@ if (isset($_POST['update_variant'])) {
     }
 
     // Check duplicate names, excluding the current variant
-    $stmt = $conn->prepare("
+    $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
         WHERE product_id = :product_id
@@ -243,11 +243,11 @@ if (isset($_POST['update_variant'])) {
 
     $update_sql .= " WHERE id = :variant_id AND product_id = :product_id";
 
-    $stmt = $conn->prepare($update_sql);
+    $stmt = $pdo->prepare($update_sql);
 
     if ($stmt->execute($params)) {
         logVariantAction(
-            $conn,
+            $pdo,
             $admin_user_id,
             $admin_user,
             $admin_role,
@@ -268,7 +268,7 @@ if (isset($_GET['delete_id'])) {
 
     if ($delete_id > 0) {
         // Get variant name for audit logging, scoped to this product
-        $stmt = $conn->prepare("
+        $stmt = $pdo->prepare("
             SELECT variant_name
             FROM product_variants
             WHERE id = :variant_id AND product_id = :product_id
@@ -283,7 +283,7 @@ if (isset($_GET['delete_id'])) {
         if ($v_data) {
             $deleted_v_name = $v_data['variant_name'];
 
-            $stmt = $conn->prepare("
+            $stmt = $pdo->prepare("
                 DELETE FROM product_variants
                 WHERE id = :variant_id AND product_id = :product_id
             ");
@@ -295,7 +295,7 @@ if (isset($_GET['delete_id'])) {
                 ])
             ) {
                 logVariantAction(
-                    $conn,
+                    $pdo,
                     $admin_user_id,
                     $admin_user,
                     $admin_role,
@@ -314,7 +314,7 @@ if (isset($_GET['delete_id'])) {
 }
 
 // Get all variants for this product
-$stmt = $conn->prepare("
+$stmt = $pdo->prepare("
     SELECT *
     FROM product_variants
     WHERE product_id = :product_id
