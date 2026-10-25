@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/config/db.php';[cite: 3, 8]
 
 $cart = $_SESSION['cart'] ?? [];
 $total = 0;
@@ -48,13 +48,15 @@ foreach ($cart as $item) {
                     <tbody>
     <?php 
     foreach ($cart as $key => $item): 
-        // Kunin ang max stock para sa partikular na item na ito[cite: 5]
+        // Pinalitan ang mysqli ng PDO ($pdo) para makuha ang stock nang wasto[cite: 3, 5, 8]
         if (!empty($item['variant_id'])) {
-            $stock_res = mysqli_query($conn, "SELECT stock FROM product_variants WHERE id = '{$item['variant_id']}'");
+            $stmt = $pdo->prepare("SELECT stock FROM product_variants WHERE id = :id");
+            $stmt->execute([':id' => $item['variant_id']]);
         } else {
-            $stock_res = mysqli_query($conn, "SELECT stock FROM products WHERE id = '{$item['id']}'");
+            $stmt = $pdo->prepare("SELECT stock FROM products WHERE id = :id");
+            $stmt->execute([':id' => $item['id']]);
         }
-        $stock_data = mysqli_fetch_assoc($stock_res);
+        $stock_data = $stmt->fetch(PDO::FETCH_ASSOC);
         $max_stock = $stock_data['stock'] ?? 0;
     ?>
         <tr>
