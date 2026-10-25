@@ -9,26 +9,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'owner') {
 
 $owner_name = $_SESSION['username'] ?? "owner";
 
-// DATA
-try {
-    $sales_data = $conn->query(
-        "SELECT COALESCE(SUM(total_amount), 0) AS total_sales
-         FROM orders WHERE status = 'completed'"
-    )->fetch();
+// DATA (Pinalitan ng PDO queries)
+$sales_query = $pdo->query("SELECT SUM(total_amount) as total_sales FROM orders WHERE status = 'completed'");
+$sales_data = $sales_query->fetch(PDO::FETCH_ASSOC);
 
-    $pending_data = $conn->query(
-        "SELECT COUNT(*) AS pending_count
-         FROM orders WHERE status = 'pending'"
-    )->fetch();
+$pending_query = $pdo->query("SELECT COUNT(*) as pending_count FROM orders WHERE status = 'pending'");
+$pending_data = $pending_query->fetch(PDO::FETCH_ASSOC);
 
-    $orders_query = $conn->query(
-        "SELECT * FROM orders ORDER BY order_date DESC LIMIT 5"
-    );
-} catch (PDOException $e) {
-    error_log('Dashboard error: ' . $e->getMessage());
-    die("Unable to load dashboard data.");
-}
+$orders_query = $pdo->query("SELECT * FROM orders ORDER BY order_date DESC LIMIT 5");
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -69,6 +59,8 @@ body{
     display:flex;
     flex-direction:column;
     box-shadow:4px 0 15px rgba(0,0,0,0.15);
+    transition: transform 0.3s ease;
+    z-index: 1040;
 }
 
 /* LINKS */
@@ -112,6 +104,7 @@ body{
     margin-top:56px;
     padding:20px;
     min-height:100vh;
+    transition: margin 0.3s ease;
 }
 
 /* SCROLLBAR */
@@ -127,23 +120,39 @@ body{
 /* CARDS */
 .card-stats{border-left:5px solid #0d6efd;}
 .bg-warning-stats{border-left:5px solid #ffc107;}
+
+/* MOBILE RESPONSIVENESS */
+@media (max-width: 991.98px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.show {
+        transform: translateX(0);
+    }
+    .main-content {
+        margin-left: 0;
+    }
+}
 </style>
 </head>
 
 <body>
 
 <!-- NAVBAR -->
-<nav class="navbar navbar-dark px-3" style="background-color:#051c3c; height:56px; position:fixed; top:0; left:0; right:0; z-index:1100;">
-    <div class="d-flex align-items-center w-100">
+<nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
+    <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
+            <button class="btn btn-outline-light btn-sm d-lg-none me-2" type="button" id="sidebarToggle">
+                <i class="bi bi-list fs-5"></i>
+            </button>
             <img src="../assets/logo.jpg"
-                 style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;">
+                 style="width:38px; height:38px; border-radius:50%; border:2px solid white; object-fit:cover;" onerror="this.style.display='none'">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
         <!-- PUSH RIGHT -->
-        <div class="ms-auto d-flex align-items-center text-white gap-2">
+        <div class="d-flex align-items-center text-white gap-2">
             <i class="bi bi-person-circle"></i>
-            <span>
+            <span class="d-none d-sm-inline">
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
             </span>
         </div>
@@ -151,7 +160,7 @@ body{
 </nav>
 
 <!-- SIDEBAR -->
-<div class="sidebar">
+<div class="sidebar" id="appSidebar">
 
     <a href="dashboard.php" class="sidebar-link active">
         <i class="bi bi-graph-up-arrow"></i> Dashboard
@@ -192,8 +201,8 @@ body{
 
     <div class="row">
 
-        <div class="col-md-4">
-            <div class="card shadow-sm card-stats mb-3">
+        <div class="col-md-6 mb-3">
+            <div class="card shadow-sm card-stats h-100">
                 <div class="card-body">
                     <h6 class="text-muted">Total Completed Sales</h6>
                     <h3 class="text-primary fw-bold">
@@ -203,12 +212,12 @@ body{
             </div>
         </div>
 
-        <div class="col-md-4">
-            <div class="card shadow-sm bg-warning-stats mb-3">
+        <div class="col-md-6 mb-3">
+            <div class="card shadow-sm bg-warning-stats h-100">
                 <div class="card-body">
                     <h6 class="text-muted">Pending Orders</h6>
                     <h3 class="text-warning fw-bold">
-                        <?= $pending_data['pending_count']; ?>
+                        <?= $pending_data['pending_count'] ?? 0; ?>
                     </h3>
                 </div>
             </div>
@@ -222,39 +231,62 @@ body{
         </div>
 
         <div class="card-body p-0">
-            <table class="table table-hover mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Order ID</th>
-                        <th>Customer</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                        <th>Date</th>
-                    </tr>
-                </thead>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Customer</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
 
-                <tbody>
-                <?php while($row = mysqli_fetch_assoc($orders_query)) { ?>
-                    <tr>
-                        <td>#<?= $row['id']; ?></td>
-                        <td><?= $row['fullname'].' '.$row['surname']; ?></td>
-                        <td>₱<?= number_format($row['total_amount'],2); ?></td>
-                        <td>
-                            <span class="badge <?= $row['status']=='pending'?'bg-warning text-dark':'bg-success'; ?>">
-                                <?= ucfirst($row['status']); ?>
-                            </span>
-                        </td>
-                        <td><?= date('M d, Y', strtotime($row['order_date'])); ?></td>
-                    </tr>
-                <?php } ?>
-                </tbody>
+                    <tbody>
+                    <?php while($row = $orders_query->fetch(PDO::FETCH_ASSOC)) { ?>
+                        <tr>
+                            <td>#<?= $row['id']; ?></td>
+                            <td><?= htmlspecialchars($row['fullname'].' '.$row['surname']); ?></td>
+                            <td>₱<?= number_format($row['total_amount'],2); ?></td>
+                            <td>
+                                <span class="badge <?= $row['status']=='pending'?'bg-warning text-dark':'bg-success'; ?>">
+                                    <?= ucfirst($row['status']); ?>
+                                </span>
+                            </td>
+                            <td><?= date('M d, Y', strtotime($row['order_date'])); ?></td>
+                        </tr>
+                    <?php } ?>
+                    </tbody>
 
-            </table>
+                </table>
+            </div>
         </div>
     </div>
 
 </div>
 
+<script>
+// Mobile Sidebar Toggle Script
+document.addEventListener("DOMContentLoaded", function() {
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const appSidebar = document.getElementById('appSidebar');
+    if(sidebarToggle && appSidebar) {
+        sidebarToggle.addEventListener('click', function() {
+            appSidebar.classList.toggle('show');
+        });
+        
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            if (window.innerWidth < 992) {
+                if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
+                    appSidebar.classList.remove('show');
+                }
+            }
+        });
+    }
+});
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
