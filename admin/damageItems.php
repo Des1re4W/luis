@@ -6,6 +6,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     header("Location: ../login.php");
     exit();
 }
+
 $damaged_result = $pdo->query("SELECT * FROM damaged_items ORDER BY id DESC");
 ?>
 <!DOCTYPE html>
