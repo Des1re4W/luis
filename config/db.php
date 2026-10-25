@@ -1,4 +1,3 @@
-
 <?php
 
 $host = "aws-0-ap-northeast-1.pooler.supabase.com";
