@@ -8,17 +8,8 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     exit();
 }
 
-try {
-    $stmt = $pdo->query(
-        "SELECT * FROM damaged_items ORDER BY id DESC"
-    );
-
-    $damaged_result = $stmt->fetchAll();
-
-} catch (PDOException $e) {
-    error_log("Damaged items query failed: " . $e->getMessage());
-    die("Unable to load damaged items. Please try again later.");
-}
+$sql = "SELECT * FROM damaged_items ORDER BY id DESC";
+$damaged_result = $conn->query($sql);
 ?>
 
 <!DOCTYPE html>
