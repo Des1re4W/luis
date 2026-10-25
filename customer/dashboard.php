@@ -14,7 +14,7 @@ try {
                    MIN(v.price) as min_price, MAX(v.price) as max_price, 
                    COUNT(v.id) as variant_count, 
                    COALESCE(SUM(oi.quantity), 0) as total_sold
-            FROM products p
+            FROM products
             LEFT JOIN product_variants v ON p.id = v.product_id
             LEFT JOIN order_items oi ON p.id = oi.product_id
             WHERE 1=1";
