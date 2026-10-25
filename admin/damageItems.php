@@ -6,8 +6,6 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     header("Location: ../login.php");
     exit();
 }
-
-// Kunin ang lahat ng naka-log na damaged items mula sa database gamit ang PDO
 $damaged_result = $pdo->query("SELECT * FROM damaged_items ORDER BY id DESC");
 ?>
 <!DOCTYPE html>
