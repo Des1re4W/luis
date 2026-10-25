@@ -25,8 +25,7 @@ function e($value) {
 
 // HANDLE ACTIONS (POST)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_POST['csrf_token']) ||
-        !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], (string)$_POST['csrf_token'])) {
         $error = "Invalid request. Please refresh the page and try again.";
     } else {
         $action = $_POST['action'] ?? '';
@@ -49,22 +48,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif (strlen($password) < 8) {
                 $error = "Password must be at least 8 characters long.";
             } else {
-                $check = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
-                $check->bind_param("ss", $username, $email);
-                $check->execute();
-                $exists = $check->get_result()->num_rows > 0;
-                $check->close();
+                $check = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ? LIMIT 1");
+                $check->execute([$username, $email]);
+                $exists = $check->fetch();
 
                 if ($exists) {
                     $error = "Username or email already exists.";
                 } else {
                     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-                    $stmt = $conn->prepare(
+                    $stmt = $pdo->prepare(
                         "INSERT INTO users (username, email, password, role, status)
                          VALUES (?, ?, ?, ?, 'Active')"
                     );
-                    $stmt->bind_param("ssss", $username, $email, $hashedPassword, $role);
-                    if ($stmt->execute()) {
+                    
+                    if ($stmt->execute([$username, $email, $hashedPassword, $role])) {
                         $success = "Account successfully created.";
 
                         // ─── AUDIT TRAIL LOG FOR ADD ACCOUNT ───
@@ -73,16 +70,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
                         $adminRole = $_SESSION['role'] ?? 'admin';
 
-                        $auditStmt = $conn->prepare("INSERT INTO audit_log (username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?)");
+                        $auditStmt = $pdo->prepare("INSERT INTO audit_log (username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?)");
                         if ($auditStmt) {
-                            $auditStmt->bind_param("sssss", $admin_name, $adminRole, $auditAction, $details, $ipAddress);
-                            $auditStmt->execute();
-                            $auditStmt->close();
+                            $auditStmt->execute([$admin_name, $adminRole, $auditAction, $details, $ipAddress]);
                         }
                     } else {
                         $error = "Failed to create account. Please try again.";
                     }
-                    $stmt->close();
                 }
             }
         } elseif ($action === 'archive_account') {
@@ -93,11 +87,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } elseif ($currentAdminId > 0 && $userId === $currentAdminId) {
                 $error = "You cannot archive your own account.";
             } else {
-                $check = $conn->prepare("SELECT id, username, status FROM users WHERE id = ? LIMIT 1");
-                $check->bind_param("i", $userId);
-                $check->execute();
-                $account = $check->get_result()->fetch_assoc();
-                $check->close();
+                $check = $pdo->prepare("SELECT id, username, status FROM users WHERE id = ? LIMIT 1");
+                $check->execute([$userId]);
+                $account = $check->fetch(PDO::FETCH_ASSOC);
 
                 if (!$account) {
                     $error = "Account not found.";
@@ -105,9 +97,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = "This account is already archived.";
                 } else {
                     $targetUsername = $account['username'];
-                    $stmt = $conn->prepare("UPDATE users SET status = 'Archived' WHERE id = ?");
-                    $stmt->bind_param("i", $userId);
-                    if ($stmt->execute()) {
+                    $stmt = $pdo->prepare("UPDATE users SET status = 'Archived' WHERE id = ?");
+                    
+                    if ($stmt->execute([$userId])) {
                         $success = "Account successfully archived.";
 
                         // ─── AUDIT TRAIL LOG FOR ARCHIVE ACCOUNT ───
@@ -116,16 +108,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
                         $adminRole = $_SESSION['role'] ?? 'admin';
 
-                        $auditStmt = $conn->prepare("INSERT INTO audit_log (username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?)");
+                        $auditStmt = $pdo->prepare("INSERT INTO audit_log (username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?)");
                         if ($auditStmt) {
-                            $auditStmt->bind_param("sssss", $admin_name, $adminRole, $auditAction, $details, $ipAddress);
-                            $auditStmt->execute();
-                            $auditStmt->close();
+                            $auditStmt->execute([$admin_name, $adminRole, $auditAction, $details, $ipAddress]);
                         }
                     } else {
                         $error = "Failed to archive account.";
                     }
-                    $stmt->close();
+                }
+            }
+        } elseif ($action === 'unarchive_account') {
+            $userId = filter_var($_POST['user_id'] ?? '', FILTER_VALIDATE_INT);
+
+            if (!$userId || $userId <= 0) {
+                $error = "Invalid account selected.";
+            } else {
+                $check = $pdo->prepare("SELECT id, username, status FROM users WHERE id = ? LIMIT 1");
+                $check->execute([$userId]);
+                $account = $check->fetch(PDO::FETCH_ASSOC);
+
+                if (!$account) {
+                    $error = "Account not found.";
+                } elseif ($account['status'] === 'Active') {
+                    $error = "This account is already active.";
+                } else {
+                    $targetUsername = $account['username'];
+                    $stmt = $pdo->prepare("UPDATE users SET status = 'Active' WHERE id = ?");
+                    
+                    if ($stmt->execute([$userId])) {
+                        $success = "Account successfully unarchived and restored to active status.";
+
+                        // ─── AUDIT TRAIL LOG FOR UNARCHIVE ACCOUNT ───
+                        $auditAction = "Unarchive Account";
+                        $details = "Admin unarchived account: {$targetUsername} (ID: {$userId})";
+                        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
+                        $adminRole = $_SESSION['role'] ?? 'admin';
+
+                        $auditStmt = $pdo->prepare("INSERT INTO audit_log (username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?)");
+                        if ($auditStmt) {
+                            $auditStmt->execute([$admin_name, $adminRole, $auditAction, $details, $ipAddress]);
+                        }
+                    } else {
+                        $error = "Failed to unarchive account.";
+                    }
                 }
             }
         } else {
@@ -146,25 +171,24 @@ $search = trim($_GET['search'] ?? '');
 if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     if ($search !== '') {
         $searchTerm = '%' . $search . '%';
-        $stmt = $conn->prepare(
+        $stmt = $pdo->prepare(
             "SELECT id, username, email, role, status
              FROM users
              WHERE status = ? AND (username LIKE ? OR email LIKE ? OR role LIKE ?)
              ORDER BY id DESC"
         );
-        $stmt->bind_param("ssss", $statusFilter, $searchTerm, $searchTerm, $searchTerm);
+        $stmt->execute([$statusFilter, $searchTerm, $searchTerm, $searchTerm]);
     } else {
-        $stmt = $conn->prepare(
+        $stmt = $pdo->prepare(
             "SELECT id, username, email, role, status
              FROM users WHERE status = ? ORDER BY id DESC"
         );
-        $stmt->bind_param("s", $statusFilter);
+        $stmt->execute([$statusFilter]);
     }
-    $stmt->execute();
-    $accounts = $stmt->get_result();
+    $accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ($accounts->num_rows > 0):
-        while ($account = $accounts->fetch_assoc()):
+    if (count($accounts) > 0):
+        foreach ($accounts as $account):
             ?>
             <tr>
                 <td><?= (int)$account['id'] ?></td>
@@ -178,8 +202,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                         <span class="status-badge status-archived">Archived</span>
                     <?php endif; ?>
                 </td>
-                <?php if ($tab === 'active'): ?>
-                    <td>
+                <td>
+                    <?php if ($tab === 'active'): ?>
                         <?php if ($currentAdminId <= 0 || (int)$account['id'] !== $currentAdminId): ?>
                             <button type="button" class="btn btn-archive"
                                     data-bs-toggle="modal" data-bs-target="#archiveModal"
@@ -190,15 +214,22 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                         <?php else: ?>
                             <span class="text-muted small">Current Account</span>
                         <?php endif; ?>
-                    </td>
-                <?php endif; ?>
+                    <?php else: ?>
+                        <button type="button" class="btn btn-unarchive"
+                                data-bs-toggle="modal" data-bs-target="#unarchiveModal"
+                                data-id="<?= (int)$account['id'] ?>"
+                                data-username="<?= e($account['username']) ?>">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i>Unarchive
+                        </button>
+                    <?php endif; ?>
+                </td>
             </tr>
             <?php
-        endwhile;
+        endforeach;
     else:
         ?>
         <tr>
-            <td colspan="<?= $tab === 'active' ? 6 : 5 ?>">
+            <td colspan="6">
                 <div class="empty-state">
                     <i class="bi bi-inbox"></i>
                     <h6>No accounts found</h6>
@@ -214,27 +245,26 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 // INITIAL PAGE LOAD QUERY
 if ($search !== '') {
     $searchTerm = '%' . $search . '%';
-    $stmt = $conn->prepare(
+    $stmt = $pdo->prepare(
         "SELECT id, username, email, role, status
          FROM users
          WHERE status = ? AND (username LIKE ? OR email LIKE ? OR role LIKE ?)
          ORDER BY id DESC"
     );
-    $stmt->bind_param("ssss", $statusFilter, $searchTerm, $searchTerm, $searchTerm);
+    $stmt->execute([$statusFilter, $searchTerm, $searchTerm, $searchTerm]);
 } else {
-    $stmt = $conn->prepare(
+    $stmt = $pdo->prepare(
         "SELECT id, username, email, role, status
          FROM users WHERE status = ? ORDER BY id DESC"
     );
-    $stmt->bind_param("s", $statusFilter);
+    $stmt->execute([$statusFilter]);
 }
-$stmt->execute();
-$accounts = $stmt->get_result();
+$accounts = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$countActiveResult = $conn->query("SELECT COUNT(*) AS total FROM users WHERE status = 'Active'");
-$countArchivedResult = $conn->query("SELECT COUNT(*) AS total FROM users WHERE status = 'Archived'");
-$countActive = (int)($countActiveResult->fetch_assoc()['total'] ?? 0);
-$countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
+$countActiveResult = $pdo->query("SELECT COUNT(*) AS total FROM users WHERE status = 'Active'");
+$countArchivedResult = $pdo->query("SELECT COUNT(*) AS total FROM users WHERE status = 'Archived'");
+$countActive = (int)($countActiveResult->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
+$countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ?? 0);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -398,6 +428,11 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
             padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
         }
         .btn-archive:hover { background: #b02a37; color: #fff; }
+        .btn-unarchive {
+            background: #e7f1ff; color: #0d6efd; border: 1px solid #b6d4fe;
+            padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600;
+        }
+        .btn-unarchive:hover { background: #0d6efd; color: #fff; }
         .empty-state { padding: 45px 20px; text-align: center; color: #6c757d; }
         .empty-state i { font-size: 40px; display: block; margin-bottom: 12px; }
         .modal-header { background: #051c3c; color: #fff; }
@@ -541,13 +576,12 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th>
-                        <?php if ($tab === 'active'): ?><th>Action</th><?php endif; ?>
+                        <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th>
                     </tr>
                 </thead>
                 <tbody id="accountTableBody">
-                <?php if ($accounts->num_rows > 0): ?>
-                    <?php while ($account =$accounts->fetch_assoc()): ?>
+                <?php if (count($accounts) > 0): ?>
+                    <?php foreach ($accounts as $account): ?>
                         <tr>
                             <td><?= (int)$account['id'] ?></td>
                             <td><strong><?= e($account['username']) ?></strong></td>
@@ -560,9 +594,9 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
                                     <span class="status-badge status-archived">Archived</span>
                                 <?php endif; ?>
                             </td>
-                            <?php if ($tab === 'active'): ?>
-                                <td>
-                                    <?php if ($currentAdminId <= 0 || (int)$account['id'] !==$currentAdminId): ?>
+                            <td>
+                                <?php if ($tab === 'active'): ?>
+                                    <?php if ($currentAdminId <= 0 || (int)$account['id'] !== $currentAdminId): ?>
                                         <button type="button" class="btn btn-archive"
                                                 data-bs-toggle="modal" data-bs-target="#archiveModal"
                                                 data-id="<?= (int)$account['id'] ?>"
@@ -572,13 +606,20 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
                                     <?php else: ?>
                                         <span class="text-muted small">Current Account</span>
                                     <?php endif; ?>
-                                </td>
-                            <?php endif; ?>
+                                <?php else: ?>
+                                    <button type="button" class="btn btn-unarchive"
+                                            data-bs-toggle="modal" data-bs-target="#unarchiveModal"
+                                            data-id="<?= (int)$account['id'] ?>"
+                                            data-username="<?= e($account['username']) ?>">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Unarchive
+                                    </button>
+                                <?php endif; ?>
+                            </td>
                         </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 <?php else: ?>
                     <tr>
-                        <td colspan="<?= $tab === 'active' ? 6 : 5 ?>">
+                        <td colspan="6">
                             <div class="empty-state">
                                 <i class="bi bi-inbox"></i>
                                 <h6>No accounts found</h6>
@@ -622,17 +663,17 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
                             <option value="owner">Owner</option>
                         </select>
                     </div>
-                  <div class="mb-3">
-    <label class="form-label">Default Password</label>
-    <div class="input-group">
-        <input type="password" name="password" id="passwordField" class="form-control"
-               minlength="8" autocomplete="new-password" required>
-        <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn">
-            <i class="bi bi-eye" id="togglePasswordIcon"></i>
-        </button>
-    </div>
-    <small class="text-muted">Minimum 8 characters.</small>
-</div>
+                    <div class="mb-3">
+                        <label class="form-label">Default Password</label>
+                        <div class="input-group">
+                            <input type="password" name="password" id="passwordField" class="form-control"
+                                   minlength="8" autocomplete="new-password" required>
+                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn">
+                                <i class="bi bi-eye" id="togglePasswordIcon"></i>
+                            </button>
+                        </div>
+                        <small class="text-muted">Minimum 8 characters.</small>
+                    </div>
                     <div class="alert alert-info small mb-0">
                         <i class="bi bi-info-circle me-1"></i>
                         The password will be securely hashed before being saved.
@@ -667,13 +708,45 @@ $countArchived = (int)($countArchivedResult->fetch_assoc()['total'] ?? 0);
                         <i class="bi bi-exclamation-triangle me-2"></i>
                         Account: <strong id="archiveUsername"></strong>
                         <br>
-                        <small>The account record will not be deleted. Login blocking also requires the login page to check account status.</small>
+                        <small>The archived account will be blocked from accessing/logging into the system.</small>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-danger">
                         <i class="bi bi-archive me-1"></i>Confirm Archive
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Unarchive Confirmation Modal -->
+<div class="modal fade" id="unarchiveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-2"></i>Unarchive Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                <input type="hidden" name="action" value="unarchive_account">
+                <input type="hidden" name="user_id" id="unarchiveUserId">
+                <div class="modal-body">
+                    <p class="mb-2">Are you sure you want to restore/unarchive this account?</p>
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        Account: <strong id="unarchiveUsername"></strong>
+                        <br>
+                        <small>This account will return to active status and will be allowed to log in again.</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Confirm Unarchive
                     </button>
                 </div>
             </form>
@@ -718,6 +791,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Unarchive Modal Data Filler
+    const unarchiveModal = document.getElementById('unarchiveModal');
+    if (unarchiveModal) {
+        unarchiveModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            document.getElementById('unarchiveUserId').value = button.getAttribute('data-id') || '';
+            document.getElementById('unarchiveUsername').textContent = button.getAttribute('data-username') || '';
+        });
+    }
+
     // LIVE SEARCH IMPLEMENTATION
     const searchInput = document.getElementById('searchInput');
     const tableBody = document.getElementById('accountTableBody');
@@ -742,6 +825,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 });
+
 // Password Hide/Unhide Toggle
 const togglePasswordBtn = document.getElementById('togglePasswordBtn');
 const passwordField = document.getElementById('passwordField');
