@@ -210,12 +210,6 @@ if (isset($_POST['send_email_update'])) {
             </div>
 
 <?php
-// Assuming $pdo is your PDO connection instance. Example:
-// $pdo = new PDO("mysql:host=localhost;dbname=your_db;charset=utf8mb4", "username", "password", [
-//     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-//     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-// ]);
-
 try {
     // =========================
     // EMAIL SENDING LOGIC (Example Block)
