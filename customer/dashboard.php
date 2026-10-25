@@ -1,54 +1,89 @@
 <?php
-// Start session if not already started in db.php
 require_once __DIR__ . '/../config/db.php';
 
-// Initialize variables to avoid undefined variable warnings
 $category = $_GET['category'] ?? '';
 $sort = $_GET['sort'] ?? '';
-$is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
+$is_home = (!isset($_GET['view']) && $category === '' && !isset($_GET['sort']));
 $sort_label = '';
 
-// Handle your main product listing query safely using PDO (matching your db.php connection)
 try {
-    $sql = "SELECT p.id, p.product_name, p.category, p.price, p.stock, p.image, 
-                   MIN(v.price) as min_price, MAX(v.price) as max_price, 
-                   COUNT(v.id) as variant_count, 
-                   COALESCE(SUM(oi.quantity), 0) as total_sold
-            FROM products p
-            LEFT JOIN product_variants v ON p.id = v.product_id
-            LEFT JOIN order_items oi ON p.id = oi.product_id
-            WHERE 1=1";
+    $sql = "
+        SELECT
+            p.id,
+            p.product_name,
+            p.category,
+            p.price,
+            p.stock,
+            p.image,
+            COALESCE(v.min_price, p.price) AS min_price,
+            COALESCE(v.max_price, p.price) AS max_price,
+            COALESCE(v.variant_count, 0) AS variant_count,
+            COALESCE(s.total_sold, 0) AS total_sold
+        FROM products p
+
+        LEFT JOIN (
+            SELECT
+                product_id,
+                MIN(price) AS min_price,
+                MAX(price) AS max_price,
+                COUNT(*) AS variant_count
+            FROM product_variants
+            GROUP BY product_id
+        ) v ON v.product_id = p.id
+
+        LEFT JOIN (
+            SELECT
+                product_id,
+                SUM(quantity) AS total_sold
+            FROM order_items
+            GROUP BY product_id
+        ) s ON s.product_id = p.id
+
+        WHERE 1=1
+    ";
 
     $params = [];
 
-    if ($category != '') {
+    if ($category !== '') {
         $sql .= " AND p.category = :category";
         $params[':category'] = $category;
     }
 
-    $sql .= " GROUP BY p.id";
+    // Sorting
+    switch ($sort) {
+        case 'price_low':
+            $sql .= " ORDER BY LEAST(p.price, COALESCE(v.min_price, p.price)) ASC";
+            $sort_label = "(Price: Low to High)";
+            break;
 
-    // Sorting logic
-    if ($sort == 'price_low') {
-        $sql .= " ORDER BY LEAST(p.price, COALESCE(MIN(v.price), p.price)) ASC";
-        $sort_label = "(Price: Low to High)";
-    } elseif ($sort == 'price_high') {
-        $sql .= " ORDER BY GREATEST(p.price, COALESCE(MAX(v.price), p.price)) DESC";
-        $sort_label = "(Price: High to Low)";
-    } elseif ($sort == 'az') {
-        $sql .= " ORDER BY p.product_name ASC";
-        $sort_label = "(A-Z)";
-    } elseif ($sort == 'za') {
-        $sql .= " ORDER BY p.product_name DESC";
-        $sort_label = "(Z-A)";
-    } elseif ($sort == 'newest') {
-        $sql .= " ORDER BY p.id DESC";
-        $sort_label = "(Newest Arrivals)";
-    } elseif ($sort == 'oldest') {
-        $sql .= " ORDER BY p.id ASC";
-        $sort_label = "(Oldest Stock)";
-    } else {
-        $sql .= " ORDER BY total_sold DESC"; // Default top selling
+        case 'price_high':
+            $sql .= " ORDER BY GREATEST(p.price, COALESCE(v.max_price, p.price)) DESC";
+            $sort_label = "(Price: High to Low)";
+            break;
+
+        case 'az':
+            $sql .= " ORDER BY p.product_name ASC";
+            $sort_label = "(A-Z)";
+            break;
+
+        case 'za':
+            $sql .= " ORDER BY p.product_name DESC";
+            $sort_label = "(Z-A)";
+            break;
+
+        case 'newest':
+            $sql .= " ORDER BY p.id DESC";
+            $sort_label = "(Newest Arrivals)";
+            break;
+
+        case 'oldest':
+            $sql .= " ORDER BY p.id ASC";
+            $sort_label = "(Oldest Stock)";
+            break;
+
+        default:
+            $sql .= " ORDER BY total_sold DESC";
+            break;
     }
 
     $stmt = $pdo->prepare($sql);
@@ -57,9 +92,16 @@ try {
 
 } catch (PDOException $e) {
     error_log('Dashboard product load error: ' . $e->getMessage());
+
+    // Show the actual error temporarily while debugging.
+    echo '<pre>Product query error: '
+        . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
+        . '</pre>';
+
     $products = [];
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
