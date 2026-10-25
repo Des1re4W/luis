@@ -29,7 +29,7 @@ if (isset($_POST['send_email_update'])) {
     $current_status = $order['status'];
 
     $mail = new PHPMailer(true);
-
+}
     try {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
@@ -51,7 +51,7 @@ if (isset($_POST['send_email_update'])) {
 
         $mail->isHTML(true);
         $mail->Subject = "Order Status Update: #$order_id";
-
+    }
         // =========================
         // APPROVED
         // =========================
@@ -72,6 +72,7 @@ if (isset($_POST['send_email_update'])) {
                 trim($order['payment_scheme'] ?? '')
             );
             $paymentBreakdownHtml = '';
+        }
             // COD
             if (strpos($paymentMethodName, 'COD') !== false) {
                 $paymentBreakdownHtml = "
@@ -135,6 +136,7 @@ if (isset($_POST['send_email_update'])) {
                     </div>
                 ";
             }
+        
             // RECEIPT HTML
             ob_start();
             ?>
