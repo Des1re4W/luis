@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/config/db.php';
+require_once __DIR__ . '/../config/db.php';
 
 $checkout_source = isset($_GET['from']) ? $_GET['from'] : 'cart';
 $items_to_process = [];
