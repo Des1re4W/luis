@@ -180,13 +180,16 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
     <!-- MAIN CONTENT -->
     <div class="main">
 
-        <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-light border-opacity-25">
-                    <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" class="profile-img-lg shadow-sm" alt="Profile">
+        <div class="d-flex align-items-center mb-3 flex-wrap gap-3">
+    <img src="../<?php echo !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" 
+         alt="Profile Picture"
+         style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #ccc;"
+         onerror="this.onerror=null;this.src='../assets/no-image.jpg';">
 
-            <h2 class="text-muted mb-0 fs-4 fs-md-3">
-                Welcome, <strong><?php echo htmlspecialchars($admin_name); ?></strong>
-            </h2>
-        </div>
+    <h2 class="text-muted mb-0 fs-4 fs-md-3">
+        Welcome, <strong><?php echo htmlspecialchars($user['username'] ?? $admin_name); ?></strong>
+    </h2>
+</div>
 
         <p class="text-secondary mb-4">Hardware System Overview</p>
 
