@@ -164,13 +164,14 @@ if (isset($_POST['update_profile'])) {
             transition: margin 0.3s ease;
         }
 
-        /* PROFILE CONTAINER - Ginawa nang kapareho ng kulay ng sidebar (#001f4d) */
+        /* PROFILE CONTAINER - Ginawa nang full-width at kapareho ng kulay ng sidebar (#001f4d) */
         .profile-container {
             background: #001f4d;
             color: #fff;
-            border-radius: 16px;
+            border-radius: 12px;
             padding: 35px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            width: 100%;
         }
 
         .profile-img-lg {
@@ -265,7 +266,7 @@ if (isset($_POST['update_profile'])) {
 
     <!-- Main Content Area -->
     <div class="main-content">
-        <div class="container-fluid" style="max-width: 800px;">
+        <div class="container-fluid px-0">
 
             <?php if (!empty($message)): ?>
                 <div class="alert alert-<?= $msg_type; ?> alert-dismissible fade show mb-4" role="alert">
@@ -289,47 +290,49 @@ if (isset($_POST['update_profile'])) {
                 <form action="" method="POST" enctype="multipart/form-data">
                     <h5 class="fw-bold mb-3 fs-6 text-uppercase text-white-50">Personal Information</h5>
 
-                    <!-- Username -->
-                    <div class="mb-3">
-                        <label class="form-label small text-white-50">Username</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="username" id="inputUsername" class="form-control" value="<?= htmlspecialchars($user['username']); ?>" readonly required>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputUsername')">
-                               [edit]
-                            </button>
+                    <div class="row">
+                        <!-- Username -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label small text-white-50">Username</label>
+                            <div class="input-group-custom">
+                                <input type="text" name="username" id="inputUsername" class="form-control" value="<?= htmlspecialchars($user['username']); ?>" readonly required>
+                                <button type="button" class="edit-icon-btn" onclick="enableField('inputUsername')">
+                                    [edit]
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Full Name -->
-                    <div class="mb-3">
-                        <label class="form-label small text-white-50">Full Name</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="fullname" id="inputFullname" class="form-control" value="<?= htmlspecialchars($user['fullname'] ?? ''); ?>" placeholder="Enter your full name" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputFullname')">
-                                [edit]
-                            </button>
+                        <!-- Full Name -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label small text-white-50">Full Name</label>
+                            <div class="input-group-custom">
+                                <input type="text" name="fullname" id="inputFullname" class="form-control" value="<?= htmlspecialchars($user['fullname'] ?? ''); ?>" placeholder="Enter your full name" readonly>
+                                <button type="button" class="edit-icon-btn" onclick="enableField('inputFullname')">
+                                    [edit]
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Email Address -->
-                    <div class="mb-3">
-                        <label class="form-label small text-white-50">Email Address</label>
-                        <div class="input-group-custom">
-                            <input type="email" name="email" id="inputEmail" class="form-control" value="<?= htmlspecialchars($user['email'] ?? ''); ?>" placeholder="Enter your email address" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputEmail')">
-                                [edit]
-                            </button>
+                        <!-- Email Address -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label small text-white-50">Email Address</label>
+                            <div class="input-group-custom">
+                                <input type="email" name="email" id="inputEmail" class="form-control" value="<?= htmlspecialchars($user['email'] ?? ''); ?>" placeholder="Enter your email address" readonly>
+                                <button type="button" class="edit-icon-btn" onclick="enableField('inputEmail')">
+                                    [edit]
+                                </button>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Contact Number -->
-                    <div class="mb-3">
-                        <label class="form-label small text-white-50">Contact Number</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="phone_number" id="inputPhone" class="form-control" value="<?= htmlspecialchars($user['phone_number'] ?? ''); ?>" placeholder="09XXXXXXXXX" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputPhone')">
-                                [edit]
-                            </button>
+                        <!-- Contact Number -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label small text-white-50">Contact Number</label>
+                            <div class="input-group-custom">
+                                <input type="text" name="phone_number" id="inputPhone" class="form-control" value="<?= htmlspecialchars($user['phone_number'] ?? ''); ?>" placeholder="09XXXXXXXXX" readonly>
+                                <button type="button" class="edit-icon-btn" onclick="enableField('inputPhone')">
+                                    [edit]
+                                </button>
+                            </div>
                         </div>
                     </div>
 
