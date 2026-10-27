@@ -453,19 +453,15 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
 </head>
 <body>
 
-<nav class="navbar navbar-dark navbar-custom px-3 d-lg-none">
+<nav class="navbar navbar-dark bg-dark d-lg-none px-3">
     <div class="d-flex align-items-center w-100 justify-content-between">
         <span class="navbar-brand fw-bold fs-6"><i class="bi bi-headset"></i> Admin Service Request</span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle"><i class="bi bi-list fs-4"></i></button>
     </div>
 </nav>
- <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-grid"></i> Admin Dashboard</span>
-        <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
-            <i class="bi bi-list fs-4"></i>
-        </button>
-    </nav>
+ 
 <div class="sidebar" id="appSidebar">
+    <h2>Admin<br>Dashboard</h2>
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
     <a href="products.php"><i class="bi bi-box-seam"></i> Inventory</a>
     <a href="orders.php"><i class="bi bi-receipt"></i> Orders</a>
