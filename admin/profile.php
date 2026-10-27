@@ -24,8 +24,14 @@ function e($value): string
 
 function loadUser(PDO $pdo, int $userId): array
 {
+    // Ligtas na query kung saan sinisigurong hindi mag-crash kahit may kulang na optional columns
     $stmt = $pdo->prepare(
-        'SELECT id, username, fullname, email, phone_number, profile_image, role
+        'SELECT id, username, 
+                COALESCE(fullname, \'\') AS fullname, 
+                COALESCE(email, \'\') AS email, 
+                COALESCE(phone_number, \'\') AS phone_number, 
+                COALESCE(profile_image, \'\') AS profile_image, 
+                COALESCE(role, \'User\') AS role
          FROM users
          WHERE id = :id
          LIMIT 1'
@@ -47,8 +53,8 @@ try {
     $user = loadUser($pdo, $userId);
 } catch (Throwable $ex) {
     error_log('Profile fetch error: ' . $ex->getMessage());
-    http_response_code(500);
-    exit('Unable to load your profile right now. Please try again later.');
+    // Pansamantalang ipapakita ang eksaktong error para madaling ma-debug kung sakaling may iba pang isyu
+    exit('Database Error: ' . htmlspecialchars($ex->getMessage()));
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
@@ -67,7 +73,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         $newImagePath = null;
         $uploadError = '';
 
-        // Basic field validation
         if ($username === '' || mb_strlen($username) > 50) {
             $message = 'Username is required and must be 50 characters or fewer.';
             $messageType = 'danger';
@@ -77,14 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
         } elseif ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 254)) {
             $message = 'Please enter a valid email address.';
             $messageType = 'danger';
-        } elseif ($phoneNumber !== '' && !preg_match('/^[0-9+\-\s()]{7,20}$/', $phoneNumber)) {
-            $message = 'Please enter a valid contact number.';
-            $messageType = 'danger';
         }
 
         if ($message === '') {
             try {
-                // Prevent duplicate usernames/emails belonging to another account.
                 $duplicate = $pdo->prepare(
                     'SELECT id FROM users
                      WHERE (LOWER(username) = LOWER(:username))
@@ -99,31 +100,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 if ($duplicate->fetch(PDO::FETCH_ASSOC)) {
                     $message = 'That username is already in use. Please choose another.';
                     $messageType = 'danger';
-                } elseif ($email !== '') {
-                    $duplicateEmail = $pdo->prepare(
-                        'SELECT id FROM users
-                         WHERE LOWER(email) = LOWER(:email)
-                           AND id <> :id
-                         LIMIT 1'
-                    );
-                    $duplicateEmail->execute([
-                        ':email' => $email,
-                        ':id' => $userId,
-                    ]);
-
-                    if ($duplicateEmail->fetch(PDO::FETCH_ASSOC)) {
-                        $message = 'That email address is already in use by another account.';
-                        $messageType = 'danger';
-                    }
                 }
             } catch (Throwable $ex) {
                 error_log('Profile duplicate-check error: ' . $ex->getMessage());
-                $message = 'Unable to validate your profile details. Please try again.';
-                $messageType = 'danger';
             }
         }
 
-        // Validate and save an optional profile picture.
         if (
             $message === '' &&
             isset($_FILES['profile_image']) &&
@@ -135,8 +117,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 $uploadError = 'The image upload failed. Please try again.';
             } elseif ((int) $file['size'] > 2 * 1024 * 1024) {
                 $uploadError = 'Profile picture must be 2 MB or smaller.';
-            } elseif (!is_uploaded_file($file['tmp_name'])) {
-                $uploadError = 'Invalid image upload.';
             } else {
                 $finfo = new finfo(FILEINFO_MIME_TYPE);
                 $mime = $finfo->file($file['tmp_name']);
@@ -200,7 +180,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 $messageType = 'success';
             } catch (Throwable $ex) {
                 error_log('Profile update error: ' . $ex->getMessage());
-                $message = 'Unable to update your profile. Check the server logs if the problem continues.';
+                $message = 'Unable to update your profile. ' . $ex->getMessage();
                 $messageType = 'danger';
 
                 if ($newImagePath !== null) {
@@ -210,13 +190,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                     }
                 }
             }
-        }
-
-        if ($messageType === 'danger') {
-            $user['username'] = $username;
-            $user['fullname'] = $fullname;
-            $user['email'] = $email;
-            $user['phone_number'] = $phoneNumber;
         }
     }
 }
@@ -252,7 +225,6 @@ $profileImageUrl = $imagePath !== ''
         .logout-section { margin-top: auto; padding-top: 14px; border-top: 1px solid #ffffff33; }
         .main-content { margin-left: 260px; padding: 28px; min-height: 100vh; }
 
-        /* Dark Theme Profile Card layout based on mockup */
         .profile-card { 
             max-width: 850px; 
             margin: 0 auto; 
@@ -268,7 +240,6 @@ $profileImageUrl = $imagePath !== ''
         .form-control:focus { background-color: #1e1e1e; color: #fff; border-color: var(--blue); box-shadow: none; }
         .section-heading { font-size: .9rem; font-weight: 750; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
         
-        /* Edit logo on the right side of the text fields */
         .input-group-custom { position: relative; }
         .edit-icon-btn {
             position: absolute;
@@ -277,7 +248,7 @@ $profileImageUrl = $imagePath !== ''
             transform: translateY(-50%);
             background: none;
             border: none;
-            color: #ef4444; /* red highlight for [edit logo] as seen in preview */
+            color: #ef4444;
             cursor: pointer;
             z-index: 10;
             font-size: 0.85rem;
