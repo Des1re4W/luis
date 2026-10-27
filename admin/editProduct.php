@@ -43,7 +43,9 @@ if (isset($_POST['update'])) {
     $product_description = trim($_POST['product_description']);
     $image_path = $row['image']; // Default sa lumang image
 
-    // I-check kung may in-upload na bagong image gamit ang getimagesize para maiwasan ang error
+    $image_changed = false;
+
+    // I-check kung may in-upload na bagong image
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['image']['tmp_name'];
         if (!empty($tmp) && file_exists($tmp)) {
@@ -58,6 +60,7 @@ if (isset($_POST['update'])) {
 
                     if (move_uploaded_file($tmp, $folder)) {
                         $image_path = "uploads/" . $new_image_name;
+                        $image_changed = true;
                     }
                 }
             }
@@ -65,7 +68,7 @@ if (isset($_POST['update'])) {
     }
 
     try {
-        // 1. I-update muna ang produkto
+        // 1. I-update ang produkto sa database
         $update_stmt = $pdo->prepare("
             UPDATE products 
             SET product_name = :product_name, 
@@ -89,24 +92,51 @@ if (isset($_POST['update'])) {
             ':id' => $product_id
         ]);
 
-        // 2. Subukang i-log sa audit trail (Ginawa nating hiwalay o ligtas sakaling magka-error man dito)
-        try {
-            $username = $_SESSION['username'] ?? 'Admin';
-            $role = $_SESSION['role'] ?? 'admin';
-            $log_stmt = $pdo->prepare("
-                INSERT INTO audit_log (username, role, action, details, timestamp) 
-                VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)
-            ");
-            $log_stmt->execute([
-                ':username' => $username,
-                ':role' => $role,
-                ':action' => 'Edit Product',
-                ':details' => "Updated product: " . $product_name
-            ]);
-        } catch (Exception $log_e) {
-            // Huwag hayaang pigilan ang pag-save ng produkto kung sakaling magka-error ang audit log
-            error_log("Audit log error on edit: " . $log_e->getMessage());
+        // 2. Mag-buo ng detalyadong pagbabago para sa Audit Trail
+        $changes = [];
+        if ($row['product_name'] !== $product_name) {
+            $changes[] = "Name changed from '{$row['product_name']}' to '{$product_name}'";
         }
+        if ((float)$row['cost_price'] !== (float)$cost_price) {
+            $changes[] = "Cost Price changed from {$row['cost_price']} to {$cost_price}";
+        }
+        if ((float)$row['price'] !== (float)$price) {
+            $changes[] = "Selling Price changed from {$row['price']} to {$price}";
+        }
+        if ((int)$row['stock'] !== (int)$stock) {
+            $changes[] = "Stock changed from {$row['stock']} to {$stock}";
+        }
+        if ($row['category'] !== $category) {
+            $changes[] = "Category changed from '{$row['category']}' to '{$category}'";
+        }
+        if ($row['product_description'] !== $product_description) {
+            $changes[] = "Description updated";
+        }
+        if ($image_changed) {
+            $changes[] = "Product photo updated";
+        }
+
+        $details_text = "Updated product: " . $product_name;
+        if (!empty($changes)) {
+            $details_text .= " (" . implode(", ", $changes) . ")";
+        }
+
+        // 3. I-save sa audit_log table (kasama ang user_id para hindi mag-error)
+        $username = $_SESSION['username'] ?? 'Admin';
+        $role = $_SESSION['role'] ?? 'admin';
+        $user_id = $_SESSION['user_id'] ?? null; 
+
+        $log_stmt = $pdo->prepare("
+            INSERT INTO audit_log (user_id, username, role, action, details, timestamp) 
+            VALUES (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
+        ");
+        $log_stmt->execute([
+            ':user_id' => $user_id,
+            ':username' => $username,
+            ':role' => $role,
+            ':action' => 'Edit Product',
+            ':details' => $details_text
+        ]);
 
         $_SESSION['message'] = "Product updated successfully!";
         header("Location: products.php");
@@ -114,7 +144,7 @@ if (isset($_POST['update'])) {
 
     } catch (PDOException $e) {
         error_log("Update product error: " . $e->getMessage());
-        $message = '<div class="alert alert-danger">Error updating product in database: ' . htmlspecialchars($e->getMessage()) . '</div>';
+        $message = '<div class="alert alert-danger">Error updating product in database.</div>';
     }
 }
 ?>
