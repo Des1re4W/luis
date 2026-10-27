@@ -88,16 +88,6 @@ $damaged_rows = $damaged_result->fetchAll(PDO::FETCH_ASSOC);
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle"><i class="bi bi-list fs-4"></i></button>
     </div>
 </nav>
-
-<nav class="navbar navbar-dark navbar-custom px-3 d-none d-lg-flex">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-        <span class="navbar-brand fw-bold mb-0">Admin Panel</span>
-        <div class="d-flex align-items-center text-white gap-3">
-            <span>Welcome, <strong><?= htmlspecialchars($admin_name); ?></strong></span>
-        </div>
-    </div>
-</nav>
-
 <!-- Sidebar Menu -->
 <div class="sidebar" id="appSidebar">
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
