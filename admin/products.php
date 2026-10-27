@@ -50,16 +50,18 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
 
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
+        $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
         
         $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
-                (username, role, action, details, timestamp)
+                (user_id, username, role, action, details, timestamp)
             VALUES
-                (:username, :role, :action, :details, CURRENT_TIMESTAMP)
+                (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
         ");
 
         $log_stmt->execute([
+            ':user_id' => $user_id,
             ':username' => $username,
             ':role' => $role,
             ':action' => $action_name,
