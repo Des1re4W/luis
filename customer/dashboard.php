@@ -6,7 +6,6 @@ $sort = $_GET['sort'] ?? '';
 $is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
 $sort_label = '';
 
-
 try {
     $sql = "
         SELECT
@@ -21,7 +20,7 @@ try {
             0 AS variant_count,
             0 AS total_sold
         FROM public.products
-        WHERE 1 = 1
+        WHERE is_archived = 0
     ";
 
     $params = [];
@@ -78,10 +77,6 @@ try {
         . htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8')
         . '</div>';
 
-    $products = [];
-}
- catch (PDOException $e) {
-    error_log('Dashboard product load error: ' . $e->getMessage());
     $products = [];
 }
 ?>
