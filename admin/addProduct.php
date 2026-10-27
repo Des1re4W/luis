@@ -35,64 +35,70 @@ if (isset($_POST['submit'])) {
                 $image = $_FILES['image']['name'];
                 $tmp = $_FILES['image']['tmp_name'];
                 
-                // Siguraduhing hindi empty ang temporary path bago i-check ang MIME type
+                // Siguraduhing hindi empty ang temporary path
                 if (empty($tmp) || !file_exists($tmp)) {
                     $message = "Error: Uploaded file temporary path is empty or invalid.";
                 } else {
-                    // Mga pinapayagang MIME types (JPG, JPEG, PNG, WEBP)
-                    $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-                    $file_mime_check = mime_content_type($tmp);
-
-                    if (!in_array($file_mime_check, $allowed_types)) {
-                        $message = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
+                    // Gamitin ang getimagesize para masigurong totoong image file ito ( JPG, JPEG, PNG, WEBP )
+                    $check_image = getimagesize($tmp);
+                    
+                    if ($check_image === false) {
+                        $message = "Error: Invalid image file! Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
                     } else {
-                        $image_extension = pathinfo($image, PATHINFO_EXTENSION);
-                        $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
-                        $folder = "../uploads/" . $new_image_name;
+                        // Kunin ang extension mula sa file name
+                        $image_extension = strtolower(pathinfo($image, PATHINFO_EXTENSION));
+                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-                        if (move_uploaded_file($tmp, $folder)) {
-                            $savePath = "uploads/" . $new_image_name;
-
-                            $query = "INSERT INTO products (product_name, cost_price, price, category, image, stock, product_description) 
-                                      VALUES (:name, :cost_price, :price, :category, :image, :stock, :description)";
-                            
-                            $stmt = $pdo->prepare($query);
-                            $insert_result = $stmt->execute([
-                                ':name' => $name,
-                                ':cost_price' => $cost_price,
-                                ':price' => $price,
-                                ':category' => $category,
-                                ':image' => $savePath,
-                                ':stock' => $stock,
-                                ':description' => $description
-                            ]);
-
-                            if($insert_result){
-                                // ==========================================
-                                // AUDIT TRAIL LOGGING (ADD PRODUCT)
-                                // ==========================================
-                                $username = $_SESSION['username'] ?? 'Admin';
-                                $role = $_SESSION['role'] ?? 'admin';
-                                $action = 'Add Product';
-                                $details = "Added new product: " . $name;
-                                
-                                $log_query = "INSERT INTO audit_log (username, role, action, details, timestamp) 
-                                              VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)";
-                                $log_stmt = $pdo->prepare($log_query);
-                                $log_stmt->execute([
-                                    ':username' => $username,
-                                    ':role' => $role,
-                                    ':action' => $action,
-                                    ':details' => $details
-                                ]);
-                                // ==========================================
-
-                                $message = "Product added successfully!";
-                            } else {
-                                $message = "Error: Failed to insert product into database.";
-                            }
+                        if (!in_array($image_extension, $allowed_extensions)) {
+                            $message = "Error: Only JPG, JPEG, PNG, and WEBP extensions are allowed.";
                         } else {
-                            $message = "Error: Failed to move uploaded image file.";
+                            $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
+                            $folder = "../uploads/" . $new_image_name;
+
+                            if (move_uploaded_file($tmp, $folder)) {
+                                $savePath = "uploads/" . $new_image_name;
+
+                                $query = "INSERT INTO products (product_name, cost_price, price, category, image, stock, product_description) 
+                                          VALUES (:name, :cost_price, :price, :category, :image, :stock, :description)";
+                                
+                                $stmt = $pdo->prepare($query);
+                                $insert_result = $stmt->execute([
+                                    ':name' => $name,
+                                    ':cost_price' => $cost_price,
+                                    ':price' => $price,
+                                    ':category' => $category,
+                                    ':image' => $savePath,
+                                    ':stock' => $stock,
+                                    ':description' => $description
+                                ]);
+
+                                if($insert_result){
+                                    // ==========================================
+                                    // AUDIT TRAIL LOGGING (ADD PRODUCT)
+                                    // ==========================================
+                                    $username = $_SESSION['username'] ?? 'Admin';
+                                    $role = $_SESSION['role'] ?? 'admin';
+                                    $action = 'Add Product';
+                                    $details = "Added new product: " . $name;
+                                    
+                                    $log_query = "INSERT INTO audit_log (username, role, action, details, timestamp) 
+                                                  VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)";
+                                    $log_stmt = $pdo->prepare($log_query);
+                                    $log_stmt->execute([
+                                        ':username' => $username,
+                                        ':role' => $role,
+                                        ':action' => $action,
+                                        ':details' => $details
+                                    ]);
+                                    // ==========================================
+
+                                    $message = "Product added successfully!";
+                                } else {
+                                    $message = "Error: Failed to insert product into database.";
+                                }
+                            } else {
+                                $message = "Error: Failed to move uploaded image file.";
+                            }
                         }
                     }
                 }
