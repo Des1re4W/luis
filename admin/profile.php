@@ -149,7 +149,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 if (!isset($allowedMimes[$mime]) || @getimagesize($file['tmp_name']) === false) {
                     $uploadError = 'Use a valid JPG, PNG, or WEBP image.';
                 } else {
-                    // Project-root/uploads/profiles (this file is assumed to be in /admin).
                     $uploadDir = dirname(__DIR__) . '/uploads/profiles/';
 
                     if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
@@ -194,7 +193,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                     ':id' => $userId,
                 ]);
 
-                // Keep the session username in sync with the database.
                 $_SESSION['username'] = $username;
                 $user = loadUser($pdo, $userId);
 
@@ -205,7 +203,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
                 $message = 'Unable to update your profile. Check the server logs if the problem continues.';
                 $messageType = 'danger';
 
-                // Remove a newly uploaded image if the database update failed.
                 if ($newImagePath !== null) {
                     $newImageFullPath = dirname(__DIR__) . '/' . $newImagePath;
                     if (is_file($newImageFullPath)) {
@@ -215,7 +212,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
             }
         }
 
-        // Keep the form populated with the submitted values after validation errors.
         if ($messageType === 'danger') {
             $user['username'] = $username;
             $user['fullname'] = $fullname;
@@ -242,6 +238,7 @@ $profileImageUrl = $imagePath !== ''
     <style>
         :root { --navy: #001f4d; --blue: #0d6efd; }
         body { margin: 0; background: #f3f6fa; color: #1f2937; overflow-x: hidden; }
+        
         .sidebar {
             position: fixed; inset: 0 auto 0 0; width: 260px; height: 100vh;
             padding: 22px 16px; background: var(--navy); overflow-y: auto;
@@ -254,12 +251,40 @@ $profileImageUrl = $imagePath !== ''
         .sidebar a:hover, .sidebar a.active { background: var(--blue); }
         .logout-section { margin-top: auto; padding-top: 14px; border-top: 1px solid #ffffff33; }
         .main-content { margin-left: 260px; padding: 28px; min-height: 100vh; }
-        .profile-card { max-width: 850px; margin: 0 auto; background: #fff; border-radius: 16px; padding: clamp(20px, 4vw, 36px); box-shadow: 0 8px 30px #0b254510; }
-        .profile-avatar { width: 86px; height: 86px; object-fit: cover; border-radius: 50%; border: 3px solid #e3edff; background: #f1f5f9; }
-        .form-label { font-weight: 600; font-size: .9rem; }
-        .form-control { min-height: 44px; }
-        .section-heading { font-size: .9rem; font-weight: 750; letter-spacing: .06em; color: #64748b; text-transform: uppercase; }
-        .account-summary { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; }
+
+        /* Dark Theme Profile Card layout based on mockup */
+        .profile-card { 
+            max-width: 850px; 
+            margin: 0 auto; 
+            background: #121212; 
+            color: #ffffff; 
+            border-radius: 16px; 
+            padding: clamp(20px, 4vw, 36px); 
+            box-shadow: 0 8px 30px rgba(0,0,0,0.3); 
+        }
+        .profile-avatar { width: 75px; height: 75px; object-fit: cover; border-radius: 50%; border: 2px solid var(--blue); background: #222; }
+        .form-label { font-weight: 600; font-size: .9rem; color: #cbd5e1; }
+        .form-control { min-height: 44px; background-color: #1e1e1e; border: 1px solid #333; color: #fff; border-radius: 8px; padding-right: 95px; }
+        .form-control:focus { background-color: #1e1e1e; color: #fff; border-color: var(--blue); box-shadow: none; }
+        .section-heading { font-size: .9rem; font-weight: 750; letter-spacing: .06em; color: #94a3b8; text-transform: uppercase; }
+        
+        /* Edit logo on the right side of the text fields */
+        .input-group-custom { position: relative; }
+        .edit-icon-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #ef4444; /* red highlight for [edit logo] as seen in preview */
+            cursor: pointer;
+            z-index: 10;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .edit-icon-btn:hover { color: #f87171; }
+
         @media (max-width: 991.98px) {
             .sidebar { transform: translateX(-100%); }
             .sidebar.show { transform: translateX(0); }
@@ -300,7 +325,7 @@ $profileImageUrl = $imagePath !== ''
             </div>
         <?php endif; ?>
 
-        <div class="d-flex align-items-center gap-3 mb-4 pb-4 border-bottom">
+        <div class="d-flex align-items-center gap-3 mb-4 pb-4 border-bottom border-secondary">
             <img
                 src="<?= e($profileImageUrl) ?>"
                 class="profile-avatar"
@@ -309,66 +334,83 @@ $profileImageUrl = $imagePath !== ''
             >
             <div>
                 <h1 class="h4 fw-bold mb-1">My Profile</h1>
-                <p class="text-secondary mb-2">Manage your personal information and account details.</p>
-                <span class="badge text-bg-success">Active Session</span>
+                <p class="text-secondary mb-2">Manage your personal information and account security.</p>
+                <span class="badge text-bg-success">Active Account</span>
             </div>
         </div>
 
         <form method="post" enctype="multipart/form-data" novalidate>
             <input type="hidden" name="csrf_token" value="<?= e($_SESSION['csrf_token']) ?>">
 
-            <h2 class="section-heading mb-3">Personal information</h2>
+            <h2 class="section-heading mb-3">Personal Information</h2>
 
             <div class="mb-3">
                 <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="username" name="username"
-                       value="<?= e($user['username'] ?? '') ?>" maxlength="50" autocomplete="username" required>
+                <div class="input-group-custom">
+                    <input type="text" class="form-control" id="username" name="username"
+                           value="<?= e($user['username'] ?? '') ?>" maxlength="50" autocomplete="username" readonly required>
+                    <button type="button" class="edit-icon-btn" onclick="enableField('username')" title="Click to edit">
+                        [edit logo]
+                    </button>
+                </div>
             </div>
 
             <div class="mb-3">
-                <label for="fullname" class="form-label">Full name</label>
-                <input type="text" class="form-control" id="fullname" name="fullname"
-                       value="<?= e($user['fullname'] ?? '') ?>" maxlength="150" autocomplete="name">
+                <label for="fullname" class="form-label">Full Name</label>
+                <div class="input-group-custom">
+                    <input type="text" class="form-control" id="fullname" name="fullname"
+                           value="<?= e($user['fullname'] ?? '') ?>" maxlength="150" autocomplete="name" readonly>
+                    <button type="button" class="edit-icon-btn" onclick="enableField('fullname')" title="Click to edit">
+                        [edit logo]
+                    </button>
+                </div>
             </div>
 
             <div class="mb-3">
-                <label for="email" class="form-label">Email address</label>
-                <input type="email" class="form-control" id="email" name="email"
-                       value="<?= e($user['email'] ?? '') ?>" maxlength="254" autocomplete="email">
+                <label for="email" class="form-label">Email Address</label>
+                <div class="input-group-custom">
+                    <input type="email" class="form-control" id="email" name="email"
+                           value="<?= e($user['email'] ?? '') ?>" maxlength="254" autocomplete="email" readonly>
+                    <button type="button" class="edit-icon-btn" onclick="enableField('email')" title="Click to edit">
+                        [edit logo]
+                    </button>
+                </div>
             </div>
 
             <div class="mb-4">
-                <label for="phone_number" class="form-label">Contact number</label>
-                <input type="tel" class="form-control" id="phone_number" name="phone_number"
-                       value="<?= e($user['phone_number'] ?? '') ?>" maxlength="20"
-                       placeholder="e.g. 09XXXXXXXXX" autocomplete="tel">
+                <label for="phone_number" class="form-label">Contact Number</label>
+                <div class="input-group-custom">
+                    <input type="tel" class="form-control" id="phone_number" name="phone_number"
+                           value="<?= e($user['phone_number'] ?? '') ?>" maxlength="20"
+                           placeholder="09XXXXXXXXX" autocomplete="tel" readonly>
+                    <button type="button" class="edit-icon-btn" onclick="enableField('phone_number')" title="Click to edit">
+                        [edit logo]
+                    </button>
+                </div>
             </div>
 
             <div class="mb-4">
-                <label for="profile_image" class="form-label">Profile picture (optional)</label>
+                <label for="profile_image" class="form-label">Profile Picture (Optional)</label>
                 <input type="file" class="form-control" id="profile_image" name="profile_image"
-                       accept="image/jpeg,image/png,image/webp">
-                <div class="form-text">JPG, PNG, or WEBP. Maximum file size: 2 MB.</div>
+                       accept="image/jpeg,image/png,image/webp" style="padding-right: 15px;">
+                <div class="form-text text-muted">JPG, PNG, or WEBP. Maximum file size: 2 MB.</div>
             </div>
 
-            <h2 class="section-heading mb-3">Account information</h2>
-            <div class="account-summary row g-3 mb-4">
+            <h2 class="section-heading mb-3">Account Information</h2>
+            <div class="row g-3 mb-4 p-3 rounded" style="background: #1e1e1e; border: 1px solid #333;">
                 <div class="col-sm-6">
                     <div class="text-secondary small">Account ID</div>
                     <div class="fw-semibold">#<?= e($user['id'] ?? '') ?></div>
                 </div>
                 <div class="col-sm-6">
                     <div class="text-secondary small">Role</div>
-                    <div class="fw-semibold text-uppercase"><?= e($role) ?></div>
+                    <div class="fw-semibold text-uppercase text-info"><?= e($role) ?></div>
                 </div>
             </div>
 
             <div class="d-flex flex-column flex-sm-row gap-2">
-                <button type="submit" name="update_profile" value="1" class="btn btn-primary px-4">
-                    <i class="bi bi-check2-circle me-1"></i>Save Changes
-                </button>
-                <button type="reset" class="btn btn-outline-secondary px-4">
-                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Form
+                <button type="submit" name="update_profile" value="1" class="btn btn-light w-100 fw-bold py-2 shadow-sm">
+                    Save Changes
                 </button>
             </div>
         </form>
@@ -377,6 +419,14 @@ $profileImageUrl = $imagePath !== ''
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+function enableField(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (field) {
+        field.removeAttribute('readonly');
+        field.focus();
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     const toggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('appSidebar');
