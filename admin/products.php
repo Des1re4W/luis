@@ -19,7 +19,6 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
     $is_archive_action = isset($_GET['archive_id']);
     $new_status = $is_archive_action ? 1 : 0;
     
-    // Nilinaw ang action name para sa Audit Trail
     $action_name = $is_archive_action ? 'Archive Product' : 'Unarchive Product';
 
     if ($target_id === false || $target_id === null || $target_id <= 0) {
@@ -49,14 +48,10 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
         );
         $stmt->execute([':status' => $new_status, ':id' => $target_id]);
 
-        // ==========================================
-        // NAITALA NA DITO ANG USER AT ROLE SA AUDIT LOG
-        // ==========================================
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
         
-        // Tinanggal na ang IP address para malinis, nakadepende na ito sa columns ng iyong audit_log table
         $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
                 (username, role, action, details, timestamp)
@@ -70,7 +65,6 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
             ':action' => $action_name,
             ':details' => $details
         ]);
-        // ==========================================
 
         $_SESSION['message'] = $is_archive_action ? "Product archived successfully!" : "Product unarchived successfully!";
         header("Location: products.php");
@@ -133,6 +127,69 @@ try {
                   AND v.stock <= 10
                   AND v.stock > 0
             ) AS low_stock_items
+        ";
+
+        $params = [];
+
+        if ($search !== '') {
+            $query .= "
+                WHERE (
+                    product_name ILIKE :search_name
+                    OR category ILIKE :search_category
+                    OR variant_name ILIKE :search_variant
+                )
+            ";
+
+            $searchTerm = '%' . $search . '%';
+            $params = [
+                ':search_name' => $searchTerm,
+                ':search_category' => $searchTerm,
+                ':search_variant' => $searchTerm
+            ];
+        }
+
+        $query .= " ORDER BY product_id DESC";
+
+    } elseif ($filter === 'out_of_stock') {
+
+        // Out of stock products without variants (stock <= 0) + out of stock variants (stock <= 0)
+        $query = "
+            SELECT *
+            FROM (
+                SELECT
+                    p.id AS product_id,
+                    NULL AS variant_id,
+                    p.product_name,
+                    p.category,
+                    p.image,
+                    'Standard Single Item (No Variants)' AS variant_name,
+                    p.stock AS item_stock,
+                    p.price AS item_price
+                FROM products p
+                WHERE p.is_archived = 0
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM product_variants v
+                    WHERE v.product_id = p.id
+                )
+                  AND p.stock <= 0
+
+                UNION ALL
+
+                SELECT
+                    p.id AS product_id,
+                    v.id AS variant_id,
+                    p.product_name,
+                    p.category,
+                    p.image,
+                    v.variant_name,
+                    v.stock AS item_stock,
+                    v.price AS item_price
+                FROM product_variants v
+                JOIN products p ON p.id = v.product_id
+                WHERE p.is_archived = 0
+                  AND v.stock <= 0
+            ) AS out_of_stock_items
         ";
 
         $params = [];
@@ -362,7 +419,7 @@ try {
             <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
                 <h3 class="mb-0 text-dark fw-bold fs-4">
                     📦 Product Inventory Management
-                    <?php echo ($filter == 'low_stock') ? '<span class="text-warning fs-5">(Low Stock Filtered)</span>' : (($filter == 'archived') ? '<span class="text-secondary fs-5">(Archived Products)</span>' : ''); ?>
+                    <?php echo ($filter == 'low_stock') ? '<span class="text-warning fs-5">(Low Stock Filtered)</span>' : (($filter == 'out_of_stock') ? '<span class="text-danger fs-5">(Out of Stock Filtered)</span>' : (($filter == 'archived') ? '<span class="text-secondary fs-5">(Archived Products)</span>' : '')); ?>
                 </h3>
 
                 <div class="d-flex gap-2 flex-wrap">
@@ -373,6 +430,12 @@ try {
                     <?php else: ?>
                         <a href="products.php?filter=archived" class="btn btn-secondary fw-bold btn-sm">
                             <i class="bi bi-archive-fill"></i> View Archived
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if ($filter !== 'out_of_stock'): ?>
+                        <a href="products.php?filter=out_of_stock" class="btn btn-danger fw-bold btn-sm">
+                            <i class="bi bi-x-circle-fill"></i> Out of Stock
                         </a>
                     <?php endif; ?>
 
@@ -415,10 +478,10 @@ try {
                             <th class="text-center" style="width: 80px;">Image</th>
                             <th>Product Name</th>
                             <th>Category</th>
-                            <th><?php echo ($filter == 'low_stock') ? 'Specific Item / Variant' : 'Variants List'; ?></th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Specific Item / Variant' : 'Variants List'; ?></th>
                             <th class="text-center">
-                                <?php echo ($filter == 'low_stock') ? 'Stock Level' : 'Main Stock'; ?></th>
-                            <th><?php echo ($filter == 'low_stock') ? 'Price' : 'Price Range / Single Price'; ?></th>
+                                <?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Stock Level' : 'Main Stock'; ?></th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Price' : 'Price Range / Single Price'; ?></th>
                             <th class="text-center" style="width: 260px;">Actions</th>
                         </tr>
                     </thead>
@@ -428,7 +491,7 @@ try {
 
                         if ($row !== false) {
                             do {
-                                if ($filter == 'low_stock') {
+                                if ($filter == 'low_stock' || $filter == 'out_of_stock') {
                                     $p_id = $row['product_id'];
                                     $p_name = $row['product_name'];
                                     $p_category = $row['category'];
@@ -477,7 +540,7 @@ try {
                                     </td>
                                     <td>
                                         <small
-                                            class="<?php echo ($filter == 'low_stock') ? 'fw-bold text-primary' : 'text-muted'; ?>">
+                                            class="<?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'fw-bold text-primary' : 'text-muted'; ?>">
                                             <?php echo htmlspecialchars($v_name); ?>
                                         </small>
                                     </td>
@@ -503,7 +566,7 @@ try {
                                     </td>
                                     <td class="text-center">
                                         <div class="d-flex justify-content-center gap-1">
-                                            <?php if ($filter !== 'low_stock'): ?>
+                                            <?php if ($filter !== 'low_stock' && $filter !== 'out_of_stock'): ?>
                                                 <a href="manageVariants.php?product_id=<?php echo $p_id; ?>"
                                                     class="btn btn-success btn-sm fw-bold">
                                                     <i class="bi bi-boxes"></i> Variants
