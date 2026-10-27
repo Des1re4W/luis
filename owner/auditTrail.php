@@ -1,13 +1,12 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/db.php';[cite: 3]
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== "owner") {
     header("Location: ../login.php");
     exit();
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
-
 
 $role_filter = $_GET['role_filter'] ?? 'all';
 $action_filter = $_GET['action_filter'] ?? 'all';
@@ -240,7 +239,6 @@ body{
                             <th>Role</th>
                             <th>Action</th>
                             <th>Details</th>
-                            <th class="text-end">IP</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -253,10 +251,9 @@ body{
                             <td><span class="badge bg-secondary"><?php echo htmlspecialchars($row['role']); ?></span></td>
                             <td><?php echo htmlspecialchars($row['action']); ?></td>
                             <td class="text-details"><?php echo htmlspecialchars($row['details']); ?></td>
-                            <td class="text-end"><?php echo htmlspecialchars($row['ip_address'] ?? 'N/A'); ?></td>
                         </tr>
                     <?php } } else { ?>
-                        <tr><td colspan="6" class="text-center py-4 text-muted">No audit logs found.</td></tr>
+                        <tr><td colspan="5" class="text-center py-4 text-muted">No audit logs found.</td></tr>
                     <?php } ?>
                     </tbody>
                 </table>
