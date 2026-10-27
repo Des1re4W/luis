@@ -186,7 +186,7 @@ if (isset($_POST['update_profile'])) {
         }
 
         .input-group-custom input {
-            background-color: #1e1e1e;
+            background-color: #1b118a;
             border: 1px solid #333;
             color: #fff;
             border-radius: 8px;
