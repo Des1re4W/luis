@@ -295,7 +295,7 @@ if (isset($_POST['update_profile'])) {
                         <div class="input-group-custom">
                             <input type="text" name="username" id="inputUsername" class="form-control" value="<?= htmlspecialchars($user['username']); ?>" readonly required>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputUsername')">
-                                [edit logo]
+                               [edit]
                             </button>
                         </div>
                     </div>
@@ -306,7 +306,7 @@ if (isset($_POST['update_profile'])) {
                         <div class="input-group-custom">
                             <input type="text" name="fullname" id="inputFullname" class="form-control" value="<?= htmlspecialchars($user['fullname'] ?? ''); ?>" placeholder="Enter your full name" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputFullname')">
-                                [edit logo]
+                                [edit]
                             </button>
                         </div>
                     </div>
@@ -317,7 +317,7 @@ if (isset($_POST['update_profile'])) {
                         <div class="input-group-custom">
                             <input type="email" name="email" id="inputEmail" class="form-control" value="<?= htmlspecialchars($user['email'] ?? ''); ?>" placeholder="Enter your email address" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputEmail')">
-                                [edit logo]
+                                [edit]
                             </button>
                         </div>
                     </div>
@@ -328,7 +328,7 @@ if (isset($_POST['update_profile'])) {
                         <div class="input-group-custom">
                             <input type="text" name="phone_number" id="inputPhone" class="form-control" value="<?= htmlspecialchars($user['phone_number'] ?? ''); ?>" placeholder="09XXXXXXXXX" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputPhone')">
-                                [edit logo]
+                                [edit]
                             </button>
                         </div>
                     </div>
