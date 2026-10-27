@@ -9,15 +9,18 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 // ==========================================
-// DELETE PRODUCT LOGIC WITH AUDIT TRAIL
+// ARCHIVE / UNARCHIVE PRODUCT LOGIC WITH AUDIT TRAIL
 // ==========================================
-if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id'])) {
-    $delete_id = filter_var(
-        $_GET['id'] ?? $_GET['delete_id'] ?? $_GET['product_id'],
+if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
+    $target_id = filter_var(
+        $_GET['archive_id'] ?? $_GET['unarchive_id'],
         FILTER_VALIDATE_INT
     );
+    $is_archive_action = isset($_GET['archive_id']);
+    $new_status = $is_archive_action ? 1 : 0;
+    $action_name = $is_archive_action ? 'Archive Product' : 'Unarchive Product';
 
-    if ($delete_id === false || $delete_id === null || $delete_id <= 0) {
+    if ($target_id === false || $target_id === null || $target_id <= 0) {
         $_SESSION['message'] = "Invalid product ID.";
         header("Location: products.php");
         exit();
@@ -27,7 +30,7 @@ if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id']
         $stmt = $pdo->prepare(
             "SELECT product_name FROM products WHERE id = :id"
         );
-        $stmt->execute([':id' => $delete_id]);
+        $stmt->execute([':id' => $target_id]);
         $p_data = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$p_data) {
@@ -36,19 +39,18 @@ if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id']
             exit();
         }
 
-        $deleted_p_name = $p_data['product_name'] ?? 'Unknown Product';
+        $p_name = $p_data['product_name'] ?? 'Unknown Product';
 
-        // Delete product
+        // Update is_archived status instead of deleting
         $stmt = $pdo->prepare(
-            "DELETE FROM products WHERE id = :id"
+            "UPDATE products SET is_archived = :status WHERE id = :id"
         );
-        $stmt->execute([':id' => $delete_id]);
+        $stmt->execute([':status' => $new_status, ':id' => $target_id]);
 
-        // Record deletion in audit log
+        // Record action in audit log
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
-        $action = 'Delete Product';
-        $details = "Deleted product: " . $deleted_p_name;
+        $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
         $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
 
         $log_stmt = $pdo->prepare("
@@ -61,18 +63,18 @@ if (isset($_GET['id']) || isset($_GET['delete_id']) || isset($_GET['product_id']
         $log_stmt->execute([
             ':username' => $username,
             ':role' => $role,
-            ':action' => $action,
+            ':action' => $action_name,
             ':details' => $details,
             ':ip_address' => $ip_address
         ]);
 
-        $_SESSION['message'] = "Product deleted successfully!";
+        $_SESSION['message'] = $is_archive_action ? "Product archived successfully!" : "Product unarchived successfully!";
         header("Location: products.php");
         exit();
 
     } catch (PDOException $e) {
-        error_log("Delete product error: " . $e->getMessage());
-        $_SESSION['message'] = "Unable to delete product. Check whether it is linked to other records.";
+        error_log("Archive/Unarchive product error: " . $e->getMessage());
+        $_SESSION['message'] = "Unable to update product archive status.";
         header("Location: products.php");
         exit();
     }
@@ -87,7 +89,7 @@ $filter = $_GET['filter'] ?? '';
 try {
     if ($filter === 'low_stock') {
 
-        // Low-stock products without variants + low-stock variants
+        // Low-stock products without variants + low-stock variants (excluding archived)
         $query = "
             SELECT *
             FROM (
@@ -101,7 +103,8 @@ try {
                     p.stock AS item_stock,
                     p.price AS item_price
                 FROM products p
-                WHERE NOT EXISTS (
+                WHERE p.is_archived = 0
+                  AND NOT EXISTS (
                     SELECT 1
                     FROM product_variants v
                     WHERE v.product_id = p.id
@@ -122,7 +125,8 @@ try {
                     v.price AS item_price
                 FROM product_variants v
                 JOIN products p ON p.id = v.product_id
-                WHERE v.stock <= 10
+                WHERE p.is_archived = 0
+                  AND v.stock <= 10
                   AND v.stock > 0
             ) AS low_stock_items
         ";
@@ -149,8 +153,10 @@ try {
         $query .= " ORDER BY product_id DESC";
 
     } else {
+        
+        // Normal inventory list or archived list based on filter
+        $archived_condition = ($filter === 'archived') ? "p.is_archived = 1" : "p.is_archived = 0";
 
-        // Normal inventory list
         $query = "
             SELECT
                 p.*,
@@ -164,7 +170,7 @@ try {
                 STRING_AGG(v.variant_name, ', ') AS variant_list
             FROM products p
             LEFT JOIN product_variants v ON p.id = v.product_id
-            WHERE 1 = 1
+            WHERE $archived_condition
         ";
 
         $params = [];
@@ -190,7 +196,6 @@ try {
         ";
     }
 
-    // FIXED: Changed $conn to $pdo
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
 
@@ -220,7 +225,6 @@ try {
             overflow-x: hidden;
         }
 
-        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -306,7 +310,6 @@ try {
             border-radius: 10px;
         }
 
-        /* MOBILE RESPONSIVENESS */
         @media (max-width: 991.98px) {
             .sidebar {
                 transform: translateX(-100%);
@@ -327,7 +330,6 @@ try {
 
 <body>
 
-    <!-- Mobile Header Toggle Bar -->
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
         <span class="navbar-brand fw-bold fs-6"><i class="bi bi-box-seam"></i> Inventory Management</span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
@@ -335,7 +337,6 @@ try {
         </button>
     </nav>
 
-    <!-- SIDEBAR -->
     <div class="sidebar" id="appSidebar">
         <h2>Admin<br>Dashboard</h2>
         <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
@@ -351,22 +352,27 @@ try {
         </div>
     </div>
 
-    <!-- MAIN CONTENT -->
     <div class="main-content">
         <div class="main-container">
 
             <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-3">
                 <h3 class="mb-0 text-dark fw-bold fs-4">
                     📦 Product Inventory Management
-                    <?php echo ($filter == 'low_stock') ? '<span class="text-warning fs-5">(Low Stock Filtered)</span>' : ''; ?>
+                    <?php echo ($filter == 'low_stock') ? '<span class="text-warning fs-5">(Low Stock Filtered)</span>' : (($filter == 'archived') ? '<span class="text-secondary fs-5">(Archived Products)</span>' : ''); ?>
                 </h3>
 
                 <div class="d-flex gap-2 flex-wrap">
-                    <?php if ($filter == 'low_stock'): ?>
+                    <?php if (!empty($filter)): ?>
                         <a href="products.php" class="btn btn-secondary fw-bold btn-sm">
-                            <i class="bi bi-arrow-counterclockwise"></i> Show All Products
+                            <i class="bi bi-arrow-counterclockwise"></i> Show Active Products
                         </a>
                     <?php else: ?>
+                        <a href="products.php?filter=archived" class="btn btn-secondary fw-bold btn-sm">
+                            <i class="bi bi-archive-fill"></i> View Archived
+                        </a>
+                    <?php endif; ?>
+
+                    <?php if ($filter !== 'low_stock' && $filter !== 'archived'): ?>
                         <a href="products.php?filter=low_stock" class="btn btn-warning fw-bold text-dark btn-sm">
                             <i class="bi bi-exclamation-triangle-fill"></i> Low Stocks
                         </a>
@@ -426,12 +432,14 @@ try {
                                     $v_name = $row['variant_name'];
                                     $t_stock = $row['item_stock'];
                                     $price_range = "₱" . number_format((float) $row['item_price'], 2);
+                                    $is_archived = 0;
 
                                 } else {
                                     $p_id = $row['id'];
                                     $p_name = $row['product_name'];
                                     $p_category = $row['category'];
                                     $p_image = $row['image'];
+                                    $is_archived = $row['is_archived'] ?? 0;
 
                                     $v_name = ((int) $row['total_variants'] > 0)
                                         ? htmlspecialchars($row['variant_list'] ?? '', ENT_QUOTES, 'UTF-8')
@@ -491,21 +499,31 @@ try {
                                     </td>
                                     <td class="text-center">
                                         <div class="d-flex justify-content-center gap-1">
-                                            <a href="manageVariants.php?product_id=<?php echo $p_id; ?>"
-                                                class="btn btn-success btn-sm fw-bold">
-                                                <i class="bi bi-boxes"></i> Variants
-                                            </a>
+                                            <?php if ($filter !== 'low_stock'): ?>
+                                                <a href="manageVariants.php?product_id=<?php echo $p_id; ?>"
+                                                    class="btn btn-success btn-sm fw-bold">
+                                                    <i class="bi bi-boxes"></i> Variants
+                                                </a>
 
-                                            <a href="editProduct.php?product_id=<?php echo $p_id; ?>"
-                                                class="btn btn-warning btn-sm fw-bold">
-                                                <i class="bi bi-pencil-square"></i> Edit
-                                            </a>
+                                                <a href="editProduct.php?product_id=<?php echo $p_id; ?>"
+                                                    class="btn btn-warning btn-sm fw-bold">
+                                                    <i class="bi bi-pencil-square"></i> Edit
+                                                </a>
+                                            <?php endif; ?>
 
-                                            <a href="products.php?product_id=<?php echo $p_id; ?>"
-                                                onclick="return confirm('Are you sure you want to delete this product?')"
-                                                class="btn btn-danger btn-sm fw-bold">
-                                                <i class="bi bi-trash"></i> Delete
-                                            </a>
+                                            <?php if ($is_archived == 1): ?>
+                                                <a href="products.php?unarchive_id=<?php echo $p_id; ?>"
+                                                    onclick="return confirm('Are you sure you want to unarchive this product?')"
+                                                    class="btn btn-secondary btn-sm fw-bold">
+                                                    <i class="bi bi-arrow-counterclockwise"></i> Unarchive
+                                                </a>
+                                            <?php else: ?>
+                                                <a href="products.php?archive_id=<?php echo $p_id; ?>"
+                                                    onclick="return confirm('Are you sure you want to archive this product?')"
+                                                    class="btn btn-outline-secondary btn-sm fw-bold text-dark">
+                                                    <i class="bi bi-archive"></i> Archive
+                                                </a>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
@@ -545,7 +563,6 @@ try {
                 });
         }
 
-        // Mobile Sidebar Toggle Script
         document.addEventListener("DOMContentLoaded", function () {
             const sidebarToggle = document.getElementById('sidebarToggle');
             const appSidebar = document.getElementById('appSidebar');
