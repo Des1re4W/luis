@@ -2,40 +2,112 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-// Only run logout logic if a logout trigger is requested (e.g., ?action=logout)
-if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['user_id'])) {
-    $username = $_SESSION['username'] ?? 'Unknown';
-    $role = $_SESSION['role'] ?? 'Unknown';
-    $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-    $action = 'Logout';
-    $details = "User $username logged out successfully.";
 
-    try {
-        // Ensure $conn exists before calling prepare()
-        if (isset($conn) && $conn instanceof PDO) {
-            $stmt = $conn->prepare("
-                INSERT INTO audit_log
-                    (username, role, action, details, ip_address)
-                VALUES
-                    (:username, :role, :action, :details, :ip_address)
-            ");
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header("Location: ../login.php");
+    exit();
+}
 
-            $stmt->execute([
-                ':username' => $username,
-                ':role' => $role,
-                ':action' => $action,
-                ':details' => $details,
-                ':ip_address' => $ip_address
-            ]);
+$message = ""; 
+$row = [];
+
+
+$product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
+
+if (!$product_id) {
+    $_SESSION['message'] = "Invalid product ID.";
+    header("Location: products.php");
+    exit();
+}
+
+try {
+    $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
+    $stmt->execute([':id' => $product_id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        $_SESSION['message'] = "Product not found.";
+        header("Location: products.php");
+        exit();
+    }
+} catch (PDOException $e) {
+    error_log("Fetch product error: " . $e->getMessage());
+    die("Database error occurred.");
+}
+
+// Kapag pinindot ang Update button
+if (isset($_POST['update'])) {
+    $product_name = trim($_POST['product_name']);
+    $cost_price = $_POST['cost_price'];
+    $price = $_POST['price'];
+    $category = $_POST['category'];
+    $stock = $_POST['stock'];
+    $product_description = trim($_POST['product_description']);
+    $image_path = $row['image']; // Default sa lumang image
+
+    // I-check kung may in-upload na bagong image
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        $tmp = $_FILES['image']['tmp_name'];
+        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+        $file_mime_check = mime_content_type($tmp);
+
+        if (in_array($file_mime_check, $allowed_types)) {
+            $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+            $new_image_name = uniqid("prod_", true) . '.' . $ext;
+            $folder = "../uploads/" . $new_image_name;
+
+            if (move_uploaded_file($tmp, $folder)) {
+                $image_path = "uploads/" . $new_image_name;
+            }
         }
-    } catch (PDOException $e) {
-        error_log("Logout audit log error: " . $e->getMessage());
     }
 
-    $_SESSION = [];
-    session_destroy();
-    header("Location: login.php");
-    exit();
+    try {
+        $update_stmt = $pdo->prepare("
+            UPDATE products 
+            SET product_name = :product_name, 
+                cost_price = :cost_price, 
+                price = :price, 
+                category = :category, 
+                stock = :stock, 
+                product_description = :product_description, 
+                image = :image 
+            WHERE id = :id
+        ");
+
+        $update_stmt->execute([
+            ':product_name' => $product_name,
+            ':cost_price' => $cost_price,
+            ':price' => $price,
+            ':category' => $category,
+            ':stock' => $stock,
+            ':product_description' => $product_description,
+            ':image' => $image_path,
+            ':id' => $product_id
+        ]);
+
+        // Audit Trail Logging
+        $username = $_SESSION['username'] ?? 'Admin';
+        $role = $_SESSION['role'] ?? 'admin';
+        $log_stmt = $pdo->prepare("
+            INSERT INTO audit_log (username, role, action, details, timestamp) 
+            VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)
+        ");
+        $log_stmt->execute([
+            ':username' => $username,
+            ':role' => $role,
+            ':action' => 'Edit Product',
+            ':details' => "Updated product: " . $product_name
+        ]);
+
+        $_SESSION['message'] = "Product updated successfully!";
+        header("Location: products.php");
+        exit();
+
+    } catch (PDOException $e) {
+        error_log("Update product error: " . $e->getMessage());
+        $message = '<div class="alert alert-danger">Error updating product in database.</div>';
+    }
 }
 ?>
 
@@ -45,19 +117,19 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['u
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Product | Admin</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
 <body class="bg-light">
 
-<div class="container mt-5" style="max-width: 600px;">
+<div class="container mt-5 mb-5" style="max-width: 600px;">
     <div class="card shadow-sm border-0">
         <div class="card-header bg-warning text-white fw-bold py-3">
             <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Edit Product Details</h5>
         </div>
         <div class="card-body p-4">
             
+            <!-- Dito na ilalabas ang alert message kung sakaling may error -->
             <?php echo $message; ?>
 
             <form action="" method="POST" enctype="multipart/form-data">
@@ -81,8 +153,8 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['u
                     <?php 
                     $cats = ["Tools", "Electrical", "Construction", "Plumbing", "Paint and Supplies", "Chemicals"];
                     foreach($cats as $cat) {
-                        $selected = ($row['category'] == $cat) ? "selected" : "";
-                        echo "<option $selected>$cat</option>";
+                        $selected = (($row['category'] ?? '') === $cat) ? "selected" : "";
+                        echo "<option value=\"$cat\" $selected>$cat</option>";
                     }
                     ?>
                 </select>
@@ -95,7 +167,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['u
 
                 <label class="form-label fw-bold d-block">Current Image</label>
                 <?php if(!empty($row['image'])): ?>
-                    <img src="../<?php echo $row['image']; ?>" width="120" class="mb-3 border rounded shadow-sm"><br>
+                    <img src="../<?php echo htmlspecialchars($row['image']); ?>" width="120" class="mb-3 border rounded shadow-sm"><br>
                 <?php else: ?>
                     <img src="../assets/no-image.jpg" width="120" class="mb-3 border rounded shadow-sm"><br>
                 <?php endif; ?>
@@ -113,5 +185,6 @@ if (isset($_GET['action']) && $_GET['action'] === 'logout' && isset($_SESSION['u
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
