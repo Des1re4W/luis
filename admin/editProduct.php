@@ -144,7 +144,7 @@ if (isset($_POST['update'])) {
 
     } catch (PDOException $e) {
         error_log("Update product error: " . $e->getMessage());
-        $message = '<div class="alert alert-danger">Error updating product in database.</div>';
+        $message = '<div class="alert alert-danger">Error updating product!</div>';
     }
 }
 ?>
