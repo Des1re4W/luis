@@ -16,7 +16,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
 
 $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
 
-// --- 1. EMAILER ACTION LOGIC (Para sa Manual Send Button) ---
+// --- 1. EMAILER ACTION LOGIC ---
 if (isset($_POST['send_email_update'])) {
     $req_id = (int)$_POST['ticket_id'];
     
@@ -37,7 +37,6 @@ if (isset($_POST['send_email_update'])) {
         $current_status = $ticket_data['status'];
         $payment_method = strtoupper($ticket_data['payment_method']);
         
-        // Kunin ang decline/admin reason mula sa database
         $decline_reason_text = !empty($ticket_data['admin_notes']) ? nl2br(htmlspecialchars($ticket_data['admin_notes'])) : 'No specific reason provided.';
 
         $mail = new PHPMailer(true);
@@ -145,7 +144,7 @@ if (isset($_POST['send_email_update'])) {
     exit();
 }
 
-// --- 2. STATUS UPDATE LOGIC (Kasama ang pag-save ng Decline Reason) ---
+// --- 2. STATUS UPDATE LOGIC ---
 if (isset($_POST['update_status'])) {
     $req_id = (int)$_POST['ticket_id'];
     $status = $_POST['status'];
@@ -221,7 +220,7 @@ if (isset($_POST['update_status'])) {
     exit();
 }
 
-// --- QUICK GET STATUS UPDATE HANDLER (Para sa Approve links) ---
+// --- QUICK GET STATUS UPDATE HANDLER ---
 if (isset($_GET['id']) && isset($_GET['status'])) {
     $req_id = (int)$_GET['id'];
     $status = $_GET['status'];
@@ -372,7 +371,6 @@ if (isset($_POST['submit_refund'])) {
     exit();
 }
 
-// Inayos ang mga JOIN query sa ibaba gamit ang CAST(cr.order_number AS INTEGER)
 $cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
 $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
 ?>
@@ -385,74 +383,192 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background: #f4f6f9; margin: 0; overflow-x: hidden; padding-top: 56px; }
-        
-        .navbar-custom {
-            height: 56px;
-            z-index: 1100;
+        body {
+            background: #f4f6f9;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* SIDEBAR (Katulad ng sa Dashboard) */
+        .sidebar {
             position: fixed;
             top: 0;
             left: 0;
+            width: 260px;
+            height: 100vh;
+            background: #001f4d;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 1040;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar h2 {
+            color: white;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 40px;
+            line-height: 1.3;
+            font-size: 1.5rem;
+        }
+
+        .sidebar a {
+            color: white;
+            text-decoration: none;
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: 0.3s;
+            font-size: 15px;
+            display: block;
+            font-weight: 500;
+        }
+
+        .sidebar a i {
+            margin-right: 8px;
+        }
+
+        .sidebar a:hover {
+            background: #0d6efd;
+            padding-left: 20px;
+        }
+
+        .sidebar .active {
+            background: #0d6efd;
+        }
+
+        .logout-section {
+            margin-top: auto;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* MAIN CONTENT (Katulad ng sa Dashboard) */
+        .main {
+            margin-left: 260px;
+            padding: 25px;
+            min-height: 100vh;
+            transition: margin 0.3s ease;
+        }
+
+        .card-custom {
+            border: none;
+            border-radius: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+
+        .nav-pills .nav-link {
+            color: #495057;
+            font-weight: 500;
+            border-radius: 8px;
+            margin-right: 5px;
+            font-size: 0.9rem;
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: #0d6efd;
+            color: white;
+        }
+
+        .img-thumb-preview {
+            width: 45px;
+            height: 45px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #dee2e6;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .img-thumb-preview:hover {
+            transform: scale(1.05);
+            border-color: #0d6efd;
+        }
+
+        .details-box {
+            width: 100%;
+            min-width: 130px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 0.78rem !important;
+        }
+
+        .table-responsive {
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .table th, .table td {
+            vertical-align: middle;
+            padding: 0.6rem 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .sticky-action {
+            position: sticky;
+            right: 85px;
+            background: #fff;
+            z-index: 2;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.03);
+        }
+
+        .sticky-emailer {
+            position: sticky;
             right: 0;
-            background-color: #051c3c !important;
+            background: #fff;
+            z-index: 2;
+            box-shadow: -2px 0 5px rgba(0,0,0,0.03);
         }
 
-        .sidebar { 
-            position: fixed; 
-            top: 56px; 
-            left: 0; 
-            width: 260px; 
-            height: calc(100vh - 56px); 
-            background: #001f4d; 
-            padding: 20px; 
-            overflow-y: auto; 
-            z-index: 1040; 
-            display: flex; 
-            flex-direction: column; 
-            box-shadow: 4px 0 15px rgba(0,0,0,0.15);
-            transition: transform 0.3s ease; 
-        }
-
-        .sidebar a { color: white; text-decoration: none; padding: 12px 14px; border-radius: 8px; margin-bottom: 8px; transition: 0.3s; font-size: 15px; display: block; font-weight: 500; }
-        .sidebar a i { margin-right: 8px; }
-        .sidebar a:hover { background: #0d6efd; padding-left: 20px; }
-        .sidebar .active { background: #0d6efd; }
-        .logout-section { margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); }
-        
-        .main { 
-            margin-left: 260px; 
-            padding: 20px; 
-            min-height: calc(100vh - 56px); 
-            transition: margin 0.3s ease; 
-        }
-        
-        .card-custom { border: none; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
-        .nav-pills .nav-link { color: #495057; font-weight: 500; border-radius: 8px; margin-right: 5px; font-size: 0.9rem; }
-        .nav-pills .nav-link.active { background-color: #0d6efd; color: white; }
-        .img-thumb-preview { width: 45px; height: 45px; object-fit: cover; border-radius: 6px; border: 2px solid #dee2e6; cursor: pointer; transition: 0.2s; }
-        .img-thumb-preview:hover { transform: scale(1.05); border-color: #0d6efd; }
-        .details-box { width: 100%; min-width: 130px; white-space: pre-wrap; word-wrap: break-word; font-size: 0.78rem !important; }
-
-        .table-responsive { overflow-x: auto; position: relative; }
-        .table th, .table td { vertical-align: middle; padding: 0.6rem 0.5rem; font-size: 0.85rem; }
-        
-        .sticky-action { position: sticky; right: 85px; background: #fff; z-index: 2; box-shadow: -2px 0 5px rgba(0,0,0,0.03); }
-        .sticky-emailer { position: sticky; right: 0; background: #fff; z-index: 2; box-shadow: -2px 0 5px rgba(0,0,0,0.03); }
         table.table-hover tbody tr:hover td.sticky-action,
-        table.table-hover tbody tr:hover td.sticky-emailer { background-color: #f8f9fa; }
+        table.table-hover tbody tr:hover td.sticky-emailer {
+            background-color: #f8f9fa;
+        }
 
-        .thermal-preview { width: 80mm; margin: auto; padding: 10px; background: #fff; font-family: 'Courier New', Courier, monospace; border: 1px solid #eee; color: #000; }
-        .line { border-top: 1px dashed #000; margin: 10px 0; }
+        .thermal-preview {
+            width: 80mm;
+            margin: auto;
+            padding: 10px;
+            background: #fff;
+            font-family: 'Courier New', Courier, monospace;
+            border: 1px solid #eee;
+            color: #000;
+        }
+
+        .line {
+            border-top: 1px dashed #000;
+            margin: 10px 0;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #0d6efd;
+            border-radius: 10px;
+        }
 
         @media (max-width: 991.98px) {
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.show { transform: translateX(0); }
-            .main { margin-left: 0; padding: 15px 10px; }
+            .sidebar {
+                transform: translateX(-100%);
+                width: 260px;
+            }
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            .main {
+                margin-left: 0;
+                padding: 15px;
+            }
         }
     </style>
 </head>
 <body>
 
+<!-- Mobile Navbar -->
 <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
     <span class="navbar-brand fw-bold fs-6">
         <i class="bi bi-headset"></i> Admin Service Request
@@ -461,7 +577,8 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
         <i class="bi bi-list fs-4"></i>
     </button>
 </nav>
- 
+
+<!-- Sidebar -->
 <div class="sidebar" id="appSidebar">
     <h2>Admin<br>Dashboard</h2>
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
@@ -470,12 +587,15 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     <a href="ItemsRequest.php" class="active"><i class="bi bi-arrow-return-left"></i> Customer Service Request</a>
     <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
     <a href="accountManagement.php"><i class="bi bi-person-circle"></i> Account Management</a>
-    <a href="profile.php" class="sidebar-link"><i class="bi bi-person-badge"></i> My Profile</a>
+    <a href="profile.php"><i class="bi bi-person-badge"></i> My Profile</a>
     <div class="logout-section">
-        <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to log out?')"><i class="bi bi-box-arrow-right"></i> Logout</a>
+        <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to log out?')">
+            <i class="bi bi-box-arrow-right"></i> Logout
+        </a>
     </div>
 </div>
 
+<!-- Main Content -->
 <div class="main">
     <div class="card card-custom p-3 p-md-4 bg-white mt-2 mt-md-3">
         <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center border-bottom pb-3 mb-4 gap-2">
