@@ -81,15 +81,18 @@ if (isset($_POST['submit'])) {
                                     $action = 'Add Product';
                                     $details = "Added new product: " . $name;
                                     
-                                    $log_query = "INSERT INTO audit_log (username, role, action, details, timestamp) 
-                                                  VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)";
-                                    $log_stmt = $pdo->prepare($log_query);
-                                    $log_stmt->execute([
-                                        ':username' => $username,
-                                        ':role' => $role,
-                                        ':action' => $action,
-                                        ':details' => $details
-                                    ]);
+                                    $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
+
+$log_query = "INSERT INTO audit_log (user_id, username, role, action, details, timestamp) 
+              VALUES (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)";
+$log_stmt = $pdo->prepare($log_query);
+$log_stmt->execute([
+    ':user_id' => $user_id,
+    ':username' => $username,
+    ':role' => $role,
+    ':action' => $action,
+    ':details' => $details
+]);
                                     // ==========================================
 
                                     $message = "Product added successfully!";
