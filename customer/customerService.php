@@ -98,7 +98,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
     $reason = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
     
     $user_comments = trim($_POST['details'] ?? '');
-    $final_details = $user_comments;
 
     $ver_query = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
     
@@ -109,10 +108,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
         $v_cust_name = $v_data['fullname'] ?? ($v_data['customer_name'] ?? 'N/A');
         $v_ord_date = $v_data['order_date'] ?? ($v_data['created_at'] ?? 'N/A');
         $v_pay_method = strtoupper($v_data['payment_method'] ?? 'COD');
-        $v_pay_scheme = $v_data['payment_scheme'] ?? 'fullpayment';
         $v_total_amount = $v_data['total_amount'] ?? 0;
 
-        // Backend Validations for restricted statuses (Kasama na ang declined)
+        // Unified Backend Validations
         if ($v_status === 'cancelled' || $v_status === 'declined') {
             $message = "❌ Cannot submit request. This order has already been " . $v_status . ".";
             $message_type = "danger";
@@ -121,11 +119,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
             $message = "❌ Cannot request exchange. Item Exchange is only allowed for COMPLETED orders.";
             $message_type = "danger";
         } 
-        elseif ($request_type === 'cancel' && ($v_status === 'out for delivery' || $v_status === 'out_for_delivery' || $v_status === 'completed' || $v_status === 'delivered')) {
+        elseif ($request_type === 'cancel' && in_array($v_status, ['out for delivery', 'out_for_delivery', 'completed', 'delivered'])) {
             $message = "❌ Cannot request cancellation. Order status is " . strtoupper($v_data['status']) . ".";
             $message_type = "danger";
         }
-        elseif (($v_status === 'out for delivery' || $v_status === 'out_for_delivery' || $v_status === 'delivered') && $request_type !== 'exchange') {
+        elseif (in_array($v_status, ['out for delivery', 'out_for_delivery', 'delivered'])) {
             $message = "❌ Cannot submit request. Submitting requests for this order status is locked.";
             $message_type = "danger";
         } else {
@@ -136,23 +134,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                 move_uploaded_file($_FILES['product_image']['tmp_name'], "../uploads/" . $filename);
             }
 
-            $receipt_header  = "========================================\n";
-            $receipt_header .= "          R. Taipan Hardware            \n";
-            $receipt_header .= "190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal\n";
-            $receipt_header .= "Contact: 0907 456 5632\n";
-            $receipt_header .= "----------------------------------------\n";
-            $receipt_header .= "     OFFICIAL RECEIPT (ONLINE ORDER)    \n";
-            $receipt_header .= "----------------------------------------\n";
-            $receipt_header .= "Order ID: #" . $v_data['id'] . "\n";
-            $receipt_header .= "Date: " . $v_ord_date . "\n";
-            $receipt_header .= "Customer: " . $v_cust_name . " " . ($v_data['surname'] ?? '') . "\n";
-            $receipt_header .= "Contact: " . ($v_data['contact_number'] ?? 'N/A') . "\n";
-            $receipt_header .= "Address: " . ($v_data['full_address'] ?? 'N/A') . "\n";
-            $receipt_header .= "Landmark: " . ($v_data['landmark'] ?? 'N/A') . "\n";
-            $receipt_header .= "----------------------------------------\n";
-            $receipt_header .= "ITEMS ORDERED:\n";
-
-            $items_text = "";
             $total_ordered_qty_map = [];
             try {
                 $cart_raw = $v_data['cart'] ?? '';
@@ -160,22 +141,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                 if (is_array($cart_obj)) {
                     foreach ($cart_obj as $it) {
                         $p_name = $it['name'] ?? ($it['product_name'] ?? 'Item');
-                        $p_price = floatval($it['price'] ?? 0);
                         $p_qty = intval($it['qty'] ?? 1);
-                        $items_text .= "- {$p_name} (x{$p_qty}) - ₱" . number_format($p_price * $p_qty, 2) . "\n";
                         $total_ordered_qty_map[$p_name] = $p_qty;
                     }
                 }
             } catch (Exception $e) {
-                $items_text = "- (Unable to parse cart items)\n";
+                // Ignore parse exception on map generation
             }
-            
-            $receipt_footer  = $receipt_header . $items_text;
-            $receipt_footer .= "----------------------------------------\n";
-            $receipt_footer .= "TOTAL AMOUNT: ₱" . number_format($v_total_amount, 2) . "\n";
-            $receipt_footer .= "Mode of Payment: " . $v_pay_method . "\n";
-            $receipt_footer .= "STATUS: " . strtoupper($v_status) . "\n";
-            $receipt_footer .= "----------------------------------------\n";
 
             if ($request_type === 'exchange') {
                 $exchange_items = $_POST['exchange_items'] ?? [];
@@ -202,13 +174,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                     $message = "❌ Security Error: The quantity of items requested for exchange exceeds your original order.";
                     $message_type = "danger";
                 } else {
-                    $multi_items_text = "[Same Item Exchange Policy Selected]\nItems to Return/Replace:\n";
                     $readable_items_list = "";
-                    
                     for ($i = 0; $i < count($exchange_items); $i++) {
                         $item_name = $exchange_items[$i];
                         $item_qty = intval($exchange_qtys[$i] ?? 1);
-                        $multi_items_text .= "  • {$item_name} - Qty: {$item_qty}x\n";
                         $readable_items_list .= "• {$item_name} (Qty: {$item_qty}x)\n";
                     }
                     
@@ -311,7 +280,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                     <div class="row g-3 mb-4">
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Order ID / Number</label>
-                            <input type="number" name="order_id" id="order_id" class="form-control" placeholder="e.g. 1024"[cite: 9] required>
+                            <input type="number" name="order_id" id="order_id" class="form-control" placeholder="e.g. 1024" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold">Account Email Address</label>
@@ -597,7 +566,7 @@ function handleFormTypeSetup(status) {
         errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> This order has already been <strong>${currentStatus.toUpperCase()}</strong> or has a completed cancellation request. Submitting a new ticket is disabled.`;
     }
 
- // 2. Kapag OUT FOR DELIVERY, DELIVERED, o COMPLETED - BAWAL NA MAG-CANCEL
+    // 2. Kapag OUT FOR DELIVERY, DELIVERED, o COMPLETED - BAWAL NA MAG-CANCEL
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered' || currentStatus === 'completed') {
         reqCancel.disabled = true;
         lblCancel.classList.add('disabled', 'btn-outline-secondary');
@@ -618,17 +587,6 @@ function handleFormTypeSetup(status) {
 
     // 3. Fully lock/disable submitting any requests if status is 'out for delivery' or 'delivered'
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered') {
-        btnSubmitForm.disabled = true;
-        reqExchange.disabled = true;
-        lblExchange.classList.add('disabled', 'btn-outline-secondary');
-        lblExchange.classList.remove('btn-outline-primary');
-        
-        errorWrapper.classList.remove('d-none');
-        errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> Order status is <strong>${status.toUpperCase()}</strong>. Ticket submission is currently locked for this status.`;
-    }
-
-    // 3. Fully lock/disable submitting any requests if status is 'out for delivery' or 'delivered'
-    if (currentStatus === 'out for delivery' || currentStatus === 'delivered') {
         btnSubmitForm.disabled = true;
         reqExchange.disabled = true;
         lblExchange.classList.add('disabled', 'btn-outline-secondary');
