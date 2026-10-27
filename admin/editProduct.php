@@ -2,7 +2,6 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
@@ -10,7 +9,6 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 
 $message = ""; 
 $row = [];
-
 
 $product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
 
@@ -45,24 +43,29 @@ if (isset($_POST['update'])) {
     $product_description = trim($_POST['product_description']);
     $image_path = $row['image']; // Default sa lumang image
 
-    // I-check kung may in-upload na bagong image
+    // I-check kung may in-upload na bagong image gamit ang getimagesize para maiwasan ang error
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['image']['tmp_name'];
-        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-        $file_mime_check = mime_content_type($tmp);
+        if (!empty($tmp) && file_exists($tmp)) {
+            $check_image = getimagesize($tmp);
+            if ($check_image !== false) {
+                $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-        if (in_array($file_mime_check, $allowed_types)) {
-            $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $new_image_name = uniqid("prod_", true) . '.' . $ext;
-            $folder = "../uploads/" . $new_image_name;
+                if (in_array($ext, $allowed_extensions)) {
+                    $new_image_name = uniqid("prod_", true) . '.' . $ext;
+                    $folder = "../uploads/" . $new_image_name;
 
-            if (move_uploaded_file($tmp, $folder)) {
-                $image_path = "uploads/" . $new_image_name;
+                    if (move_uploaded_file($tmp, $folder)) {
+                        $image_path = "uploads/" . $new_image_name;
+                    }
+                }
             }
         }
     }
 
     try {
+        // 1. I-update muna ang produkto
         $update_stmt = $pdo->prepare("
             UPDATE products 
             SET product_name = :product_name, 
@@ -86,19 +89,24 @@ if (isset($_POST['update'])) {
             ':id' => $product_id
         ]);
 
-        // Audit Trail Logging
-        $username = $_SESSION['username'] ?? 'Admin';
-        $role = $_SESSION['role'] ?? 'admin';
-        $log_stmt = $pdo->prepare("
-            INSERT INTO audit_log (username, role, action, details, timestamp) 
-            VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)
-        ");
-        $log_stmt->execute([
-            ':username' => $username,
-            ':role' => $role,
-            ':action' => 'Edit Product',
-            ':details' => "Updated product: " . $product_name
-        ]);
+        // 2. Subukang i-log sa audit trail (Ginawa nating hiwalay o ligtas sakaling magka-error man dito)
+        try {
+            $username = $_SESSION['username'] ?? 'Admin';
+            $role = $_SESSION['role'] ?? 'admin';
+            $log_stmt = $pdo->prepare("
+                INSERT INTO audit_log (username, role, action, details, timestamp) 
+                VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)
+            ");
+            $log_stmt->execute([
+                ':username' => $username,
+                ':role' => $role,
+                ':action' => 'Edit Product',
+                ':details' => "Updated product: " . $product_name
+            ]);
+        } catch (Exception $log_e) {
+            // Huwag hayaang pigilan ang pag-save ng produkto kung sakaling magka-error ang audit log
+            error_log("Audit log error on edit: " . $log_e->getMessage());
+        }
 
         $_SESSION['message'] = "Product updated successfully!";
         header("Location: products.php");
@@ -106,7 +114,7 @@ if (isset($_POST['update'])) {
 
     } catch (PDOException $e) {
         error_log("Update product error: " . $e->getMessage());
-        $message = '<div class="alert alert-danger">Error updating product in database.</div>';
+        $message = '<div class="alert alert-danger">Error updating product in database: ' . htmlspecialchars($e->getMessage()) . '</div>';
     }
 }
 ?>
@@ -129,7 +137,6 @@ if (isset($_POST['update'])) {
         </div>
         <div class="card-body p-4">
             
-            <!-- Dito na ilalabas ang alert message kung sakaling may error -->
             <?php echo $message; ?>
 
             <form action="" method="POST" enctype="multipart/form-data">
@@ -173,7 +180,7 @@ if (isset($_POST['update'])) {
                 <?php endif; ?>
 
                 <label class="form-label fw-bold">Change Image (Optional)</label>
-                <input type="file" name="image" class="form-control mb-4" accept="image/*">
+                <input type="file" name="image" class="form-control mb-4" accept=".jpg, .jpeg, .png, .webp">
 
                 <div class="d-flex gap-2">
                     <a href="products.php" class="btn btn-secondary w-50 fw-bold">Cancel</a>
