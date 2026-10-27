@@ -30,7 +30,8 @@ if (isset($_POST['submit'])) {
         } else {
             // --- FILE UPLOAD & VALIDATION CHECK ---
             if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                $message = "Error: Please select a valid product image to upload.";
+                $error_code = $_FILES['image']['error'] ?? 'No file';
+                $message = "Error: Please select a valid product image to upload. (Code: " . $error_code . ")";
             } else {
                 $image = $_FILES['image']['name'];
                 $tmp = $_FILES['image']['tmp_name'];
