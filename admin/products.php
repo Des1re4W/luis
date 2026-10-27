@@ -18,6 +18,8 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
     );
     $is_archive_action = isset($_GET['archive_id']);
     $new_status = $is_archive_action ? 1 : 0;
+    
+    // Nilinaw ang action name para sa Audit Trail
     $action_name = $is_archive_action ? 'Archive Product' : 'Unarchive Product';
 
     if ($target_id === false || $target_id === null || $target_id <= 0) {
@@ -47,26 +49,28 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
         );
         $stmt->execute([':status' => $new_status, ':id' => $target_id]);
 
-        // Record action in audit log
+        // ==========================================
+        // NAITALA NA DITO ANG USER AT ROLE SA AUDIT LOG
+        // ==========================================
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
-        $ip_address = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
-
+        
+        // Tinanggal na ang IP address para malinis, nakadepende na ito sa columns ng iyong audit_log table
         $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
-                (username, role, action, details, ip_address, timestamp)
+                (username, role, action, details, timestamp)
             VALUES
-                (:username, :role, :action, :details, :ip_address, CURRENT_TIMESTAMP)
+                (:username, :role, :action, :details, CURRENT_TIMESTAMP)
         ");
 
         $log_stmt->execute([
             ':username' => $username,
             ':role' => $role,
             ':action' => $action_name,
-            ':details' => $details,
-            ':ip_address' => $ip_address
+            ':details' => $details
         ]);
+        // ==========================================
 
         $_SESSION['message'] = $is_archive_action ? "Product archived successfully!" : "Product unarchived successfully!";
         header("Location: products.php");
