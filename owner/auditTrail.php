@@ -205,15 +205,15 @@ body{
                 </div>
 
                 <div class="col-12 col-md-3">
-                    <label class="form-label small fw-bold text-muted">Action</label>
-                    <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="all" <?= $action_filter=='all'?'selected':'' ?>>All Actions</option>
-                        <option value="Login" <?= $action_filter=='Login'?'selected':'' ?>>Login / Logout</option>
-                        <option value="Stock" <?= $action_filter=='Stock'?'selected':'' ?>>Stock</option>
-                        <option value="Checkout" <?= $action_filter=='Checkout'?'selected':'' ?>>Checkout</option>
-                        <option value="Order" <?= $action_filter=='Order'?'selected':'' ?>>Order</option>
-                    </select>
-                </div>
+    <label class="form-label small fw-bold text-muted">Action</label>
+    <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="all" <?= $action_filter=='all'?'selected':'' ?>>All Actions</option>
+        <option value="Login" <?= $action_filter=='Login'?'selected':'' ?>>Login / Logout</option>
+        <option value="Product" <?= $action_filter=='Product'?'selected':'' ?>>Inventory / Product Updates</option>
+        <option value="Checkout" <?= $action_filter=='Checkout'?'selected':'' ?>>Checkout</option>
+        <option value="Order" <?= $action_filter=='Order'?'selected':'' ?>>Order</option>
+    </select>
+</div>
 
                 <div class="col-12 col-md-3">
                     <label class="form-label small fw-bold text-muted">Date</label>
