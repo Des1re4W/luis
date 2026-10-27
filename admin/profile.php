@@ -1,384 +1,400 @@
 <?php
 session_start();
+
 require_once __DIR__ . '/../config/db.php';
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
-    exit();
+    header('Location: ../login.php');
+    exit;
 }
 
-$user_id = $_SESSION['user_id'];
-$message = "";
-$msg_type = "";
+$userId = (int) $_SESSION['user_id'];
+$message = '';
+$messageType = '';
 
-// Kunin ang detalye ng user mula sa database
-try {
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
-    $stmt->execute([':id' => $user_id]);
+// CSRF token
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+function e($value): string
+{
+    return htmlspecialchars((string) ($value ?? ''), ENT_QUOTES, 'UTF-8');
+}
+
+function loadUser(PDO $pdo, int $userId): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT id, username, fullname, email, phone_number, profile_image, role
+         FROM users
+         WHERE id = :id
+         LIMIT 1'
+    );
+    $stmt->execute([':id' => $userId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
+        session_unset();
         session_destroy();
-        header("Location: ../login.php");
-        exit();
+        header('Location: ../login.php');
+        exit;
     }
-} catch (PDOException $e) {
-    error_log("Fetch user error: " . $e->getMessage());
-    die("Database error occurred.");
+
+    return $user;
 }
 
-// UPDATE PROFILE LOGIC
-if (isset($_POST['update_profile'])) {
-    $new_username = trim($_POST['username']);
-    $fullname = trim($_POST['fullname'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $phone_number = trim($_POST['phone_number'] ?? '');
-    $profile_image = $user['profile_image'] ?? ''; 
+try {
+    $user = loadUser($pdo, $userId);
+} catch (Throwable $ex) {
+    error_log('Profile fetch error: ' . $ex->getMessage());
+    http_response_code(500);
+    exit('Unable to load your profile right now. Please try again later.');
+}
 
-    // I-check kung may in-upload na bagong picture
-    if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
-        $tmp = $_FILES['profile_image']['tmp_name'];
-        if (!empty($tmp) && file_exists($tmp)) {
-            $check_image = getimagesize($tmp);
-            if ($check_image !== false) {
-                $ext = strtolower(pathinfo($_FILES['profile_image']['name'], PATHINFO_EXTENSION));
-                $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
+    $postedToken = (string) ($_POST['csrf_token'] ?? '');
 
-                if (in_array($ext, $allowed)) {
-                    $new_filename = "profile_" . $user_id . "_" . time() . "." . $ext;
-                    $folder = "../uploads/profiles/" . $new_filename;
+    if (!hash_equals($_SESSION['csrf_token'], $postedToken)) {
+        $message = 'Invalid request token. Please refresh the page and try again.';
+        $messageType = 'danger';
+    } else {
+        $username = trim((string) ($_POST['username'] ?? ''));
+        $fullname = trim((string) ($_POST['fullname'] ?? ''));
+        $email = trim((string) ($_POST['email'] ?? ''));
+        $phoneNumber = trim((string) ($_POST['phone_number'] ?? ''));
 
-                    if (!is_dir("../uploads/profiles/")) {
-                        mkdir("../uploads/profiles/", 0777, true);
+        $profileImage = (string) ($user['profile_image'] ?? '');
+        $newImagePath = null;
+        $uploadError = '';
+
+        // Basic field validation
+        if ($username === '' || mb_strlen($username) > 50) {
+            $message = 'Username is required and must be 50 characters or fewer.';
+            $messageType = 'danger';
+        } elseif ($fullname !== '' && mb_strlen($fullname) > 150) {
+            $message = 'Full name must be 150 characters or fewer.';
+            $messageType = 'danger';
+        } elseif ($email !== '' && (!filter_var($email, FILTER_VALIDATE_EMAIL) || mb_strlen($email) > 254)) {
+            $message = 'Please enter a valid email address.';
+            $messageType = 'danger';
+        } elseif ($phoneNumber !== '' && !preg_match('/^[0-9+\-\s()]{7,20}$/', $phoneNumber)) {
+            $message = 'Please enter a valid contact number.';
+            $messageType = 'danger';
+        }
+
+        if ($message === '') {
+            try {
+                // Prevent duplicate usernames/emails belonging to another account.
+                $duplicate = $pdo->prepare(
+                    'SELECT id FROM users
+                     WHERE (LOWER(username) = LOWER(:username))
+                       AND id <> :id
+                     LIMIT 1'
+                );
+                $duplicate->execute([
+                    ':username' => $username,
+                    ':id' => $userId,
+                ]);
+
+                if ($duplicate->fetch(PDO::FETCH_ASSOC)) {
+                    $message = 'That username is already in use. Please choose another.';
+                    $messageType = 'danger';
+                } elseif ($email !== '') {
+                    $duplicateEmail = $pdo->prepare(
+                        'SELECT id FROM users
+                         WHERE LOWER(email) = LOWER(:email)
+                           AND id <> :id
+                         LIMIT 1'
+                    );
+                    $duplicateEmail->execute([
+                        ':email' => $email,
+                        ':id' => $userId,
+                    ]);
+
+                    if ($duplicateEmail->fetch(PDO::FETCH_ASSOC)) {
+                        $message = 'That email address is already in use by another account.';
+                        $messageType = 'danger';
                     }
+                }
+            } catch (Throwable $ex) {
+                error_log('Profile duplicate-check error: ' . $ex->getMessage());
+                $message = 'Unable to validate your profile details. Please try again.';
+                $messageType = 'danger';
+            }
+        }
 
-                    if (move_uploaded_file($tmp, $folder)) {
-                        $profile_image = "uploads/profiles/" . $new_filename;
+        // Validate and save an optional profile picture.
+        if (
+            $message === '' &&
+            isset($_FILES['profile_image']) &&
+            $_FILES['profile_image']['error'] !== UPLOAD_ERR_NO_FILE
+        ) {
+            $file = $_FILES['profile_image'];
+
+            if ($file['error'] !== UPLOAD_ERR_OK) {
+                $uploadError = 'The image upload failed. Please try again.';
+            } elseif ((int) $file['size'] > 2 * 1024 * 1024) {
+                $uploadError = 'Profile picture must be 2 MB or smaller.';
+            } elseif (!is_uploaded_file($file['tmp_name'])) {
+                $uploadError = 'Invalid image upload.';
+            } else {
+                $finfo = new finfo(FILEINFO_MIME_TYPE);
+                $mime = $finfo->file($file['tmp_name']);
+                $allowedMimes = [
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png',
+                    'image/webp' => 'webp',
+                ];
+
+                if (!isset($allowedMimes[$mime]) || @getimagesize($file['tmp_name']) === false) {
+                    $uploadError = 'Use a valid JPG, PNG, or WEBP image.';
+                } else {
+                    // Project-root/uploads/profiles (this file is assumed to be in /admin).
+                    $uploadDir = dirname(__DIR__) . '/uploads/profiles/';
+
+                    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+                        $uploadError = 'The profile picture folder could not be created.';
+                    } else {
+                        $filename = 'profile_' . $userId . '_' . bin2hex(random_bytes(8)) . '.' . $allowedMimes[$mime];
+                        $destination = $uploadDir . $filename;
+
+                        if (move_uploaded_file($file['tmp_name'], $destination)) {
+                            $newImagePath = 'uploads/profiles/' . $filename;
+                            $profileImage = $newImagePath;
+                        } else {
+                            $uploadError = 'Unable to save the profile picture.';
+                        }
+                    }
+                }
+            }
+
+            if ($uploadError !== '') {
+                $message = $uploadError;
+                $messageType = 'danger';
+            }
+        }
+
+        if ($message === '') {
+            try {
+                $update = $pdo->prepare(
+                    'UPDATE users
+                     SET username = :username,
+                         fullname = :fullname,
+                         email = :email,
+                         phone_number = :phone_number,
+                         profile_image = :profile_image
+                     WHERE id = :id'
+                );
+                $update->execute([
+                    ':username' => $username,
+                    ':fullname' => $fullname !== '' ? $fullname : null,
+                    ':email' => $email !== '' ? $email : null,
+                    ':phone_number' => $phoneNumber !== '' ? $phoneNumber : null,
+                    ':profile_image' => $profileImage !== '' ? $profileImage : null,
+                    ':id' => $userId,
+                ]);
+
+                // Keep the session username in sync with the database.
+                $_SESSION['username'] = $username;
+                $user = loadUser($pdo, $userId);
+
+                $message = 'Profile updated successfully.';
+                $messageType = 'success';
+            } catch (Throwable $ex) {
+                error_log('Profile update error: ' . $ex->getMessage());
+                $message = 'Unable to update your profile. Check the server logs if the problem continues.';
+                $messageType = 'danger';
+
+                // Remove a newly uploaded image if the database update failed.
+                if ($newImagePath !== null) {
+                    $newImageFullPath = dirname(__DIR__) . '/' . $newImagePath;
+                    if (is_file($newImageFullPath)) {
+                        @unlink($newImageFullPath);
                     }
                 }
             }
         }
-    }
 
-    try {
-        $update_stmt = $pdo->prepare("UPDATE users SET username = :username, fullname = :fullname, email = :email, phone_number = :phone_number, profile_image = :image WHERE id = :id");
-        $update_stmt->execute([
-            ':username' => $new_username,
-            ':fullname' => $fullname,
-            ':email' => $email,
-            ':phone_number' => $phone_number,
-            ':image' => $profile_image,
-            ':id' => $user_id
-        ]);
-
-        $_SESSION['username'] = $new_username; 
-        $message = "Profile updated successfully!";
-        $msg_type = "success";
-
-        // Refresh user data
-        $stmt->execute([':id' => $user_id]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-    } catch (PDOException $e) {
-        $message = "Error updating profile: " . $e->getMessage();
-        $msg_type = "danger";
+        // Keep the form populated with the submitted values after validation errors.
+        if ($messageType === 'danger') {
+            $user['username'] = $username;
+            $user['fullname'] = $fullname;
+            $user['email'] = $email;
+            $user['phone_number'] = $phoneNumber;
+        }
     }
 }
-?>
 
-<!DOCTYPE html>
+$role = (string) ($user['role'] ?? 'User');
+$imagePath = trim((string) ($user['profile_image'] ?? ''));
+$profileImageUrl = $imagePath !== ''
+    ? '../' . ltrim($imagePath, '/')
+    : '../assets/no-image.jpg';
+?>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile | Admin Dashboard</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Profile | R. Taipan Hardware</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <style>
-        body {
-            background: #f4f6f9;
-            margin: 0;
-            overflow-x: hidden;
-        }
-
-        /* SIDEBAR (Katulad ng ibang admin pages) */
+        :root { --navy: #001f4d; --blue: #0d6efd; }
+        body { margin: 0; background: #f3f6fa; color: #1f2937; overflow-x: hidden; }
         .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 260px;
-            height: 100vh;
-            background: #001f4d;
-            padding: 20px;
-            overflow-y: auto;
-            z-index: 1040;
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.3s ease;
+            position: fixed; inset: 0 auto 0 0; width: 260px; height: 100vh;
+            padding: 22px 16px; background: var(--navy); overflow-y: auto;
+            display: flex; flex-direction: column; z-index: 1040;
+            transition: transform .25s ease;
         }
-
-        .sidebar h2 {
-            color: white;
-            text-align: center;
-            font-weight: bold;
-            margin-bottom: 40px;
-            line-height: 1.3;
-            font-size: 1.5rem;
-        }
-
-        .sidebar a {
-            color: white;
-            text-decoration: none;
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            transition: 0.3s;
-            font-size: 15px;
-            display: block;
-            font-weight: 500;
-        }
-
-        .sidebar a i {
-            margin-right: 8px;
-        }
-
-        .sidebar a:hover {
-            background: #0d6efd;
-            padding-left: 20px;
-        }
-
-        .sidebar .active {
-            background: #0d6efd;
-        }
-
-        .logout-section {
-            margin-top: auto;
-            padding-top: 15px;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        /* MAIN CONTENT */
-        .main-content {
-            margin-left: 260px;
-            padding: 25px;
-            min-height: 100vh;
-            transition: margin 0.3s ease;
-        }
-
-        .profile-container {
-            background: #121212;
-            color: #fff;
-            border-radius: 12px;
-            padding: 30px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-        }
-
-        .profile-img-lg {
-            width: 70px;
-            height: 70px;
-            object-fit: cover;
-            border-radius: 50%;
-            border: 2px solid #0d6efd;
-        }
-
-        /* Input group with edit icon on right */
-        .input-group-custom {
-            position: relative;
-        }
-
-        .input-group-custom input {
-            background-color: #1e1e1e;
-            border: 1px solid #333;
-            color: #fff;
-            border-radius: 8px;
-            padding-right: 45px;
-        }
-
-        .input-group-custom input:focus {
-            background-color: #1e1e1e;
-            color: #fff;
-            border-color: #0d6efd;
-            box-shadow: none;
-        }
-
-        .edit-icon-btn {
-            position: absolute;
-            right: 15px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: #aaa;
-            cursor: pointer;
-            z-index: 10;
-        }
-
-        .edit-icon-btn:hover {
-            color: #fff;
-        }
-
+        .sidebar h2 { color: #fff; text-align: center; font-size: 1.45rem; font-weight: 750; line-height: 1.3; margin: 8px 0 32px; }
+        .sidebar a { display: block; color: #fff; text-decoration: none; padding: 11px 13px; border-radius: 8px; margin-bottom: 6px; font-size: .94rem; }
+        .sidebar a i { width: 23px; margin-right: 5px; }
+        .sidebar a:hover, .sidebar a.active { background: var(--blue); }
+        .logout-section { margin-top: auto; padding-top: 14px; border-top: 1px solid #ffffff33; }
+        .main-content { margin-left: 260px; padding: 28px; min-height: 100vh; }
+        .profile-card { max-width: 850px; margin: 0 auto; background: #fff; border-radius: 16px; padding: clamp(20px, 4vw, 36px); box-shadow: 0 8px 30px #0b254510; }
+        .profile-avatar { width: 86px; height: 86px; object-fit: cover; border-radius: 50%; border: 3px solid #e3edff; background: #f1f5f9; }
+        .form-label { font-weight: 600; font-size: .9rem; }
+        .form-control { min-height: 44px; }
+        .section-heading { font-size: .9rem; font-weight: 750; letter-spacing: .06em; color: #64748b; text-transform: uppercase; }
+        .account-summary { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; }
         @media (max-width: 991.98px) {
-            .sidebar {
-                transform: translateX(-100%);
-                width: 260px;
-            }
-            .sidebar.show {
-                transform: translateX(0);
-            }
-            .main-content {
-                margin-left: 0;
-                padding: 15px;
-            }
+            .sidebar { transform: translateX(-100%); }
+            .sidebar.show { transform: translateX(0); }
+            .main-content { margin-left: 0; padding: 18px 12px; }
         }
     </style>
 </head>
-
 <body>
+<nav class="navbar navbar-dark d-lg-none px-3" style="background:var(--navy)">
+    <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge me-2"></i>My Profile</span>
+    <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle" aria-label="Toggle navigation">
+        <i class="bi bi-list fs-4"></i>
+    </button>
+</nav>
 
-    <!-- Mobile Navbar -->
-    <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge"></i> My Profile</span>
-        <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
-            <i class="bi bi-list fs-4"></i>
-        </button>
-    </nav>
-
-    <!-- Sidebar -->
-    <div class="sidebar" id="appSidebar">
-        <h2>Admin<br>Dashboard</h2>
-        <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
-        <a href="products.php"><i class="bi bi-box-seam"></i> Inventory</a>
-        <a href="orders.php"><i class="bi bi-receipt"></i> Orders</a>
-        <a href="ItemsRequest.php"><i class="bi bi-arrow-return-left"></i> Customer Service request</a>
-        <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
-        <a href="accountManagement.php"><i class="bi bi-person-circle"></i> Account Management</a>
-        <a href="profile.php" class="active"><i class="bi bi-person-badge"></i> My Profile</a>
-        <div class="logout-section">
-            <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to logout?')">
-                <i class="bi bi-box-arrow-right"></i> Logout
-            </a>
-        </div>
+<aside class="sidebar" id="appSidebar">
+    <h2>R. Taipan<br>Admin Dashboard</h2>
+    <a href="dashboard.php"><i class="bi bi-grid"></i>Dashboard</a>
+    <a href="products.php"><i class="bi bi-box-seam"></i>Inventory</a>
+    <a href="orders.php"><i class="bi bi-receipt"></i>Orders</a>
+    <a href="ItemsRequest.php"><i class="bi bi-arrow-return-left"></i>Customer Service Request</a>
+    <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i>Damaged Items</a>
+    <a href="accountManagement.php"><i class="bi bi-people"></i>Account Management</a>
+    <a href="profile.php" class="active" aria-current="page"><i class="bi bi-person-badge"></i>My Profile</a>
+    <div class="logout-section">
+        <a href="../logout.php" class="text-warning" onclick="return confirm('Are you sure you want to log out?')">
+            <i class="bi bi-box-arrow-right"></i>Logout
+        </a>
     </div>
+</aside>
 
-    <!-- Main Content Area -->
-    <div class="main-content">
-        <div class="container-fluid" style="max-width: 800px;">
+<main class="main-content">
+    <div class="profile-card">
+        <?php if ($message !== ''): ?>
+            <div class="alert alert-<?= e($messageType) ?> alert-dismissible fade show" role="alert">
+                <?= e($message) ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        <?php endif; ?>
 
-            <?php if (!empty($message)): ?>
-                <div class="alert alert-<?= $msg_type; ?> alert-dismissible fade show mb-4" role="alert">
-                    <?= htmlspecialchars($message); ?>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            <?php endif; ?>
-
-            <div class="profile-container">
-                
-                <!-- Header Section -->
-                <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-secondary">
-                    <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" class="profile-img-lg shadow-sm" alt="Profile">
-                    <div>
-                        <h4 class="fw-bold mb-1">My Profile</h4>
-                        <p class="text-muted small mb-1">Manage your personal information and account security.</p>
-                        <span class="badge bg-success text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;">Active Account</span>
-                    </div>
-                </div>
-
-                <form action="" method="POST" enctype="multipart/form-data">
-                    <h5 class="fw-bold mb-3 fs-6 text-uppercase text-secondary">Personal Information</h5>
-
-                    <!-- Username -->
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">Username</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="username" id="inputUsername" class="form-control" value="<?= htmlspecialchars($user['username']); ?>" readonly required>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputUsername')">
-                                <i class="bi bi-pencil-square"></i> <small>[edit logo]</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Full Name -->
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">Full Name</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="fullname" id="inputFullname" class="form-control" value="<?= htmlspecialchars($user['fullname'] ?? ''); ?>" placeholder="Enter your full name" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputFullname')">
-                                <i class="bi bi-pencil-square"></i> <small>[edit logo]</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Email Address -->
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">Email Address</label>
-                        <div class="input-group-custom">
-                            <input type="email" name="email" id="inputEmail" class="form-control" value="<?= htmlspecialchars($user['email'] ?? ''); ?>" placeholder="Enter your email address" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputEmail')">
-                                <i class="bi bi-pencil-square"></i> <small>[edit logo]</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Contact Number -->
-                    <div class="mb-3">
-                        <label class="form-label small text-muted">Contact Number</label>
-                        <div class="input-group-custom">
-                            <input type="text" name="phone_number" id="inputPhone" class="form-control" value="<?= htmlspecialchars($user['phone_number'] ?? ''); ?>" placeholder="09XXXXXXXXX" readonly>
-                            <button type="button" class="edit-icon-btn" onclick="enableField('inputPhone')">
-                                <i class="bi bi-pencil-square"></i> <small>[edit logo]</small>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Profile Picture Upload (Optional) -->
-                    <div class="mb-4">
-                        <label class="form-label small text-muted">Change Profile Picture</label>
-                        <input type="file" name="profile_image" class="form-control bg-dark text-white border-secondary" accept=".jpg, .jpeg, .png, .webp">
-                    </div>
-
-                    <!-- Account Role & Status Info (Read-only) -->
-                    <div class="row g-2 mb-4 p-3 bg-dark rounded border border-secondary text-muted small">
-                        <div class="col-6">
-                            <strong>Account Role:</strong> <span class="text-info text-uppercase"><?= htmlspecialchars($user['role'] ?? 'Admin'); ?></span>
-                        </div>
-                        <div class="col-6">
-                            <strong>Account ID:</strong> <span class="text-light">#<?= $user['id']; ?></span>
-                        </div>
-                    </div>
-
-                    <!-- Save Changes Button -->
-                    <button type="submit" name="update_profile" class="btn btn-light w-100 fw-bold py-2 shadow-sm">Save Changes</button>
-                </form>
-
+        <div class="d-flex align-items-center gap-3 mb-4 pb-4 border-bottom">
+            <img
+                src="<?= e($profileImageUrl) ?>"
+                class="profile-avatar"
+                alt="Profile picture"
+                onerror="this.onerror=null;this.src='../assets/no-image.jpg';"
+            >
+            <div>
+                <h1 class="h4 fw-bold mb-1">My Profile</h1>
+                <p class="text-secondary mb-2">Manage your personal information and account details.</p>
+                <span class="badge text-bg-success">Active Session</span>
             </div>
         </div>
+
+        <form method="post" enctype="multipart/form-data" novalidate>
+            <input type="hidden" name="csrf_token" value="<?= e($_SESSION['csrf_token']) ?>">
+
+            <h2 class="section-heading mb-3">Personal information</h2>
+
+            <div class="mb-3">
+                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="username" name="username"
+                       value="<?= e($user['username'] ?? '') ?>" maxlength="50" autocomplete="username" required>
+            </div>
+
+            <div class="mb-3">
+                <label for="fullname" class="form-label">Full name</label>
+                <input type="text" class="form-control" id="fullname" name="fullname"
+                       value="<?= e($user['fullname'] ?? '') ?>" maxlength="150" autocomplete="name">
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Email address</label>
+                <input type="email" class="form-control" id="email" name="email"
+                       value="<?= e($user['email'] ?? '') ?>" maxlength="254" autocomplete="email">
+            </div>
+
+            <div class="mb-4">
+                <label for="phone_number" class="form-label">Contact number</label>
+                <input type="tel" class="form-control" id="phone_number" name="phone_number"
+                       value="<?= e($user['phone_number'] ?? '') ?>" maxlength="20"
+                       placeholder="e.g. 09XXXXXXXXX" autocomplete="tel">
+            </div>
+
+            <div class="mb-4">
+                <label for="profile_image" class="form-label">Profile picture (optional)</label>
+                <input type="file" class="form-control" id="profile_image" name="profile_image"
+                       accept="image/jpeg,image/png,image/webp">
+                <div class="form-text">JPG, PNG, or WEBP. Maximum file size: 2 MB.</div>
+            </div>
+
+            <h2 class="section-heading mb-3">Account information</h2>
+            <div class="account-summary row g-3 mb-4">
+                <div class="col-sm-6">
+                    <div class="text-secondary small">Account ID</div>
+                    <div class="fw-semibold">#<?= e($user['id'] ?? '') ?></div>
+                </div>
+                <div class="col-sm-6">
+                    <div class="text-secondary small">Role</div>
+                    <div class="fw-semibold text-uppercase"><?= e($role) ?></div>
+                </div>
+            </div>
+
+            <div class="d-flex flex-column flex-sm-row gap-2">
+                <button type="submit" name="update_profile" value="1" class="btn btn-primary px-4">
+                    <i class="bi bi-check2-circle me-1"></i>Save Changes
+                </button>
+                <button type="reset" class="btn btn-outline-secondary px-4">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Reset Form
+                </button>
+            </div>
+        </form>
     </div>
+</main>
 
-    <!-- Scripts para sa Sidebar Toggle at pag-enable ng input fields kapag pinindot ang edit logo -->
-    <script>
-        function enableField(fieldId) {
-            const field = document.getElementById(fieldId);
-            field.removeAttribute('readonly');
-            field.focus();
-        }
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const toggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('appSidebar');
 
-        document.addEventListener("DOMContentLoaded", function () {
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const appSidebar = document.getElementById('appSidebar');
-            if (sidebarToggle && appSidebar) {
-                sidebarToggle.addEventListener('click', function () {
-                    appSidebar.classList.toggle('show');
-                });
+    if (toggle && sidebar) {
+        toggle.addEventListener('click', function () {
+            sidebar.classList.toggle('show');
+        });
 
-                document.addEventListener('click', function (event) {
-                    if (window.innerWidth < 992) {
-                        if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
-                            appSidebar.classList.remove('show');
-                        }
-                    }
-                });
+        document.addEventListener('click', function (event) {
+            if (window.innerWidth < 992 &&
+                !sidebar.contains(event.target) &&
+                !toggle.contains(event.target)) {
+                sidebar.classList.remove('show');
             }
         });
-    </script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    }
+});
+</script>
 </body>
 </html>
