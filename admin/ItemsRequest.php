@@ -476,6 +476,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     <a href="ItemsRequest.php" class="active"><i class="bi bi-arrow-return-left"></i> Customer Service Request</a>
     <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
     <a href="accountManagement.php"><i class="bi bi-person-circle"></i> Account Management</a>
+    <a href="profile.php" class="sidebar-link"><i class="bi bi-person-badge"></i> My Profile</a>
     <div class="logout-section">
         <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to log out?')"><i class="bi bi-box-arrow-right"></i> Logout</a>
     </div>
