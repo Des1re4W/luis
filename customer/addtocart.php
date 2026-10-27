@@ -11,10 +11,12 @@ $id = (int)$_GET['id'];
 $qty = isset($_GET['qty']) ? (int)$_GET['qty'] : 1;
 if ($qty < 1) $qty = 1;
 
-$variant_id = isset($_GET['variant_id']) ? mysqli_real_escape_string($conn, $_GET['variant_id']) : '';
+$variant_id = isset($_GET['variant_id']) ? trim($_GET['variant_id']) : '';
 
-$product_query = mysqli_query($conn, "SELECT * FROM products WHERE id = $id");
-$product_row = mysqli_fetch_assoc($product_query);
+// Kunin ang main product gamit ang PDO prepared statement
+$product_stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
+$product_stmt->execute([':id' => $id]);
+$product_row = $product_stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$product_row) {
     header("Location: dashboard.php");
@@ -32,8 +34,12 @@ $cart_key = $id;
 
 // Kung may Variant
 if (!empty($variant_id) && $variant_id !== 'MAIN_PRODUCT') {
-    $variant_query = mysqli_query($conn, "SELECT * FROM product_variants WHERE id = '$variant_id' AND product_id = $id");
-    $variant_row = mysqli_fetch_assoc($variant_query);
+    $variant_stmt = $pdo->prepare("SELECT * FROM product_variants WHERE id = :variant_id AND product_id = :product_id");
+    $variant_stmt->execute([
+        ':variant_id' => $variant_id,
+        ':product_id' => $id
+    ]);
+    $variant_row = $variant_stmt->fetch(PDO::FETCH_ASSOC);
     
     if ($variant_row) {
         $db_variant_id = $variant_row['id'];
@@ -74,8 +80,6 @@ if (isset($_SESSION['cart'][$cart_key])) {
         'image'        => $final_image
     ];
 }
-
-
 
 header("Location: dashboard.php?notif=added#product-" . $id);
 exit();
