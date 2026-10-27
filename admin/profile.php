@@ -100,7 +100,7 @@ if (isset($_POST['update_profile'])) {
             overflow-x: hidden;
         }
 
-        /* SIDEBAR (Katulad ng ibang admin pages) */
+        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -164,12 +164,13 @@ if (isset($_POST['update_profile'])) {
             transition: margin 0.3s ease;
         }
 
+        /* PROFILE CONTAINER - Ginawa nang kapareho ng kulay ng sidebar (#001f4d) */
         .profile-container {
-            background: #121212;
+            background: #001f4d;
             color: #fff;
             border-radius: 16px;
             padding: 35px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
         }
 
         .profile-img-lg {
@@ -180,22 +181,22 @@ if (isset($_POST['update_profile'])) {
             border: 2px solid #0d6efd;
         }
 
-        /* Input group with edit icon on right */
+        /* Input fields container */
         .input-group-custom {
             position: relative;
         }
 
         .input-group-custom input {
-            background-color: #1b118a;
-            border: 1px solid #333;
+            background-color: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             color: #fff;
             border-radius: 8px;
-            padding-right: 95px; /* Sapat na espasyo para sa [edit logo] text/icon */
+            padding-right: 95px;
             height: 48px;
         }
 
         .input-group-custom input:focus {
-            background-color: #1e1e1e;
+            background-color: rgba(255, 255, 255, 0.12);
             color: #fff;
             border-color: #0d6efd;
             box-shadow: none;
@@ -208,7 +209,7 @@ if (isset($_POST['update_profile'])) {
             transform: translateY(-50%);
             background: none;
             border: none;
-            color: #ff4d4d;
+            color: #ffadb0;
             cursor: pointer;
             z-index: 10;
             font-size: 0.85rem;
@@ -216,7 +217,7 @@ if (isset($_POST['update_profile'])) {
         }
 
         .edit-icon-btn:hover {
-            color: #ff7878;
+            color: #fff;
         }
 
         @media (max-width: 991.98px) {
@@ -276,21 +277,21 @@ if (isset($_POST['update_profile'])) {
             <div class="profile-container">
                 
                 <!-- Header Section -->
-                <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-secondary">
+                <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-light border-opacity-25">
                     <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" class="profile-img-lg shadow-sm" alt="Profile">
                     <div>
-                        <h4 class="fw-bold mb-1">My Profile</h4>
-                        <p class="text-muted small mb-1">Manage your personal information and account security.</p>
-                        <span class="badge bg-success text-dark fw-bold px-2 py-1" style="font-size: 0.75rem;">Active Account</span>
+                        <h4 class="fw-bold mb-1 text-white">My Profile</h4>
+                        <p class="text-white-50 small mb-1">Manage your personal information and account security.</p>
+                        <span class="badge bg-success text-white fw-bold px-2 py-1" style="font-size: 0.75rem;">Active Account</span>
                     </div>
                 </div>
 
                 <form action="" method="POST" enctype="multipart/form-data">
-                    <h5 class="fw-bold mb-3 fs-6 text-uppercase text-secondary">Personal Information</h5>
+                    <h5 class="fw-bold mb-3 fs-6 text-uppercase text-white-50">Personal Information</h5>
 
                     <!-- Username -->
                     <div class="mb-3">
-                        <label class="form-label small text-muted">Username</label>
+                        <label class="form-label small text-white-50">Username</label>
                         <div class="input-group-custom">
                             <input type="text" name="username" id="inputUsername" class="form-control" value="<?= htmlspecialchars($user['username']); ?>" readonly required>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputUsername')">
@@ -301,7 +302,7 @@ if (isset($_POST['update_profile'])) {
 
                     <!-- Full Name -->
                     <div class="mb-3">
-                        <label class="form-label small text-muted">Full Name</label>
+                        <label class="form-label small text-white-50">Full Name</label>
                         <div class="input-group-custom">
                             <input type="text" name="fullname" id="inputFullname" class="form-control" value="<?= htmlspecialchars($user['fullname'] ?? ''); ?>" placeholder="Enter your full name" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputFullname')">
@@ -312,7 +313,7 @@ if (isset($_POST['update_profile'])) {
 
                     <!-- Email Address -->
                     <div class="mb-3">
-                        <label class="form-label small text-muted">Email Address</label>
+                        <label class="form-label small text-white-50">Email Address</label>
                         <div class="input-group-custom">
                             <input type="email" name="email" id="inputEmail" class="form-control" value="<?= htmlspecialchars($user['email'] ?? ''); ?>" placeholder="Enter your email address" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputEmail')">
@@ -323,7 +324,7 @@ if (isset($_POST['update_profile'])) {
 
                     <!-- Contact Number -->
                     <div class="mb-3">
-                        <label class="form-label small text-muted">Contact Number</label>
+                        <label class="form-label small text-white-50">Contact Number</label>
                         <div class="input-group-custom">
                             <input type="text" name="phone_number" id="inputPhone" class="form-control" value="<?= htmlspecialchars($user['phone_number'] ?? ''); ?>" placeholder="09XXXXXXXXX" readonly>
                             <button type="button" class="edit-icon-btn" onclick="enableField('inputPhone')">
@@ -334,12 +335,12 @@ if (isset($_POST['update_profile'])) {
 
                     <!-- Profile Picture Upload (Optional) -->
                     <div class="mb-4">
-                        <label class="form-label small text-muted">Change Profile Picture</label>
-                        <input type="file" name="profile_image" class="form-control bg-dark text-white border-secondary" accept=".jpg, .jpeg, .png, .webp" style="height: auto; padding: 10px;">
+                        <label class="form-label small text-white-50">Change Profile Picture</label>
+                        <input type="file" name="profile_image" class="form-control text-white border-light border-opacity-25" accept=".jpg, .jpeg, .png, .webp" style="height: auto; padding: 10px; background-color: rgba(255,255,255,0.08);">
                     </div>
 
                     <!-- Account Role & Status Info (Read-only) -->
-                    <div class="row g-2 mb-4 p-3 bg-dark rounded border border-secondary text-muted small">
+                    <div class="row g-2 mb-4 p-3 rounded border border-light border-opacity-25 text-white-50 small" style="background-color: rgba(0,0,0,0.2);">
                         <div class="col-6">
                             <strong>Account Role:</strong> <span class="text-info text-uppercase"><?= htmlspecialchars($user['role'] ?? 'Admin'); ?></span>
                         </div>
