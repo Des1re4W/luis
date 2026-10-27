@@ -69,7 +69,6 @@ if (isset($_SESSION['cart'][$cart_key])) {
     $new_qty = $_SESSION['cart'][$cart_key]['qty'] + $qty;
     $_SESSION['cart'][$cart_key]['qty'] = ($new_qty > $final_stock) ? $final_stock : $new_qty;
 } else {
-    // Kung wala pa, i-add bilang bagong item
     $_SESSION['cart'][$cart_key] = [
         'id'           => $id,
         'name'         => $final_name,
