@@ -262,7 +262,7 @@ try {
                 } else if (isset($_GET['view'])) {
                     echo "All Products";
                 } else if ($is_home) {
-                    echo "🔥 Top Selling Items";
+                    echo "Top Selling Items";
                 } else {
                     echo "Product List";
                 }
