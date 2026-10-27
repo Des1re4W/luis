@@ -90,11 +90,21 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
-    // Handle variant image upload
+    // Handle variant image upload with Photo-Only Validation
     if (
         isset($_FILES['variant_image']) &&
         $_FILES['variant_image']['error'] === UPLOAD_ERR_OK
     ) {
+        $tmp = $_FILES['variant_image']['tmp_name'];
+        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+        $file_mime_check = mime_content_type($tmp);
+
+        if (!in_array($file_mime_check, $allowed_types)) {
+            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed (GIFs, videos, and audio files are not permitted).";
+            header("Location: manageVariants.php?product_id=$product_id");
+            exit();
+        }
+
         $target_dir = __DIR__ . '/../uploads/';
 
         if (!is_dir($target_dir)) {
@@ -103,10 +113,10 @@ if (isset($_POST['add_variant'])) {
 
         $original_name = basename($_FILES['variant_image']['name']);
         $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
-        $filename = uniqid('', true) . '_' . $safe_name;
+        $filename = uniqid('var_', true) . '_' . $safe_name;
         $target_file = $target_dir . $filename;
 
-        if (move_uploaded_file($_FILES['variant_image']['tmp_name'], $target_file)) {
+        if (move_uploaded_file($tmp, $target_file)) {
             $variant_image_path = 'uploads/' . $filename;
         }
     }
@@ -218,11 +228,21 @@ if (isset($_POST['update_variant'])) {
         'product_id' => $product_id
     ];
 
-    // Replace image only if a new one is uploaded
+    // Replace image only if a new one is uploaded with Photo-Only Validation
     if (
         isset($_FILES['edit_variant_image']) &&
         $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK
     ) {
+        $tmp = $_FILES['edit_variant_image']['tmp_name'];
+        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+        $file_mime_check = mime_content_type($tmp);
+
+        if (!in_array($file_mime_check, $allowed_types)) {
+            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
+            header("Location: manageVariants.php?product_id=$product_id");
+            exit();
+        }
+
         $target_dir = __DIR__ . '/../uploads/';
 
         if (!is_dir($target_dir)) {
@@ -231,10 +251,10 @@ if (isset($_POST['update_variant'])) {
 
         $original_name = basename($_FILES['edit_variant_image']['name']);
         $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
-        $filename = uniqid('', true) . '_' . $safe_name;
+        $filename = uniqid('var_', true) . '_' . $safe_name;
         $target_file = $target_dir . $filename;
 
-        if (move_uploaded_file($_FILES['edit_variant_image']['tmp_name'], $target_file)) {
+        if (move_uploaded_file($tmp, $target_file)) {
             $img_path = 'uploads/' . $filename;
             $update_sql .= ", variant_image = :variant_image";
             $params['variant_image'] = $img_path;
@@ -267,7 +287,6 @@ if (isset($_GET['delete_id'])) {
     $delete_id = filter_input(INPUT_GET, 'delete_id', FILTER_VALIDATE_INT) ?: 0;
 
     if ($delete_id > 0) {
-        // Get variant name for audit logging, scoped to this product
         $stmt = $pdo->prepare("
             SELECT variant_name
             FROM product_variants
@@ -324,35 +343,33 @@ $stmt->execute(['product_id' => $product_id]);
 $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
-
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Product Variants</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 
-<body class="bg-light py-4">
-    <div class="container-fluid px-4" style="max-width: 1300px;">
+<body class="bg-light py-3 py-md-4">
+    <div class="container-fluid px-2 px-md-4" style="max-width: 1300px;">
 
-        <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded shadow-sm">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4 bg-white p-3 rounded shadow-sm">
             <div>
-                <h4 class="mb-0 fw-bold">Variants for: <span
+                <h4 class="mb-0 fw-bold fs-5 fs-md-4">Variants for: <span
                         class="text-primary"><?php echo htmlspecialchars($product['product_name']); ?></span></h4>
                 <small class="text-muted">Main Product Category: <?php echo $product['category']; ?></small>
             </div>
-            <a href="products.php" class="btn btn-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to
-                Inventory</a>
+            <a href="products.php" class="btn btn-secondary btn-sm align-self-start align-self-md-auto"><i class="bi bi-arrow-left"></i> Back to Inventory</a>
         </div>
 
         <?php if (isset($_SESSION['message'])): ?>
             <div class="alert alert-success py-2 alert-dismissible fade show" role="alert">
                 <i class="bi bi-check-circle-fill me-2"></i>
-                <?php echo $_SESSION['message'];
-                unset($_SESSION['message']); ?>
+                <?php echo $_SESSION['message']; unset($_SESSION['message']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
@@ -360,16 +377,15 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <?php if (isset($_SESSION['error_message'])): ?>
             <div class="alert alert-danger py-2 alert-dismissible fade show" role="alert">
                 <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                <?php echo $_SESSION['error_message'];
-                unset($_SESSION['error_message']); ?>
+                <?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
         <?php endif; ?>
 
         <div class="row g-4">
-            <div class="col-lg-3 col-md-4">
-                <div class="card border-0 shadow-sm p-3 sticky-top" style="top: 20px; z-index: 10;">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-plus-square"></i> Add New Product Variant</h5>
+            <div class="col-12 col-lg-4 col-xl-3">
+                <div class="card border-0 shadow-sm p-3">
+                    <h5 class="fw-bold mb-3 fs-6"><i class="bi bi-plus-square"></i> Add New Product Variant</h5>
                     <form method="POST" enctype="multipart/form-data">
                         <div class="mb-2">
                             <label class="form-label small fw-bold">Variant Name</label>
@@ -377,47 +393,46 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 placeholder="Product variant name" required>
                         </div>
                         <div class="mb-2">
-                            <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
+                            <label class="form-label small fw-bold">Variant Description</label>
                             <textarea name="variant_description" class="form-control form-control-sm" rows="3"
                                 placeholder="Product details"></textarea>
                         </div>
                         <div class="mb-2">
                             <label class="form-label small fw-bold">Cost Price (₱)</label>
-                            <input type="number" name="cost_price" min="0" step="0.01" required class="form-control">
+                            <input type="number" name="cost_price" min="0" step="0.01" required class="form-control form-control-sm">
                         </div>
                         <div class="mb-2">
                             <label class="form-label small fw-bold">Selling Price (₱)</label>
-                            <input type="number" name="price" min="0" step="0.01" required class="form-control">
+                            <input type="number" name="price" min="0" step="0.01" required class="form-control form-control-sm">
                         </div>
                         <div class="mb-2">
                             <label class="form-label small fw-bold">Initial Stock Amount</label>
-                            <input type="number" name="stock" min="0" step="1" required class="form-control">
+                            <input type="number" name="stock" min="0" step="1" required class="form-control form-control-sm">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Variant Specific Photo</label>
+                            <label class="form-label small fw-bold">Variant Photo <small class="text-muted">(JPG, PNG, WEBP)</small></label>
                             <input type="file" name="variant_image" class="form-control form-control-sm"
-                                accept="image/*">
+                                accept=".jpg, .jpeg, .png, .webp">
                         </div>
-                        <button type="submit" name="add_variant" class="btn btn-primary btn-sm w-100 fw-bold">Save
-                            Variant</button>
+                        <button type="submit" name="add_variant" class="btn btn-primary btn-sm w-100 fw-bold">Save Variant</button>
                     </form>
                 </div>
             </div>
 
-            <div class="col-lg-9 col-md-8">
+            <div class="col-12 col-lg-8 col-xl-9">
                 <div class="card border-0 shadow-sm p-3">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-list-stars"></i> Current Variants Inventory Matrix</h5>
+                    <h5 class="fw-bold mb-3 fs-6"><i class="bi bi-list-stars"></i> Current Variants Inventory Matrix</h5>
                     <div class="table-responsive">
-                        <table class="table align-middle table-bordered small">
+                        <table class="table align-middle table-bordered small mb-0">
                             <thead class="table-dark">
                                 <tr>
                                     <th class="text-center" style="width: 60px;">Photo</th>
                                     <th style="width: 150px;">Variant Name</th>
-                                    <th>Variant Description (Customer Side)</th>
-                                    <th style="width: 110px;">Cost Price</th>
-                                    <th style="width: 110px;">Selling Price</th>
-                                    <th style="width: 80px;">Stock</th>
-                                    <th class="text-center" style="width: 130px;">Action Matrix</th>
+                                    <th>Description</th>
+                                    <th style="width: 100px;">Cost Price</th>
+                                    <th style="width: 100px;">Selling Price</th>
+                                    <th style="width: 70px;">Stock</th>
+                                    <th class="text-center" style="width: 120px;">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -428,11 +443,11 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 <?php if (!empty($v['variant_image'])): ?>
                                                     <img src="../<?php echo htmlspecialchars($v['variant_image']); ?>"
                                                         class="rounded"
-                                                        style="width:45px; height:45px; object-fit:cover; border:1px solid #ddd;">
+                                                        style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;">
                                                 <?php else: ?>
                                                     <img src="../<?php echo htmlspecialchars($product['image'] ?? ''); ?>"
                                                         class="rounded"
-                                                        style="width:45px; height:45px; object-fit:cover; opacity: 0.5;"
+                                                        style="width:40px; height:40px; object-fit:cover; opacity: 0.5;"
                                                         title="Using product default image">
                                                 <?php endif; ?>
                                             </td>
@@ -446,7 +461,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                     <?php
                                                     echo !empty($v['variant_description'])
                                                         ? nl2br(htmlspecialchars($v['variant_description']))
-                                                        : '<i class="text-danger">No description configured. Fallback to main item text.</i>';
+                                                        : '<i class="text-danger">No description configured.</i>';
                                                     ?>
                                                 </span>
                                             </td>
@@ -473,7 +488,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                         data-cost="<?php echo htmlspecialchars((string) $v['cost_price'], ENT_QUOTES, 'UTF-8'); ?>"
                                                         data-price="<?php echo htmlspecialchars((string) $v['price'], ENT_QUOTES, 'UTF-8'); ?>"
                                                         data-stock="<?php echo (int) $v['stock']; ?>">
-                                                        <i class="bi bi-pencil-square"></i> Edit
+                                                        <i class="bi bi-pencil-square"></i>
                                                     </button>
 
                                                     <a href="manageVariants.php?product_id=<?php echo (int) $product_id; ?>&delete_id=<?php echo (int) $v['id']; ?>"
@@ -489,7 +504,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php else: ?>
                                     <tr>
                                         <td colspan="7" class="text-center py-4 text-muted fw-bold">
-                                            No variants created yet for this item. Fill out the form to start.
+                                            No variants created yet for this item.
                                         </td>
                                     </tr>
                                 <?php endif; ?>
@@ -506,7 +521,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-white">
-                    <h5 class="modal-title fw-bold" id="editVariantModalLabel">📝 Edit Variant Configuration</h5>
+                    <h5 class="modal-title fw-bold fs-6" id="editVariantModalLabel">📝 Edit Variant Configuration</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                         aria-label="Close"></button>
                 </div>
@@ -521,7 +536,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
 
                         <div class="mb-2">
-                            <label class="form-label small fw-bold">Variant Description (Customer Side)</label>
+                            <label class="form-label small fw-bold">Variant Description</label>
                             <textarea name="edit_variant_description" id="edit_variant_description" class="form-control"
                                 rows="3"></textarea>
                         </div>
@@ -545,8 +560,8 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
 
                         <div class="mb-1">
-                            <label class="form-label small fw-bold">Change Variant Image (Optional)</label>
-                            <input type="file" name="edit_variant_image" class="form-control" accept="image/*">
+                            <label class="form-label small fw-bold">Change Variant Image <small class="text-muted">(JPG, PNG, WEBP)</small></label>
+                            <input type="file" name="edit_variant_image" class="form-control" accept=".jpg, .jpeg, .png, .webp">
                         </div>
                     </div>
                     <div class="modal-footer">
