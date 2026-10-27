@@ -23,90 +23,147 @@ $damaged_rows = $damaged_result->fetchAll(PDO::FETCH_ASSOC);
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
     <style>
-        body { background: #f4f6f9; margin: 0; overflow-x: hidden; padding-top: 56px; }
-        
-        .navbar-custom {
-            height: 56px;
-            z-index: 1100;
+        body {
+            background: #f4f6f9;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        /* SIDEBAR (Katulad ng sa Dashboard) */
+        .sidebar {
             position: fixed;
             top: 0;
             left: 0;
-            right: 0;
-            background-color: #051c3c !important;
+            width: 260px;
+            height: 100vh;
+            background: #001f4d;
+            padding: 20px;
+            overflow-y: auto;
+            z-index: 1040;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
         }
 
-        /* Sidebar Styles */
-        .sidebar { 
-            position: fixed; 
-            top: 56px; 
-            left: 0; 
-            width: 260px; 
-            height: calc(100vh - 56px); 
-            background: #001f4d; 
-            padding: 20px; 
-            overflow-y: auto; 
-            z-index: 1040; 
-            display: flex; 
-            flex-direction: column; 
-            box-shadow: 4px 0 15px rgba(0,0,0,0.15);
-            transition: transform 0.3s ease; 
+        .sidebar h2 {
+            color: white;
+            text-align: center;
+            font-weight: bold;
+            margin-bottom: 40px;
+            line-height: 1.3;
+            font-size: 1.5rem;
         }
 
-        .sidebar a { color: white; text-decoration: none; padding: 12px 14px; border-radius: 8px; margin-bottom: 8px; transition: 0.3s; font-size: 15px; display: block; font-weight: 500; }
-        .sidebar a i { margin-right: 8px; }
-        .sidebar a:hover { background: #0d6efd; padding-left: 20px; }
-        .sidebar .active { background: #0d6efd; }
-        .logout-section { margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.2); }
-        
-        /* Main Content Styles */
-        .main { 
-            margin-left: 260px; 
-            padding: 20px; 
-            min-height: calc(100vh - 56px); 
-            transition: margin 0.3s ease; 
+        .sidebar a {
+            color: white;
+            text-decoration: none;
+            padding: 12px 14px;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            transition: 0.3s;
+            font-size: 15px;
+            display: block;
+            font-weight: 500;
         }
 
-        .card-custom { border: none; border-radius: 14px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); }
-        .img-thumb-preview { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 2px solid #dee2e6; cursor: pointer; transition: 0.2s; }
-        .img-thumb-preview:hover { transform: scale(1.05); border-color: #0d6efd; }
-        .details-box { max-width: 350px; white-space: pre-wrap; word-wrap: break-word; }
+        .sidebar a i {
+            margin-right: 8px;
+        }
 
-        /* Responsive Breakpoints para sa Mobile at Tablet */
+        .sidebar a:hover {
+            background: #0d6efd;
+            padding-left: 20px;
+        }
+
+        .sidebar .active {
+            background: #0d6efd;
+        }
+
+        .logout-section {
+            margin-top: auto;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* MAIN CONTENT (Katulad ng sa Dashboard) */
+        .main {
+            margin-left: 260px;
+            padding: 25px;
+            min-height: 100vh;
+            transition: margin 0.3s ease;
+        }
+
+        .card-custom {
+            border: none;
+            border-radius: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+        }
+
+        .img-thumb-preview {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #dee2e6;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .img-thumb-preview:hover {
+            transform: scale(1.05);
+            border-color: #0d6efd;
+        }
+
+        .details-box {
+            max-width: 350px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .sidebar::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #0d6efd;
+            border-radius: 10px;
+        }
+
         @media (max-width: 991.98px) {
-            .sidebar { transform: translateX(-100%); }
-            .sidebar.show { transform: translateX(0); }
-            .main { margin-left: 0; padding: 15px 10px; }
+            .sidebar {
+                transform: translateX(-100%);
+                width: 260px;
+            }
+            .sidebar.show {
+                transform: translateX(0);
+            }
+            .main {
+                margin-left: 0;
+                padding: 15px;
+            }
         }
     </style>
 </head>
 <body>
 
-<!-- Mobile Navbar na may Hamburger Button -->
-<nav class="navbar navbar-dark navbar-custom px-3 d-lg-none">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-exclamation-triangle"></i> Damaged Items</span>
-        <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle"><i class="bi bi-list fs-4"></i></button>
-    </div>
+<!-- Mobile Navbar -->
+<nav class="navbar navbar-dark bg-dark d-lg-none px-3">
+    <span class="navbar-brand fw-bold fs-6"><i class="bi bi-exclamation-triangle"></i> Damaged Items</span>
+    <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
+        <i class="bi bi-list fs-4"></i>
+    </button>
 </nav>
 
-<nav class="navbar navbar-dark navbar-custom px-3 d-none d-lg-flex">
-    <div class="d-flex align-items-center w-100 justify-content-between">
-        <span class="navbar-brand fw-bold mb-0">Admin Panel</span>
-        <div class="d-flex align-items-center text-white gap-3">
-            <span>Welcome, <strong><?= htmlspecialchars($admin_name); ?></strong></span>
-        </div>
-    </div>
-</nav>
-
-<!-- Sidebar Menu -->
+<!-- Sidebar -->
 <div class="sidebar" id="appSidebar">
+    <h2>Admin<br>Dashboard</h2>
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
     <a href="products.php"><i class="bi bi-box-seam"></i> Inventory</a>
     <a href="orders.php"><i class="bi bi-receipt"></i> Orders</a>
     <a href="ItemsRequest.php"><i class="bi bi-arrow-return-left"></i> Customer Service Request</a>
     <a href="damageItems.php" class="active"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
     <a href="accountManagement.php"><i class="bi bi-person-circle"></i> Account Management</a>  
-    <a href="profile.php" class="sidebar-link"><i class="bi bi-person-badge"></i> My Profile</a>
+    <a href="profile.php"><i class="bi bi-person-badge"></i> My Profile</a>
     <div class="logout-section">
         <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to logout?')">
             <i class="bi bi-box-arrow-right"></i> Logout
