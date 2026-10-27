@@ -20,63 +20,136 @@ foreach ($items_to_process as $item) {
 }
 
 if (isset($_POST['place_order'])) {
-    $payment_method = mysqli_real_escape_string($conn, $_POST['payment_method']);
-    $payment_scheme = mysqli_real_escape_string($conn, $_POST['payment_scheme'] ?? 'full_payment');
+    $payment_method = trim($_POST['payment_method'] ?? '');
+    $payment_scheme = trim($_POST['payment_scheme'] ?? 'full_payment');
 
     if ($grand_total >= 5000 && $payment_method === 'Cash on Delivery (COD)') {
         die("<script>alert('Error: COD is unavailable for orders ₱5,000 and above.'); history.back();</script>");
     }
 
-    $fullname = mysqli_real_escape_string($conn, $_POST['fullname']);
-    $surname = mysqli_real_escape_string($conn, $_POST['surname']);
-    $contact_number = mysqli_real_escape_string($conn, $_POST['contact_number']);
-    $tel_no = mysqli_real_escape_string($conn, $_POST['tel_no'] ?? '');
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $full_address = mysqli_real_escape_string($conn, $_POST['full_address']);
-    $landmark = mysqli_real_escape_string($conn, $_POST['landmark']);
+    $fullname = trim($_POST['fullname']);
+    $surname = trim($_POST['surname']);
+    $contact_number = trim($_POST['contact_number']);
+    $tel_no = trim($_POST['tel_no'] ?? '');
+    $email = trim($_POST['email']);
+    $full_address = trim($_POST['full_address']);
+    $landmark = trim($_POST['landmark']);
     
-    $cart_json = mysqli_real_escape_string($conn, json_encode($items_to_process));
+    $cart_json = json_encode($items_to_process);
 
-    $proof_of_payment = "";
+    $proof_of_payment = null;
     $ref_no = "";
+    $paid_amount = 0;
+
+    // Kalkulahin ang paid amount base sa scheme
+    if ($grand_total >= 5000 && $payment_scheme === '50_percent') {
+        $paid_amount = $grand_total * 0.5;
+    } else {
+        $paid_amount = $grand_total;
+    }
+
     if (in_array($payment_method, ['GCash', 'Maya'])) {
-        $ref_no = mysqli_real_escape_string($conn, $_POST['ref_no']);
-        if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] == 0) {
-            $target_dir = "../uploads/proofs/";
-            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-            $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
-            if (move_uploaded_file($_FILES["proof_of_payment"]["tmp_name"], $target_dir . $new_filename)) {
-                $proof_of_payment = "uploads/proofs/" . $new_filename;
+        $ref_no = trim($_POST['ref_no'] ?? '');
+        
+        if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
+            $tmp = $_FILES['proof_of_payment']['tmp_name'];
+            
+            if (!empty($tmp) && file_exists($tmp)) {
+                $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+                $file_mime_check = mime_content_type($tmp);
+
+                if (in_array($file_mime_check, $allowed_types)) {
+                    $target_dir = "../uploads/proofs/";
+                    if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                    
+                    $ext = pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
+                    $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+                    
+                    if (move_uploaded_file($tmp, $target_dir . $new_filename)) {
+                        $proof_of_payment = "uploads/proofs/" . $new_filename;
+                    }
+                }
             }
         }
     }
 
-    $order_query = "INSERT INTO orders (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
-                    VALUES ('$fullname', '$surname', '$contact_number', '$tel_no', '$email', '$full_address', '$landmark', '$grand_total', '$cart_json', '$payment_method', '$payment_scheme', '$ref_no', '$proof_of_payment', NOW(), 'pending')";
+    try {
+        $pdo->beginTransaction();
 
-    if (mysqli_query($conn, $order_query)) {
-        $order_id = mysqli_insert_id($conn);
+        // 1. I-insert ang order gamit ang PDO prepared statement
+        $order_query = "INSERT INTO orders 
+            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
+            VALUES 
+            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, CURRENT_TIMESTAMP, 'pending')";
+        
+        $stmt = $pdo->prepare($order_query);
+        $stmt->execute([
+            ':fullname' => $fullname,
+            ':surname' => $surname,
+            ':contact_number' => $contact_number,
+            ':tel_no' => $tel_no,
+            ':email' => $email,
+            ':full_address' => $full_address,
+            ':landmark' => $landmark,
+            ':total_amount' => $grand_total,
+            ':paid_amount' => $paid_amount,
+            ':cart' => $cart_json,
+            ':payment_method' => $payment_method,
+            ':payment_scheme' => $payment_scheme,
+            ':ref_no' => $ref_no,
+            ':proof_of_payment' => $proof_of_payment
+        ]);
+
+        $order_id = $pdo->lastInsertId();
+
+        // 2. I-insert ang order items at i-update ang stock
         foreach ($items_to_process as $item) {
             $qty = (int)$item['qty'];
             $price = (float)$item['price'];
-            $product_id = mysqli_real_escape_string($conn, $item['id']);
-            $name = mysqli_real_escape_string($conn, $item['name']);
-            $v_id = !empty($item['variant_id']) ? "'".mysqli_real_escape_string($conn, $item['variant_id'])."'" : "NULL";
-            $v_name = !empty($item['variant_name']) ? "'".mysqli_real_escape_string($conn, $item['variant_name'])."'" : "NULL";
+            $product_id = (int)$item['id'];
+            $name = $item['name'];
+            $v_id = !empty($item['variant_id']) ? (int)$item['variant_id'] : null;
+            $v_name = !empty($item['variant_name']) ? $item['variant_name'] : null;
+            $subtotal = $price * $qty;
 
-            mysqli_query($conn, "INSERT INTO order_items (order_id, product_id, product_name, variant_id, variant_name, price, qty, subtotal) 
-                                 VALUES ('$order_id', '$product_id', '$name', $v_id, $v_name, '$price', '$qty', '".($price * $qty)."')");
+            $item_stmt = $pdo->prepare("INSERT INTO order_items (order_id, product_id, product_name, variant_id, variant_name, price, qty, subtotal) 
+                                        VALUES (:order_id, :product_id, :product_name, :variant_id, :variant_name, :price, :qty, :subtotal)");
+            $item_stmt->execute([
+                ':order_id' => $order_id,
+                ':product_id' => $product_id,
+                ':product_name' => $name,
+                ':variant_id' => $v_id,
+                ':variant_name' => $v_name,
+                ':price' => $price,
+                ':qty' => $qty,
+                ':subtotal' => $subtotal
+            ]);
 
-            if ($v_id !== "NULL") {
-                mysqli_query($conn, "UPDATE product_variants SET stock = GREATEST(stock - $qty, 0) WHERE id = $v_id");
+            if ($v_id !== null) {
+                $stock_stmt = $pdo->prepare("UPDATE product_variants SET stock = GREATEST(stock - :qty, 0) WHERE id = :v_id");
+                $stock_stmt->execute([':qty' => $qty, ':v_id' => $v_id]);
             } else {
-                mysqli_query($conn, "UPDATE products SET stock = GREATEST(stock - $qty, 0) WHERE id = '$product_id'");
+                $stock_stmt = $pdo->prepare("UPDATE products SET stock = GREATEST(stock - :qty, 0) WHERE id = :product_id");
+                $stock_stmt->execute([':qty' => $qty, ':product_id' => $product_id]);
             }
         }
-        if ($checkout_source == 'buynow') { unset($_SESSION['buy_now']); } else { unset($_SESSION['cart']); }
+
+        $pdo->commit();
+
+        if ($checkout_source == 'buynow') { 
+            unset($_SESSION['buy_now']); 
+        } else { 
+            unset($_SESSION['cart']); 
+        }
+
         $_SESSION['message'] = "<b>Order Placed Successfully! </b><br>Your Order Number is: <span class='text-primary fw-bold'>#$order_id</span>";
         header("Location: dashboard.php");
         exit();
+
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        error_log("Checkout error: " . $e->getMessage());
+        die("<script>alert('Error processing your order. Please try again.'); history.back();</script>");
     }
 }
 ?>
@@ -99,12 +172,12 @@ if (isset($_POST['place_order'])) {
                 <div class="overflow-auto" style="max-height: 300px;">
                     <?php foreach ($items_to_process as $item): ?>
                         <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                           <img src="../<?php echo $item['image']; ?>" class="rounded me-3" style="width: 50px; height: 50px; object-fit: cover;">
+                           <img src="../<?php echo htmlspecialchars($item['image']); ?>" class="rounded me-3" style="width: 50px; height: 50px; object-fit: cover;">
                             <div class="flex-grow-1">
-                                <h6 class="mb-0 fw-bold small text-truncate"><?php echo $item['name']; ?></h6>
-                                <small class="text-muted">Qty: <?php echo $item['qty']; ?> × ₱<?php echo number_format($item['price'], 2); ?></small>
+                                <h6 class="mb-0 fw-bold small text-truncate"><?php echo htmlspecialchars($item['name']); ?></h6>
+                                <small class="text-muted">Qty: <?php echo (int)$item['qty']; ?> × ₱<?php echo number_format((float)$item['price'], 2); ?></small>
                             </div>
-                            <div class="text-end fw-bold small">₱<?php echo number_format($item['price'] * $item['qty'], 2); ?></div>
+                            <div class="text-end fw-bold small">₱<?php echo number_format((float)$item['price'] * (int)$item['qty'], 2); ?></div>
                         </div>
                     <?php endforeach; ?>
                 </div>
@@ -138,7 +211,7 @@ if (isset($_POST['place_order'])) {
         <div class="col-12 col-md-7 order-2">
             <div class="card border-0 shadow-sm p-4">
                 <h4 class="mb-4 text-primary"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
-                <form action="placeorder.php<?php echo isset($_GET['from']) ? '?from=' . $_GET['from'] : ''; ?>" method="POST" enctype="multipart/form-data">
+                <form action="placeorder.php<?php echo isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''; ?>" method="POST" enctype="multipart/form-data">
                     <div class="row g-3">
                         <div class="col-12 col-sm-6">
                             <label class="form-label">First Name</label>
@@ -199,8 +272,8 @@ if (isset($_POST['place_order'])) {
 
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
-                        <input type="text" name="ref_no" class="form-control mb-2" placeholder="Reference Number" maxlength="20" oninput="this.value=this.value.replace(/[^a-zA-Z0-9 -]/g,'');">
-                        <input type="file" name="proof_of_payment" class="form-control" accept=".jpg,.jpeg,.png,.webp">
+                            <input type="text" name="ref_no" class="form-control mb-2" placeholder="Reference Number" maxlength="20" oninput="this.value=this.value.replace(/[^a-zA-Z0-9 -]/g,'');">
+                            <input type="file" name="proof_of_payment" class="form-control" accept=".jpg,.jpeg,.png,.webp">
                         </div>
 
                         <div class="col-12 form-check ps-4">
@@ -248,20 +321,16 @@ function updatePaymentDisplay() {
     const labelScheme = document.getElementById('label_scheme');
     const dueText = document.getElementById('label_due_text');
     const displayDue = document.getElementById('display_due_amount');
-    const displayBalance = document.getElementById('display_balance');
 
     if (scheme === '50_percent') {
         let half = grandTotal * 0.5;
         if (labelScheme) labelScheme.innerText = "50% Downpayment";
         if (dueText) dueText.innerText = "Amount to Pay Now:";
         if (displayDue) displayDue.innerText = "₱" + half.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        if (balanceContainer) balanceContainer.style.display = "flex";
-        if (displayBalance) displayBalance.innerText = "₱" + half.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     } else {
         if (labelScheme) labelScheme.innerText = "Full Payment";
         if (dueText) dueText.innerText = "Total Amount to Pay:";
         if (displayDue) displayDue.innerText = "₱" + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-        if (balanceContainer) balanceContainer.style.display = "none";
     }
 }
 
