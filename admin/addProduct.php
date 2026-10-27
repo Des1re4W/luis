@@ -10,37 +10,35 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
 $message = "";
 
 if (isset($_POST['submit'])) {
-    $name = mysqli_real_escape_string($conn, $_POST['product_name']);
-    $cost_price = mysqli_real_escape_string($conn, $_POST['cost_price']);
-    $price = mysqli_real_escape_string($conn, $_POST['price']);
-    $category = mysqli_real_escape_string($conn, $_POST['category']);
-    $stock = mysqli_real_escape_string($conn, $_POST['stock']);
-    $description = mysqli_real_escape_string($conn, $_POST['product_description']);
+    $name = trim($_POST['product_name']);
+    $cost_price = $_POST['cost_price'];
+    $price = $_POST['price'];
+    $category = $_POST['category'];
+    $stock = $_POST['stock'];
+    $description = $_POST['product_description'];
 
     // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if (floatval($cost_price) > floatval($price)) {
         $message = "Error: Cost price cannot be higher than the selling price!";
     } else {
         // --- DUPLICATE CHECK ---
-        $check_duplicate = mysqli_query($conn, "SELECT id FROM products WHERE product_name = '$name'");
-        if (mysqli_num_rows($check_duplicate) > 0) {
+        $check_stmt = $pdo->prepare("SELECT id FROM products WHERE product_name = :name");
+        $check_stmt->execute([':name' => $name]);
+        
+        if ($check_stmt->rowCount() > 0) {
             $message = "Error: Product '$name' already exists in the inventory!";
         } else {
             // --- FILE UPLOAD & VALIDATION ---
             $image = $_FILES['image']['name'];
             $tmp = $_FILES['image']['tmp_name'];
-            $file_type = $_FILES['image']['type'];
             
-            // Mga pinapayagang MIME types (JPG, JPEG, PNG, WEBP - walang GIF, video, o mp3)
+            // Mga pinapayagang MIME types (JPG, JPEG, PNG, WEBP)
             $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-
-            // Kunin ang tunay na mime type ng file para masigurong hindi ito na-bypass
             $file_mime_check = mime_content_type($tmp);
 
             if (!in_array($file_mime_check, $allowed_types)) {
-                $message = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed (GIFs, videos, and audio files are not permitted).";
+                $message = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
             } else {
-                // Ayusin ang pangalan ng file para maiwasan ang duplicate o issues sa filename
                 $image_extension = pathinfo($image, PATHINFO_EXTENSION);
                 $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
                 $folder = "../uploads/" . $new_image_name;
@@ -49,9 +47,20 @@ if (isset($_POST['submit'])) {
                     $savePath = "uploads/" . $new_image_name;
 
                     $query = "INSERT INTO products (product_name, cost_price, price, category, image, stock, product_description) 
-                              VALUES ('$name', '$cost_price', '$price', '$category', '$savePath', '$stock', '$description')";
+                              VALUES (:name, :cost_price, :price, :category, :image, :stock, :description)";
+                    
+                    $stmt = $pdo->prepare($query);
+                    $insert_result = $stmt->execute([
+                        ':name' => $name,
+                        ':cost_price' => $cost_price,
+                        ':price' => $price,
+                        ':category' => $category,
+                        ':image' => $savePath,
+                        ':stock' => $stock,
+                        ':description' => $description
+                    ]);
 
-                    if(mysqli_query($conn, $query)){
+                    if($insert_result){
                         // ==========================================
                         // AUDIT TRAIL LOGGING (ADD PRODUCT)
                         // ==========================================
@@ -59,52 +68,27 @@ if (isset($_POST['submit'])) {
                         $role = $_SESSION['role'] ?? 'admin';
                         $action = 'Add Product';
                         $details = "Added new product: " . $name;
-                        $ip_address = $_SERVER['REMOTE_ADDR'];
-
-                        $log_query = "INSERT INTO audit_log (username, role, action, details, ip_address, timestamp) 
-                                      VALUES ('$username', '$role', '$action', '$details', '$ip_address', NOW())";
-                        mysqli_query($conn, $log_query);
+                        
+                        $log_query = "INSERT INTO audit_log (username, role, action, details, timestamp) 
+                                      VALUES (:username, :role, :action, :details, CURRENT_TIMESTAMP)";
+                        $log_stmt = $pdo->prepare($log_query);
+                        $log_stmt->execute([
+                            ':username' => $username,
+                            ':role' => $role,
+                            ':action' => $action,
+                            ':details' => $details
+                        ]);
                         // ==========================================
 
                         $message = "Product added successfully!";
                     } else {
-                        $message = "Error: " . mysqli_error($conn);
+                        $message = "Error: Failed to insert product into database.";
                     }
                 } else {
                     $message = "Error: Failed to upload image.";
                 }
             }
         }
-    }
-}
-
-// ==========================================
-// LOGIC PARA SA DELETE PRODUCT WITH AUDIT TRAIL
-// ==========================================
-if (isset($_GET['delete_id'])) {
-    $delete_id = intval($_GET['delete_id']);
-    
-    // Kunin muna ang pangalan ng produkto bago i-delete para sa audit trail details
-    $p_get = mysqli_query($conn, "SELECT product_name FROM products WHERE id = '$delete_id'");
-    $p_data = mysqli_fetch_assoc($p_get);
-    $deleted_p_name = $p_data['product_name'] ?? 'Unknown Product';
-
-    if (mysqli_query($conn, "DELETE FROM products WHERE id = '$delete_id'")) {
-        $username = $_SESSION['username'] ?? 'Admin';
-        $role = $_SESSION['role'] ?? 'admin';
-        $action = 'Delete Product';
-        
-        $safe_p_name = mysqli_real_escape_string($conn, $deleted_p_name);
-        $details = "Deleted product: " . $safe_p_name;
-        $ip_address = $_SERVER['REMOTE_ADDR'];
-
-        $log_query = "INSERT INTO audit_log (username, role, action, details, ip_address, timestamp) 
-                      VALUES ('$username', '$role', '$action', '$details', '$ip_address', NOW())";
-        mysqli_query($conn, $log_query);
-
-        $_SESSION['message'] = "Product deleted successfully!";
-        header("Location: products.php");
-        exit();
     }
 }
 ?>
@@ -176,7 +160,6 @@ if (isset($_GET['delete_id'])) {
 
                     <div class="mb-4">
                         <label class="form-label fw-semibold">Product Image <small class="text-muted">(JPG, JPEG, PNG, WEBP only)</small></label>
-                        <!-- Idinagdag ang accept attribute para i-restrict ang file picker sa mga larawan lang -->
                         <input type="file" name="image" class="form-control" accept=".jpg, .jpeg, .png, .webp" required>
                     </div>
 
