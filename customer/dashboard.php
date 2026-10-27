@@ -1,4 +1,5 @@
 <?php
+session_start();
 require_once __DIR__ . '/../config/db.php';
 
 $category = $_GET['category'] ?? '';
