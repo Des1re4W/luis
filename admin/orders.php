@@ -979,11 +979,18 @@ function viewReceipt(data) {
     const orderStatus = (data.status || 'pending').toUpperCase();
 
     let items = [];
+    let items = [];
     try {
-        // I-check muna kung string pa bago i-parse. Kung object/array na, gamitin na agad.
         let cartObj = data.cart;
-        if (typeof data.cart === "string") {
-            cartObj = JSON.parse(data.cart);
+        
+        if (typeof cartObj === "string") {
+            let cleanedCart = cartObj.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+   
+            if (cleanedCart.startsWith('"') && cleanedCart.endsWith('"')) {
+                cleanedCart = cleanedCart.slice(1, -1);
+            }
+            
+            cartObj = JSON.parse(cleanedCart);
         }
 
         if (Array.isArray(cartObj)) {
