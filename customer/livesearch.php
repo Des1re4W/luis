@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 
-// I-check kung defined o konektado ang $pdo
+// I-check kung defined o konektado ang $pdo mula sa db.php[cite: 2]
 if (!isset($pdo)) {
     echo '
     <div class="col-12 text-center py-5">
@@ -12,10 +12,11 @@ if (!isset($pdo)) {
     exit;
 }
 
-$search = isset($_POST['search']) ? $_POST['search'] : '';
+// Kunin ang search input, kung blangko (clear/X), magiging empty string ito para lumabas lahat
+$search = isset($_POST['search']) ? trim($_POST['search']) : '';
 
 try {
-    // Gamit ang PDO Prepared Statement para ligtas sa SQL Injection
+    // Gamit ang PDO Prepared Statement at ILIKE para sa case-insensitive search sa PostgreSQL
     $sql = "SELECT p.*, COALESCE(SUM(oi.qty), 0) AS total_sold 
             FROM products p 
             LEFT JOIN order_items oi ON p.id = oi.product_id 
@@ -24,7 +25,7 @@ try {
             ORDER BY p.id DESC";
 
     $stmt = $pdo->prepare($sql);
-    // Ang ILIKE sa PostgreSQL ay case-insensitive (hindi na kailangan ng strtoupper/strtolower)
+    // Kapag blangko ang $search, hahanapin nito ang lahat ng may '%', ibig sabihin lalabas ang lahat ng produkto
     $stmt->execute(['search' => '%' . $search . '%']);
     $products = $stmt->fetchAll();
 
