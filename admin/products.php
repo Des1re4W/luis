@@ -530,7 +530,7 @@ try {
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="<?php echo !empty($p_image) ? $p_image : 'assets/no-image.jpg'; ?>" alt="Product Image">
+                                        <img src="/uploads/<?php echo htmlspecialchars($p_image); ?>" alt="Product Image">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
