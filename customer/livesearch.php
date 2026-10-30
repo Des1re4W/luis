@@ -1,6 +1,12 @@
 <?php
 require_once __DIR__ . '/../config/db.php';
 
+// Check if $conn is defined and connected
+if (!isset($conn) || !$conn) {
+    echo '<div class="col-12 text-center py-5"><div class="alert alert-danger shadow-sm">Database connection error.</div></div>';
+    exit;
+}
+
 $search = isset($_POST['search']) ? mysqli_real_escape_string($conn, $_POST['search']) : '';
 
 $sql = "SELECT p.*, IFNULL(SUM(oi.qty), 0) AS total_sold 
@@ -12,7 +18,7 @@ $sql = "SELECT p.*, IFNULL(SUM(oi.qty), 0) AS total_sold
 
 $result = mysqli_query($conn, $sql);
 
-if (mysqli_num_rows($result) > 0) {
+if ($result && mysqli_num_rows($result) > 0) {
     while($row = mysqli_fetch_assoc($result)) {
 
         $image_path = !empty($row['image']) ? $row['image'] : 'assets/no-image.jpg';
