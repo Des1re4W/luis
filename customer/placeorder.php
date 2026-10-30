@@ -148,8 +148,8 @@ if (isset($_POST['place_order'])) {
 
     } catch (Exception $e) {
         $pdo->rollBack();
-        error_log("Checkout error: " . $e->getMessage());
-        die("<script>alert('Error processing your order. Please try again.'); history.back();</script>");
+        // I-display ang mismong error sa database
+        die("<script>alert('Database Error: " . addslashes($e->getMessage()) . "'); history.back();</script>");
     }
 }
 ?>
