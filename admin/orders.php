@@ -979,13 +979,17 @@ function viewReceipt(data) {
 
     const orderStatus = (data.status || 'pending').toUpperCase();
 
-    let items = [];
+   let items = [];
     try {
         let cartObj = (typeof data.cart === "string")
             ? JSON.parse(data.cart)
             : data.cart;
-
-        items = Object.values(cartObj || {});
+            
+        if (Array.isArray(cartObj)) {
+            items = cartObj;
+        } else if (cartObj && typeof cartObj === 'object') {
+            items = Object.values(cartObj);
+        }
     } catch (e) {
         console.error("Cart parsing error:", e);
         items = [];
