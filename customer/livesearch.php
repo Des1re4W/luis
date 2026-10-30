@@ -16,12 +16,12 @@ if (!isset($pdo)) {
 $search = isset($_POST['search']) ? trim($_POST['search']) : '';
 
 try {
-    // Idinagdag ang AND status = 'active' (o baguhin depende sa database column mo para sa archive)
+    // Palitan ang p.is_archived = 0 kung iba ang pangalan ng column sa database mo
     $sql = "SELECT p.*, COALESCE(SUM(oi.qty), 0) AS total_sold 
             FROM products p 
             LEFT JOIN order_items oi ON p.id = oi.product_id 
             WHERE p.product_name ILIKE :search 
-            AND p.status = 'active' 
+            AND p.is_archived = 0 
             GROUP BY p.id 
             ORDER BY p.id DESC";
 
