@@ -15,11 +15,22 @@ $result = mysqli_query($conn, $sql);
 if (mysqli_num_rows($result) > 0) {
     while($row = mysqli_fetch_assoc($result)) {
 
+        // Ayusin ang image path para SIGURADONG mahanap ng browser kahit paano man ito nai-save sa database
+        $image_path = !empty($row['image']) ? $row['image'] : 'assets/no-image.jpg';
+        
+        // Kung ang nakasave sa DB ay nagsisimula sa 'uploads/', tanggalin muna ang posibleng dobleng slash o itugma ang tamang relative path mula sa caller file
+        // Kadalasan, kung ang file na ito ay nasa isang subfolder (tulad ng admin/), kailangan natin siguraduhin ang tamang path:
+        if (strpos($image_path, 'uploads/') === 0) {
+            $final_image_src = '../' . $image_path;
+        } else {
+            $final_image_src = '../uploads/' . $image_path;
+        }
+
         echo '
         <div class="col-lg-3 col-md-4 col-sm-6 mb-4">
             <div class="card product-card shadow-sm h-100">
                 
-                <img src="../' . $row['image'] . '" class="card-img-top product-img">
+                <img src="' . htmlspecialchars($final_image_src) . '" class="card-img-top product-img" alt="Product Image" style="height: 200px; object-fit: cover;">
 
                 <div class="card-body d-flex flex-column text-center">
                     
