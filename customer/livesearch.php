@@ -55,12 +55,6 @@ try {
                         </p>
 
                         <div class="d-flex justify-content-between small mb-3">
-                            <span class="text-muted">
-                                Stock: 
-                                <b class="' . ($row['stock'] <= 0 ? 'text-danger' : 'text-success') . '">
-                                    ' . $row['stock'] . '
-                                </b>
-                            </span>
                             <span class="text-muted italic">
                                 ' . $row['total_sold'] . ' sold
                             </span>
