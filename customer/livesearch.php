@@ -16,16 +16,16 @@ if (!isset($pdo)) {
 $search = isset($_POST['search']) ? trim($_POST['search']) : '';
 
 try {
-    // Gamit ang PDO Prepared Statement at ILIKE para sa case-insensitive search sa PostgreSQL
+    // Idinagdag ang AND status = 'active' (o baguhin depende sa database column mo para sa archive)
     $sql = "SELECT p.*, COALESCE(SUM(oi.qty), 0) AS total_sold 
             FROM products p 
             LEFT JOIN order_items oi ON p.id = oi.product_id 
             WHERE p.product_name ILIKE :search 
+            AND p.status = 'active' 
             GROUP BY p.id 
             ORDER BY p.id DESC";
 
     $stmt = $pdo->prepare($sql);
-    // Kapag blangko ang $search, hahanapin nito ang lahat ng may '%', ibig sabihin lalabas ang lahat ng produkto
     $stmt->execute(['search' => '%' . $search . '%']);
     $products = $stmt->fetchAll();
 
