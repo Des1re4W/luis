@@ -973,25 +973,26 @@ function viewCustomer(data) {
     var myModal = new bootstrap.Modal(document.getElementById('customerModal'));
     myModal.show();
 }
-
 function viewReceipt(data) {
     document.getElementById('modal_order_id').value = data.id;
 
     const orderStatus = (data.status || 'pending').toUpperCase();
 
-   let items = [];
+    let items = [];
     try {
-        let cartObj = (typeof data.cart === "string")
-            ? JSON.parse(data.cart)
-            : data.cart;
-            
+        // I-check muna kung string pa bago i-parse. Kung object/array na, gamitin na agad.
+        let cartObj = data.cart;
+        if (typeof data.cart === "string") {
+            cartObj = JSON.parse(data.cart);
+        }
+
         if (Array.isArray(cartObj)) {
             items = cartObj;
         } else if (cartObj && typeof cartObj === 'object') {
             items = Object.values(cartObj);
         }
     } catch (e) {
-        console.error("Cart parsing error:", e);
+        console.error("Cart parsing error:", e, "Raw data:", data.cart);
         items = [];
     }
 
@@ -1000,15 +1001,15 @@ function viewReceipt(data) {
         let price = parseFloat(item.price || 0);
         let qty = parseInt(item.qty || 0);
         let subtotal = price * qty;
+        let itemName = item.name || item.product_name || 'Unknown Product';
 
         itemsHtml += `
             <tr>
-                <td>${item.name} (x${qty})</td>
+                <td>${itemName} (x${qty})</td>
                 <td align="right">₱${subtotal.toFixed(2)}</td>
             </tr>
         `;
     });
-
     let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
     let paymentScheme = (data.payment_scheme || '').toLowerCase();
     let totalAmt = parseFloat(data.total_amount || 0);
