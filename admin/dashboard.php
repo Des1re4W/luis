@@ -343,40 +343,6 @@ if (!empty($user['profile_image'])) {
                     <small>Online Orders</small>
                 </div>
             </div>
-
-            <!-- CUSTOMER SERVICE REQUESTS -->
-            <div class="col-12 col-md-4">
-                <div class="card bg-info text-white card-box">
-                    <h4>
-                        <i class="bi bi-arrow-return-left"></i>
-                        Service Requests
-                    </h4>
-
-                    <?php
-                    try {
-                        // Subukang kunin ang bilang ng customer service requests
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) FROM customer_service_requests
-                        ");
-                        $totalServiceRequests = (int) $stmt->fetchColumn();
-                        echo "<h2>" . $totalServiceRequests . "</h2>";
-                    } catch (PDOException $e) {
-                        // Fallback kung iba ang pangalan ng table (e.g. items_requests / item_requests)
-                        try {
-                            $stmt = $pdo->query("SELECT COUNT(*) FROM item_requests");
-                            $totalServiceRequests = (int) $stmt->fetchColumn();
-                            echo "<h2>" . $totalServiceRequests . "</h2>";
-                        } catch (PDOException $ex) {
-                            error_log("Customer service requests query error: " . $e->getMessage());
-                            echo "<h2>0</h2>";
-                        }
-                    }
-                    ?>
-
-                    <small>Total Customer Service Tickets / Requests</small>
-                </div>
-            </div>
-
             <!-- TOTAL DAMAGED ITEMS -->
             <div class="col-12 col-md-4">
                 <div class="card bg-danger text-white card-box">
@@ -387,14 +353,12 @@ if (!empty($user['profile_image'])) {
 
                     <?php
                     try {
-                        // Subukang kunin ang bilang mula sa damaged_items table
                         $stmt = $pdo->query("
                             SELECT COUNT(*) FROM damaged_items
                         ");
                         $totalDamagedItems = (int) $stmt->fetchColumn();
                         echo "<h2>" . $totalDamagedItems . "</h2>";
                     } catch (PDOException $e) {
-                        // Fallback kung damage_items ang name ng table
                         try {
                             $stmt = $pdo->query("SELECT COUNT(*) FROM damage_items");
                             $totalDamagedItems = (int) $stmt->fetchColumn();
@@ -410,7 +374,7 @@ if (!empty($user['profile_image'])) {
                 </div>
             </div>
 
-            <!-- TOTAL USERS -->
+            <!-- TOTAL ACTIVE USERS (Excludes Archived Accounts) -->
             <div class="col-12 col-md-4">
                 <div class="card bg-dark text-white card-box">
                     <h4>
@@ -420,18 +384,19 @@ if (!empty($user['profile_image'])) {
 
                     <?php
                     try {
+                        // Kukunin lamang ang mga user na status = 'Active'
                         $stmt = $pdo->query("
-                            SELECT COUNT(*) FROM users
+                            SELECT COUNT(*) FROM users WHERE status = 'Active'
                         ");
-                        $totalUsers = (int) $stmt->fetchColumn();
-                        echo "<h2>" . $totalUsers . "</h2>";
+                        $totalActiveUsers = (int) $stmt->fetchColumn();
+                        echo "<h2>" . $totalActiveUsers . "</h2>";
                     } catch (PDOException $e) {
-                        error_log("Total users query error: " . $e->getMessage());
+                        error_log("Total active users query error: " . $e->getMessage());
                         echo "<h2>--</h2>";
                     }
                     ?>
 
-                    <small>Active & Registered System Users</small>
+                    <small>Active Registered System Users (Excludes Archived)</small>
                 </div>
             </div>
 
