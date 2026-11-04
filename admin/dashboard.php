@@ -379,7 +379,7 @@ if (!empty($user['profile_image'])) {
                 <div class="card bg-dark text-white card-box">
                     <h4>
                         <i class="bi bi-people-fill"></i>
-                        Total Users
+                        Total Active Users
                     </h4>
 
                     <?php
