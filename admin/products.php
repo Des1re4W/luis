@@ -394,7 +394,7 @@ try {
 <body>
 
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-box-seam"></i> Inventory Management</span>
+        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-box-seam"></i> Inventory Management123</span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
             <i class="bi bi-list fs-4"></i>
         </button>
