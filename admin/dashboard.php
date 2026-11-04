@@ -29,14 +29,22 @@ if ($user_id) {
 $admin_name = $_SESSION['username'] ?? 'Admin';
 $display_name = !empty($user['fullname']) ? $user['fullname'] : (!empty($user['username']) ? $user['username'] : $admin_name);
 
-// Handle Profile Image Logic with default fallback
-$default_avatar = '../assets/default-avatar.png';
+// Built-in Default Avatar (SVG Data URI - Hindi nawawala kahit walang physical file)
+$default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+
 $user_display_photo = $default_avatar;
 
 if (!empty($user['profile_image'])) {
-    $photo_path = __DIR__ . '/../' . $user['profile_image'];
-    if (file_exists($photo_path)) {
-        $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+    // Kung Base64
+    if (stripos($user['profile_image'], 'data:image/') === 0) {
+        $user_display_photo = $user['profile_image'];
+    } 
+    // Kung local file path at umiiral pa sa server
+    else {
+        $photo_path = __DIR__ . '/../' . $user['profile_image'];
+        if (file_exists($photo_path)) {
+            $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+        }
     }
 }
 ?>
@@ -223,7 +231,7 @@ if (!empty($user['profile_image'])) {
                 <img src="<?php echo $user_display_photo; ?>" 
                      alt="Profile Picture"
                      style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #0d6efd;background-color:#fff;"
-                     onerror="this.onerror=null;this.src='../assets/default-avatar.png';">
+                     onerror="this.onerror=null;this.src='<?php echo $default_avatar; ?>';">
             </a>
 
             <h2 class="text-dark mb-0 fs-4 fs-md-3">
