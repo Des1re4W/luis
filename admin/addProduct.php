@@ -16,7 +16,7 @@ if (isset($_POST['submit'])) {
     $category = $_POST['category'];
     $stock = $_POST['stock'];
     $description = $_POST['product_description'];
-
+}
     // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if (floatval($cost_price) > floatval($price)) {
         $message = "Error: Cost price cannot be higher than the selling price!";
