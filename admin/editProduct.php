@@ -323,7 +323,14 @@ $imagePreview = getProductImageUrl($row['image'] ?? '');
 
                 <label class="form-label fw-bold d-block">Current Image</label>
                 <?php if(!empty($row['image'])): ?>
-                    <img src="../<?php echo htmlspecialchars($row['image']); ?>" width="120" class="mb-3 border rounded shadow-sm"><br>
+                    <img
+    src="<?php echo $imagePreview; ?>"
+    width="120"
+    height="120"
+    style="object-fit: cover;"
+    class="mb-3 border rounded shadow-sm"
+    alt="Product Image"
+    onerror="this.onerror=null;this.src='../assets/no-image.jpg';"><br>
                 <?php else: ?>
                     <img src="../assets/no-image.jpg" width="120" class="mb-3 border rounded shadow-sm"><br>
                 <?php endif; ?>
