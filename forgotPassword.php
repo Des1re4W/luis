@@ -35,13 +35,22 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->SMTPAuth = true;
         $mail->Username = SMTP_USERNAME;
         $mail->Password = SMTP_PASSWORD;
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = 587;
+        
+        // GUMAMIT NG SSL (PORT 465) PARA MAS MATATAG AT HINDI MABAGAL
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        $mail->Port = 465;
         $mail->CharSet = 'UTF-8';
         
-        // SPEED OPTIMIZATION: Bawasan ang SMTP Timeout para hindi maghang kapag mabagal ang network
-        $mail->Timeout = 10;
+        // TIMEOUT AT SSL VERIFICATION BYPASS (LALONG-LALO NA SA LOCAL ENVIRONMENT / XAMPP)
+        $mail->Timeout = 15;
         $mail->SMTPKeepAlive = false;
+        $mail->SMTPOptions = [
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+                'allow_self_signed' => true
+            ]
+        ];
 
         $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
