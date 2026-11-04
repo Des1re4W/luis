@@ -11,8 +11,34 @@ if (
     exit();
 }
 
-// Get admin username
+// Get logged-in user data from database
+$user_id = $_SESSION['user_id'] ?? null;
+$user = null;
+
+if ($user_id) {
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = :id");
+        $stmt->execute([':id' => $user_id]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Dashboard fetch user error: " . $e->getMessage());
+    }
+}
+
+// Set display name (Full name, or Username, or Session Admin Name)
 $admin_name = $_SESSION['username'] ?? 'Admin';
+$display_name = !empty($user['fullname']) ? $user['fullname'] : (!empty($user['username']) ? $user['username'] : $admin_name);
+
+// Handle Profile Image Logic with default fallback
+$default_avatar = '../assets/default-avatar.png';
+$user_display_photo = $default_avatar;
+
+if (!empty($user['profile_image'])) {
+    $photo_path = __DIR__ . '/../' . $user['profile_image'];
+    if (file_exists($photo_path)) {
+        $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -98,6 +124,17 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
             transition: margin 0.3s ease;
         }
 
+        /* PROFILE IMAGE HOVER EFFECT */
+        .profile-clickable-link {
+            display: inline-block;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .profile-clickable-link:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
+        }
+
         /* CARDS */
         .card-box {
             border: none;
@@ -180,16 +217,19 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
     <!-- MAIN CONTENT -->
     <div class="main">
 
+        <!-- Welcome Section with Clickable Profile Picture -->
         <div class="d-flex align-items-center mb-3 flex-wrap gap-3">
-    <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" 
-         alt="Profile Picture"
-         style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #ccc;"
-         onerror="this.onerror=null;this.src='../assets/no-image.jpg';">
+            <a href="profile.php" class="profile-clickable-link" title="Go to Profile">
+                <img src="<?php echo $user_display_photo; ?>" 
+                     alt="Profile Picture"
+                     style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #0d6efd;background-color:#fff;"
+                     onerror="this.onerror=null;this.src='../assets/default-avatar.png';">
+            </a>
 
-    <h2 class="text-muted mb-0 fs-4 fs-md-3">
-        Welcome, <strong><?php echo htmlspecialchars($user['username'] ?? $admin_name); ?></strong>
-    </h2>
-</div>
+            <h2 class="text-dark mb-0 fs-4 fs-md-3">
+                Welcome, <strong><?php echo htmlspecialchars($display_name); ?></strong>
+            </h2>
+        </div>
 
         <p class="text-secondary mb-4">Hardware System Overview</p>
 
