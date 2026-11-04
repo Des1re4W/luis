@@ -528,11 +528,26 @@ try {
                                     $t_stock = $row['total_stock'];
                                 }
 
-                                // Kinukuha lang ang mismong filename para maiwasan ang doble o maling uploads/ path
-                                $image_file = !empty($p_image) ? basename($p_image) : '';
-                                $img_src = (!empty($image_file) && file_exists(__DIR__ . '/../uploads/' . $image_file))
-                                    ? '../uploads/' . htmlspecialchars($image_file)
-                                    : '../assets/no-image.jpg';
+                                // Handle Image Source Logic (Base64 / URL / File Path)
+                                $img_src = '../assets/no-image.jpg';
+                                if (!empty($p_image)) {
+                                    // 1. Kung nakatabi na sa DB bilang Base64 data string
+                                    if (str_istr($p_image, 'data:image/') === 0) {
+                                        $img_src = $p_image;
+                                    } 
+                                    // 2. Kung nakatabi bilang ganap na HTTPS Cloud URL (halimbawa Cloudinary o Supabase)
+                                    elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
+                                        $img_src = $p_image;
+                                    } 
+                                    // 3. Kung nakatabi bilang local file name sa server folder
+                                    else {
+                                        $image_file = basename($p_image);
+                                        $file_path = __DIR__ . '/../uploads/' . $image_file;
+                                        if (file_exists($file_path)) {
+                                            $img_src = '../uploads/' . htmlspecialchars($image_file);
+                                        }
+                                    }
+                                }
                                 ?>
                                 <tr>
                                     <td class="text-center">
