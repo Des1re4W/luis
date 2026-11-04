@@ -39,14 +39,6 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
-    $paid_amount = 0;
-
-    // Kalkulahin ang paid amount base sa scheme
-    if ($grand_total >= 5000 && $payment_scheme === '50_percent') {
-        $paid_amount = $grand_total * 0.5;
-    } else {
-        $paid_amount = $grand_total;
-    }
 
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
@@ -72,16 +64,15 @@ if (isset($_POST['place_order'])) {
     }
 
     try {
-        // Tiyaking nakaset ang PDO sa EXCEPTION mode
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
         $pdo->beginTransaction();
 
-        // 1. I-insert ang order gamit ang PDO prepared statement
+        // Tinanggal ang paid_amount sa query
         $order_query = "INSERT INTO orders 
-            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
+            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
             VALUES 
-            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, CURRENT_TIMESTAMP, 'pending')";
+            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, CURRENT_TIMESTAMP, 'pending')";
         
         $stmt = $pdo->prepare($order_query);
         $stmt->execute([
@@ -93,7 +84,6 @@ if (isset($_POST['place_order'])) {
             ':full_address' => $full_address,
             ':landmark' => $landmark,
             ':total_amount' => $grand_total,
-            ':paid_amount' => $paid_amount,
             ':cart' => $cart_json,
             ':payment_method' => $payment_method,
             ':payment_scheme' => $payment_scheme,
@@ -153,7 +143,6 @@ if (isset($_POST['place_order'])) {
         }
         error_log("Checkout error: " . $e->getMessage());
         
-        // Displays exact database error for debugging
         echo "<div style='color:red; padding:20px; font-family:sans-serif;'>";
         echo "<h3>Checkout Processing Failed</h3>";
         echo "<p><b>Error Details:</b> " . htmlspecialchars($e->getMessage()) . "</p>";
