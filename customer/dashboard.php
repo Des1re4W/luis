@@ -6,67 +6,64 @@ $category = $_GET['category'] ?? '';
 $sort = $_GET['sort'] ?? '';
 $is_home = (!isset($_GET['view']) && $category == '' && !isset($_GET['sort']));
 $sort_label = '';
+
 try {
     $sql = "
         SELECT
-            p.id,
-            p.product_name,
-            p.category,
-            p.price,
-            p.stock,
-            p.image,
-            p.price AS min_price,
-            p.price AS max_price,
+            id,
+            product_name,
+            category,
+            price,
+            stock,
+            image,
+            price AS min_price,
+            price AS max_price,
             0 AS variant_count,
-            COALESCE(SUM(oi.quantity), 0) AS total_sold
-        FROM public.products p
-        LEFT JOIN public.order_items oi ON p.id = oi.product_id
-        WHERE p.is_archived = 0
+            0 AS total_sold
+        FROM public.products
+        WHERE is_archived = 0
     ";
 
     $params = [];
 
     if ($category !== '') {
-        $sql .= " AND p.category = :category";
+        $sql .= " AND category = :category";
         $params[':category'] = $category;
     }
 
-    // Kailangan ng GROUP BY dahil gumamit tayo ng SUM()
-    $sql .= " GROUP BY p.id, p.product_name, p.category, p.price, p.stock, p.image";
-
     switch ($sort) {
         case 'price_low':
-            $sql .= " ORDER BY p.price ASC";
+            $sql .= " ORDER BY price ASC";
             $sort_label = "(Price: Low to High)";
             break;
 
         case 'price_high':
-            $sql .= " ORDER BY p.price DESC";
+            $sql .= " ORDER BY price DESC";
             $sort_label = "(Price: High to Low)";
             break;
 
         case 'az':
-            $sql .= " ORDER BY p.product_name ASC";
+            $sql .= " ORDER BY product_name ASC";
             $sort_label = "(A-Z)";
             break;
 
         case 'za':
-            $sql .= " ORDER BY p.product_name DESC";
+            $sql .= " ORDER BY product_name DESC";
             $sort_label = "(Z-A)";
             break;
 
         case 'newest':
-            $sql .= " ORDER BY p.id DESC";
+            $sql .= " ORDER BY id DESC";
             $sort_label = "(Newest Arrivals)";
             break;
 
         case 'oldest':
-            $sql .= " ORDER BY p.id ASC";
+            $sql .= " ORDER BY id ASC";
             $sort_label = "(Oldest Stock)";
             break;
 
         default:
-            $sql .= " ORDER BY p.id DESC";
+            $sql .= " ORDER BY id DESC";
             break;
     }
 
