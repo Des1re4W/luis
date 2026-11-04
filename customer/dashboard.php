@@ -66,7 +66,12 @@ try {
             break;
 
         default:
-            $sql .= " ORDER BY p.id DESC";
+            // Kapag nasa Home / Top Selling View, i-order by total_sold DESC muna bago p.id DESC
+            if ($is_home) {
+                $sql .= " ORDER BY total_sold DESC, p.id DESC";
+            } else {
+                $sql .= " ORDER BY p.id DESC";
+            }
             break;
     }
 
