@@ -18,7 +18,7 @@ $messageType = "info";
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-const SMTP_PASSWORD = 'untvtpzeiqyrkrpx';
+const SMTP_PASSWORD = 'miohifpavqdzvzvn';
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
 function h($value)
