@@ -284,7 +284,10 @@ if (!empty($user['profile_image'])) {
             <!-- TOTAL PRODUCTS -->
             <div class="col-12 col-md-4">
                 <div class="card bg-primary text-white card-box">
-                    <h4>Total Products</h4>
+                    <h4>
+                        <i class="bi bi-box-seam"></i>
+                        Total Products
+                    </h4>
                     <?php
                     try {
                         // Count main products
@@ -316,7 +319,10 @@ if (!empty($user['profile_image'])) {
             <!-- TOTAL ORDERS -->
             <div class="col-12 col-md-4">
                 <div class="card bg-success text-white card-box">
-                    <h4>Total Orders</h4>
+                    <h4>
+                        <i class="bi bi-receipt"></i>
+                        Total Orders
+                    </h4>
 
                     <?php
                     try {
@@ -335,6 +341,97 @@ if (!empty($user['profile_image'])) {
                     ?>
 
                     <small>Online Orders</small>
+                </div>
+            </div>
+
+            <!-- CUSTOMER SERVICE REQUESTS -->
+            <div class="col-12 col-md-4">
+                <div class="card bg-info text-white card-box">
+                    <h4>
+                        <i class="bi bi-arrow-return-left"></i>
+                        Service Requests
+                    </h4>
+
+                    <?php
+                    try {
+                        // Subukang kunin ang bilang ng customer service requests
+                        $stmt = $pdo->query("
+                            SELECT COUNT(*) FROM customer_service_requests
+                        ");
+                        $totalServiceRequests = (int) $stmt->fetchColumn();
+                        echo "<h2>" . $totalServiceRequests . "</h2>";
+                    } catch (PDOException $e) {
+                        // Fallback kung iba ang pangalan ng table (e.g. items_requests / item_requests)
+                        try {
+                            $stmt = $pdo->query("SELECT COUNT(*) FROM item_requests");
+                            $totalServiceRequests = (int) $stmt->fetchColumn();
+                            echo "<h2>" . $totalServiceRequests . "</h2>";
+                        } catch (PDOException $ex) {
+                            error_log("Customer service requests query error: " . $e->getMessage());
+                            echo "<h2>0</h2>";
+                        }
+                    }
+                    ?>
+
+                    <small>Total Customer Service Tickets / Requests</small>
+                </div>
+            </div>
+
+            <!-- TOTAL DAMAGED ITEMS -->
+            <div class="col-12 col-md-4">
+                <div class="card bg-danger text-white card-box">
+                    <h4>
+                        <i class="bi bi-slash-circle-fill"></i>
+                        Damaged Items
+                    </h4>
+
+                    <?php
+                    try {
+                        // Subukang kunin ang bilang mula sa damaged_items table
+                        $stmt = $pdo->query("
+                            SELECT COUNT(*) FROM damaged_items
+                        ");
+                        $totalDamagedItems = (int) $stmt->fetchColumn();
+                        echo "<h2>" . $totalDamagedItems . "</h2>";
+                    } catch (PDOException $e) {
+                        // Fallback kung damage_items ang name ng table
+                        try {
+                            $stmt = $pdo->query("SELECT COUNT(*) FROM damage_items");
+                            $totalDamagedItems = (int) $stmt->fetchColumn();
+                            echo "<h2>" . $totalDamagedItems . "</h2>";
+                        } catch (PDOException $ex) {
+                            error_log("Damaged items query error: " . $e->getMessage());
+                            echo "<h2>0</h2>";
+                        }
+                    }
+                    ?>
+
+                    <small>Reported Damaged Items</small>
+                </div>
+            </div>
+
+            <!-- TOTAL USERS -->
+            <div class="col-12 col-md-4">
+                <div class="card bg-dark text-white card-box">
+                    <h4>
+                        <i class="bi bi-people-fill"></i>
+                        Total Users
+                    </h4>
+
+                    <?php
+                    try {
+                        $stmt = $pdo->query("
+                            SELECT COUNT(*) FROM users
+                        ");
+                        $totalUsers = (int) $stmt->fetchColumn();
+                        echo "<h2>" . $totalUsers . "</h2>";
+                    } catch (PDOException $e) {
+                        error_log("Total users query error: " . $e->getMessage());
+                        echo "<h2>--</h2>";
+                    }
+                    ?>
+
+                    <small>Active & Registered System Users</small>
                 </div>
             </div>
 
