@@ -211,7 +211,9 @@ if (isset($_POST['place_order'])) {
         <div class="col-12 col-md-7 order-2">
             <div class="card border-0 shadow-sm p-4">
                 <h4 class="mb-4 text-primary"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
-                <form action="placeorder.php<?php echo isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''; ?>" method="POST" enctype="multipart/form-data">
+                
+                <!-- INILAGAY ANG FORM ACTION SA SARILING PAGE -->
+                <form action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']) . (isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''); ?>" method="POST" enctype="multipart/form-data">
                     <div class="row g-3">
                         <div class="col-12 col-sm-6">
                             <label class="form-label">First Name</label>
