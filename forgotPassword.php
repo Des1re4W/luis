@@ -38,6 +38,10 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port = 587;
         $mail->CharSet = 'UTF-8';
+        
+        // SPEED OPTIMIZATION: Bawasan ang SMTP Timeout para hindi maghang kapag mabagal ang network
+        $mail->Timeout = 10;
+        $mail->SMTPKeepAlive = false;
 
         $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
@@ -87,7 +91,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Please wait 60 seconds before requesting another OTP.";
             $messageType = "warning";
         } else {
-            // BINAGO: Pinalitan ang $conn ng $pdo
             $stmt = $pdo->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
             if (!$stmt) {
                 $message = "A system error occurred. Please try again later.";
@@ -172,7 +175,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $email = $_SESSION['pw_reset_email'];
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-                // BINAGO: Pinalitan ang $conn ng $pdo at pinalitan ang MySQLi bind_param/affected_rows sa PDO execute/rowCount
                 $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active'");
                 if (!$stmt) {
                     $message = "A system error occurred. Please try again later.";
@@ -351,7 +353,7 @@ if (!empty($_SESSION['pw_reset_email'])) {
         <?php endif; ?>
 
         <?php if ($showPasswordForm): ?>
-            <form method="POST" autocomplete="off">
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="reset_password">
 
                 <div class="mb-3">
@@ -379,7 +381,7 @@ if (!empty($_SESSION['pw_reset_email'])) {
                 <button type="submit" class="btn btn-primary w-100">Change Password</button>
             </form>
         <?php elseif ($showOtpForm): ?>
-            <form method="POST" autocomplete="off">
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="verify_otp">
                 <div class="mb-3">
                     <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
@@ -389,28 +391,38 @@ if (!empty($_SESSION['pw_reset_email'])) {
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
             </form>
-            <form method="POST" class="mt-3">
+            <form method="POST" class="mt-3" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="send_otp">
                 <input type="hidden" name="email" value="<?= h($_SESSION['pw_reset_email']) ?>">
                 <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
             </form>
         <?php else: ?>
-            <form method="POST" autocomplete="off">
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="send_otp">
                 <div class="mb-3">
                     <label for="email" class="form-label fw-semibold">Registered Email Address</label>
                     <input type="email" class="form-control" id="email" name="email" required maxlength="255"
                         autocomplete="email" placeholder="name@example.com">
                 </div>
-                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-envelope me-2"></i>Send OTP</button>
+                <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                    <i class="bi bi-envelope me-2"></i>Send OTP
+                </button>
             </form>
         <?php endif; ?>
 
         <a href="login.php" class="back-link"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
     </main>
 
-    <?php if ($showPasswordForm): ?>
-        <script>
+    <script>
+        function showLoading(form) {
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending...';
+            }
+        }
+
+        <?php if ($showPasswordForm): ?>
             function setupPasswordToggle(toggleBtnId, fieldId, iconId) {
                 const btn = document.getElementById(toggleBtnId);
                 const field = document.getElementById(fieldId);
@@ -428,8 +440,8 @@ if (!empty($_SESSION['pw_reset_email'])) {
 
             setupPasswordToggle('toggleNewPassword', 'new_password', 'iconNewPassword');
             setupPasswordToggle('toggleConfirmPassword', 'confirm_password', 'iconConfirmPassword');
-        </script>
-    <?php endif; ?>
+        <?php endif; ?>
+    </script>
 </body>
 
 </html>
