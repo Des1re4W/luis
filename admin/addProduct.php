@@ -1,10 +1,8 @@
 <?php
 session_start();
-
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     header("Location: ../login.php");
     exit();
 }
@@ -12,148 +10,104 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $message = "";
 
 if (isset($_POST['submit'])) {
+    $name = trim($_POST['product_name']);
+    $cost_price = $_POST['cost_price'];
+    $price = $_POST['price'];
+    $category = $_POST['category'];
+    $stock = $_POST['stock'];
+    $description = $_POST['product_description'];
 
-    $name = trim($_POST['product_name'] ?? '');
-    $cost_price = $_POST['cost_price'] ?? 0;
-    $price = $_POST['price'] ?? 0;
-    $category = $_POST['category'] ?? '';
-    $stock = $_POST['stock'] ?? 0;
-    $description = trim($_POST['product_description'] ?? '');
+    // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
+    if (floatval($cost_price) > floatval($price)) {
+        $message = "Error: Cost price cannot be higher than the selling price!";
+    } else {
+        // --- DUPLICATE CHECK ---
+        $check_stmt = $pdo->prepare("SELECT id FROM products WHERE product_name = :name");
+        $check_stmt->execute([':name' => $name]);
+        
+        if ($check_stmt->rowCount() > 0) {
+            $message = "Error: Product '$name' already exists in the inventory!";
+        } else {
+            // --- FILE UPLOAD & VALIDATION CHECK ---
+            if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+                $error_code = $_FILES['image']['error'] ?? 'No file';
+                $message = "Error: Please select a valid product image to upload. (Code: " . $error_code . ")";
+            } else {
+                $image = $_FILES['image']['name'];
+                $tmp = $_FILES['image']['tmp_name'];
+                
+                // Siguraduhing hindi empty ang temporary path
+                if (empty($tmp) || !file_exists($tmp)) {
+                    $message = "Error: Uploaded file temporary path is empty or invalid.";
+                } else {
+                    // Gamitin ang getimagesize para masigurong totoong image file ito ( JPG, JPEG, PNG, WEBP )
+                    $check_image = getimagesize($tmp);
+                    
+                    if ($check_image === false) {
+                        $message = "Error: Invalid image file! Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
+                    } else {
+                        // Kunin ang extension mula sa file name
+                        $image_extension = strtolower(pathinfo($image, PATHINFO_EXTENSION));
+                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-    $uploadedImageUrl = null;
+                        if (!in_array($image_extension, $allowed_extensions)) {
+                            $message = "Error: Only JPG, JPEG, PNG, and WEBP extensions are allowed.";
+                        } else {
+                            $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
+                            $folder = "../uploads/" . $new_image_name;
 
-    try {
+                            if (move_uploaded_file($tmp, $folder)) {
+                                $savePath = "uploads/" . $new_image_name;
 
-        // Validate prices
-        if (!is_numeric($cost_price) || !is_numeric($price) ||
-            $cost_price < 0 || $price < 0) {
-            throw new Exception("Invalid product price.");
+                                $query = "INSERT INTO products (product_name, cost_price, price, category, image, stock, product_description) 
+                                          VALUES (:name, :cost_price, :price, :category, :image, :stock, :description)";
+                                
+                                $stmt = $pdo->prepare($query);
+                                $insert_result = $stmt->execute([
+                                    ':name' => $name,
+                                    ':cost_price' => $cost_price,
+                                    ':price' => $price,
+                                    ':category' => $category,
+                                    ':image' => $savePath,
+                                    ':stock' => $stock,
+                                    ':description' => $description
+                                ]);
+
+                                if($insert_result){
+                                    // ==========================================
+                                    // AUDIT TRAIL LOGGING (ADD PRODUCT)
+                                    // ==========================================
+                                    $username = $_SESSION['username'] ?? 'Admin';
+                                    $role = $_SESSION['role'] ?? 'admin';
+                                    $action = 'Add Product';
+                                    $details = "Added new product: " . $name;
+                                    
+                                    $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
+
+$log_query = "INSERT INTO audit_log (user_id, username, role, action, details, timestamp) 
+              VALUES (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)";
+$log_stmt = $pdo->prepare($log_query);
+$log_stmt->execute([
+    ':user_id' => $user_id,
+    ':username' => $username,
+    ':role' => $role,
+    ':action' => $action,
+    ':details' => $details
+]);
+                                    // ==========================================
+
+                                    $message = "Product added successfully!";
+                                } else {
+                                    $message = "Error: Failed to insert product into database.";
+                                }
+                            } else {
+                                $message = "Error: Failed to move uploaded image file.";
+                            }
+                        }
+                    }
+                }
+            }
         }
-
-        if ((float)$cost_price > (float)$price) {
-            throw new Exception(
-                "Cost price cannot be higher than the selling price!"
-            );
-        }
-
-        // Check duplicate product
-        $check = $pdo->prepare("
-            SELECT id FROM products
-            WHERE LOWER(product_name) = LOWER(:name)
-            LIMIT 1
-        ");
-
-        $check->execute([':name' => $name]);
-
-        if ($check->fetch()) {
-            throw new Exception(
-                "Product '$name' already exists in the inventory!"
-            );
-        }
-
-        // Upload directly to Supabase Storage
-        if (!isset($_FILES['image'])) {
-            throw new Exception("Please select a product image.");
-        }
-
-        $uploadedImageUrl = uploadProductImage($_FILES['image']);
-
-        // Save permanent image URL to database
-        $pdo->beginTransaction();
-
-        $query = "
-            INSERT INTO products (
-                product_name,
-                cost_price,
-                price,
-                category,
-                image,
-                stock,
-                product_description
-            )
-            VALUES (
-                :name,
-                :cost_price,
-                :price,
-                :category,
-                :image,
-                :stock,
-                :description
-            )
-        ";
-
-        $stmt = $pdo->prepare($query);
-
-        $stmt->execute([
-            ':name' => $name,
-            ':cost_price' => $cost_price,
-            ':price' => $price,
-            ':category' => $category,
-            ':image' => $uploadedImageUrl,
-            ':stock' => $stock,
-            ':description' => $description
-        ]);
-
-        // Audit Trail
-        $log_stmt = $pdo->prepare("
-            INSERT INTO audit_log (
-                user_id,
-                username,
-                role,
-                action,
-                details,
-                timestamp
-            )
-            VALUES (
-                :user_id,
-                :username,
-                :role,
-                :action,
-                :details,
-                CURRENT_TIMESTAMP
-            )
-        ");
-
-        $log_stmt->execute([
-            ':user_id' => $_SESSION['user_id'] ?? null,
-            ':username' => $_SESSION['username'] ?? 'Admin',
-            ':role' => $_SESSION['role'],
-            ':action' => 'Add Product',
-            ':details' => "Added new product: " . $name
-        ]);
-
-        $pdo->commit();
-
-        $message = "Product added successfully!";
-
-    } catch (Exception $e) {
-
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-
-        // Remove uploaded image if database operation failed
-        if ($uploadedImageUrl) {
-            deleteProductImage($uploadedImageUrl);
-        }
-
-        error_log("Add product error: " . $e->getMessage());
-
-        $message = "Error: " . $e->getMessage();
-
-    } catch (PDOException $e) {
-
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-
-        if ($uploadedImageUrl) {
-            deleteProductImage($uploadedImageUrl);
-        }
-
-        error_log("Add product database error: " . $e->getMessage());
-
-        $message = "Error: Unable to save product. Please try again.";
     }
 }
 ?>

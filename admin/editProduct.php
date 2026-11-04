@@ -1,36 +1,26 @@
 <?php
 session_start();
-
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../config/supabase_storage.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-$message = "";
+$message = ""; 
+$row = [];
 
-$product_id = filter_var(
-    $_GET['product_id'] ?? null,
-    FILTER_VALIDATE_INT
-);
+$product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
 
-if (!$product_id || $product_id <= 0) {
+if (!$product_id) {
     $_SESSION['message'] = "Invalid product ID.";
     header("Location: products.php");
     exit();
 }
 
 try {
-
-    $stmt = $pdo->prepare("
-        SELECT * FROM products
-        WHERE id = :id
-    ");
-
+    $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
     $stmt->execute([':id' => $product_id]);
-
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
@@ -38,85 +28,56 @@ try {
         header("Location: products.php");
         exit();
     }
-
 } catch (PDOException $e) {
-
     error_log("Fetch product error: " . $e->getMessage());
     die("Database error occurred.");
 }
 
-
-// UPDATE PRODUCT
+// Kapag pinindot ang Update button
 if (isset($_POST['update'])) {
+    $product_name = trim($_POST['product_name']);
+    $cost_price = $_POST['cost_price'];
+    $price = $_POST['price'];
+    $category = $_POST['category'];
+    $stock = $_POST['stock'];
+    $product_description = trim($_POST['product_description']);
+    $image_path = $row['image']; // Default sa lumang image
 
-    $product_name = trim($_POST['product_name'] ?? '');
-    $cost_price = $_POST['cost_price'] ?? 0;
-    $price = $_POST['price'] ?? 0;
-    $category = $_POST['category'] ?? '';
-    $stock = $_POST['stock'] ?? 0;
-    $product_description = trim($_POST['product_description'] ?? '');
+    $image_changed = false;
 
-    $image_path = $row['image'];
-    $newImageUploaded = false;
+    // I-check kung may in-upload na bagong image
+    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+        $tmp = $_FILES['image']['tmp_name'];
+        if (!empty($tmp) && file_exists($tmp)) {
+            $check_image = getimagesize($tmp);
+            if ($check_image !== false) {
+                $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
+
+                if (in_array($ext, $allowed_extensions)) {
+                    $new_image_name = uniqid("prod_", true) . '.' . $ext;
+                    $folder = "../uploads/" . $new_image_name;
+
+                    if (move_uploaded_file($tmp, $folder)) {
+                        $image_path = "uploads/" . $new_image_name;
+                        $image_changed = true;
+                    }
+                }
+            }
+        }
+    }
 
     try {
-
-        // Validate price
-        if (!is_numeric($cost_price) || !is_numeric($price) ||
-            $cost_price < 0 || $price < 0) {
-            throw new Exception("Invalid product price.");
-        }
-
-        if ((float)$cost_price > (float)$price) {
-            throw new Exception(
-                "Cost price cannot be higher than the selling price."
-            );
-        }
-
-        // Check duplicate product name
-        $duplicate = $pdo->prepare("
-            SELECT id FROM products
-            WHERE LOWER(product_name) = LOWER(:name)
-            AND id != :id
-            LIMIT 1
-        ");
-
-        $duplicate->execute([
-            ':name' => $product_name,
-            ':id' => $product_id
-        ]);
-
-        if ($duplicate->fetch()) {
-            throw new Exception("Product name already exists.");
-        }
-
-        // Upload new image only if selected
-        if (
-            isset($_FILES['image']) &&
-            $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE
-        ) {
-
-            if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception("Image upload failed.");
-            }
-
-            $image_path = uploadProductImage($_FILES['image']);
-            $newImageUploaded = true;
-        }
-
-        $pdo->beginTransaction();
-
-        // Update product
+        // 1. I-update ang produkto sa database
         $update_stmt = $pdo->prepare("
-            UPDATE products
-            SET
-                product_name = :product_name,
-                cost_price = :cost_price,
-                price = :price,
-                category = :category,
-                stock = :stock,
-                product_description = :description,
-                image = :image
+            UPDATE products 
+            SET product_name = :product_name, 
+                cost_price = :cost_price, 
+                price = :price, 
+                category = :category, 
+                stock = :stock, 
+                product_description = :product_description, 
+                image = :image 
             WHERE id = :id
         ");
 
@@ -126,146 +87,66 @@ if (isset($_POST['update'])) {
             ':price' => $price,
             ':category' => $category,
             ':stock' => $stock,
-            ':description' => $product_description,
+            ':product_description' => $product_description,
             ':image' => $image_path,
             ':id' => $product_id
         ]);
 
-        // Audit Trail
+        // 2. Mag-buo ng detalyadong pagbabago para sa Audit Trail
         $changes = [];
-
         if ($row['product_name'] !== $product_name) {
-            $changes[] = "Name updated";
+            $changes[] = "Name changed from '{$row['product_name']}' to '{$product_name}'";
         }
-
-        if ((float)$row['cost_price'] != (float)$cost_price) {
-            $changes[] = "Cost price updated";
+        if ((float)$row['cost_price'] !== (float)$cost_price) {
+            $changes[] = "Cost Price changed from {$row['cost_price']} to {$cost_price}";
         }
-
-        if ((float)$row['price'] != (float)$price) {
-            $changes[] = "Selling price updated";
+        if ((float)$row['price'] !== (float)$price) {
+            $changes[] = "Selling Price changed from {$row['price']} to {$price}";
         }
-
-        if ((int)$row['stock'] != (int)$stock) {
-            $changes[] = "Stock updated";
+        if ((int)$row['stock'] !== (int)$stock) {
+            $changes[] = "Stock changed from {$row['stock']} to {$stock}";
         }
-
         if ($row['category'] !== $category) {
-            $changes[] = "Category updated";
+            $changes[] = "Category changed from '{$row['category']}' to '{$category}'";
         }
-
         if ($row['product_description'] !== $product_description) {
             $changes[] = "Description updated";
         }
-
-        if ($newImageUploaded) {
+        if ($image_changed) {
             $changes[] = "Product photo updated";
         }
 
-        $details = "Updated product: " . $product_name;
-
+        $details_text = "Updated product: " . $product_name;
         if (!empty($changes)) {
-            $details .= " (" . implode(", ", $changes) . ")";
+            $details_text .= " (" . implode(", ", $changes) . ")";
         }
+
+        // 3. I-save sa audit_log table (kasama ang user_id para hindi mag-error)
+        $username = $_SESSION['username'] ?? 'Admin';
+        $role = $_SESSION['role'] ?? 'admin';
+        $user_id = $_SESSION['user_id'] ?? null; 
 
         $log_stmt = $pdo->prepare("
-            INSERT INTO audit_log (
-                user_id,
-                username,
-                role,
-                action,
-                details,
-                timestamp
-            )
-            VALUES (
-                :user_id,
-                :username,
-                :role,
-                :action,
-                :details,
-                CURRENT_TIMESTAMP
-            )
+            INSERT INTO audit_log (user_id, username, role, action, details, timestamp) 
+            VALUES (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
         ");
-
         $log_stmt->execute([
-            ':user_id' => $_SESSION['user_id'] ?? null,
-            ':username' => $_SESSION['username'] ?? 'Admin',
-            ':role' => $_SESSION['role'],
+            ':user_id' => $user_id,
+            ':username' => $username,
+            ':role' => $role,
             ':action' => 'Edit Product',
-            ':details' => $details
+            ':details' => $details_text
         ]);
 
-        $pdo->commit();
-
-        // Delete old Supabase image only after successful database update
-        if ($newImageUploaded) {
-            deleteProductImage($row['image']);
-        }
-
         $_SESSION['message'] = "Product updated successfully!";
-
         header("Location: products.php");
         exit();
 
-    } catch (Exception $e) {
-
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-
-        // Delete newly uploaded image if update failed
-        if ($newImageUploaded) {
-            deleteProductImage($image_path);
-        }
-
-        error_log("Edit product error: " . $e->getMessage());
-
-        $message = '<div class="alert alert-danger">'
-            . htmlspecialchars($e->getMessage())
-            . '</div>';
-
     } catch (PDOException $e) {
-
-        if ($pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-
-        if ($newImageUploaded) {
-            deleteProductImage($image_path);
-        }
-
-        error_log("Edit product database error: " . $e->getMessage());
-
-        $message = '<div class="alert alert-danger">'
-            . 'Unable to update product. Please try again.'
-            . '</div>';
+        error_log("Update product error: " . $e->getMessage());
+        $message = '<div class="alert alert-danger">Error updating product!</div>';
     }
 }
-
-
-// Helper for displaying old and new image formats
-function getProductImageUrl($image)
-{
-    if (empty($image)) {
-        return '../assets/no-image.jpg';
-    }
-
-    // Supabase URL or another external URL
-    if (filter_var($image, FILTER_VALIDATE_URL)) {
-        return $image;
-    }
-
-    // Legacy local image path
-    $image = ltrim($image, '/');
-
-    if (strpos($image, 'uploads/') === 0) {
-        return '../' . htmlspecialchars($image, ENT_QUOTES, 'UTF-8');
-    }
-
-    return '../uploads/' . rawurlencode(basename($image));
-}
-
-$imagePreview = getProductImageUrl($row['image'] ?? '');
 ?>
 
 <!DOCTYPE html>
@@ -323,14 +204,7 @@ $imagePreview = getProductImageUrl($row['image'] ?? '');
 
                 <label class="form-label fw-bold d-block">Current Image</label>
                 <?php if(!empty($row['image'])): ?>
-                    <img
-    src="<?php echo $imagePreview; ?>"
-    width="120"
-    height="120"
-    style="object-fit: cover;"
-    class="mb-3 border rounded shadow-sm"
-    alt="Product Image"
-    onerror="this.onerror=null;this.src='../assets/no-image.jpg';"><br>
+                    <img src="../<?php echo htmlspecialchars($row['image']); ?>" width="120" class="mb-3 border rounded shadow-sm"><br>
                 <?php else: ?>
                     <img src="../assets/no-image.jpg" width="120" class="mb-3 border rounded shadow-sm"><br>
                 <?php endif; ?>
