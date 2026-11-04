@@ -659,7 +659,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                     <div class="mb-3">
                    <label class="form-label">Phone Number</label>
                      <input 
-                       type="tel" 
+                       type="text" 
                          name="phone_number" 
                         class="form-control" 
                         placeholder="09XXXXXXXXX"
@@ -667,6 +667,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                         minlength="11"
                         pattern="09[0-9]{9}"
                         inputmode="numeric"
+                        oninput="this.value = this.value.replace(/[^0-9]/g, '')"
                          required>
                         </div>
                     <div class="mb-3">
