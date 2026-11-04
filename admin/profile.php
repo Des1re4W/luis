@@ -241,7 +241,7 @@ if (isset($_POST['update_profile'])) {
 
     <!-- Mobile Navbar -->
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge"></i> My Profile</span>
+        <span class="navbar-brand fw-bold fs-6"> <i class="bi bi-person-badge"></i><?= htmlspecialchars($_SESSION['fullname'] ?? 'My Profile'); ?></span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
             <i class="bi bi-list fs-4"></i>
         </button>
