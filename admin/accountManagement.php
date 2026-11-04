@@ -653,6 +653,23 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                         <input type="text" name="username" class="form-control" maxlength="100" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" name="fullname" class="form-control" maxlength="100" required>
+                    </div>
+                    <div class="mb-3">
+                   <label class="form-label">Phone Number</label>
+                     <input 
+                       type="tel" 
+                         name="phone_number" 
+                        class="form-control" 
+                        placeholder="09XXXXXXXXX"
+                        maxlength="11"
+                        minlength="11"
+                        pattern="09[0-9]{9}"
+                        inputmode="numeric"
+                         required>
+                        </div>
+                    <div class="mb-3">
                         <label class="form-label">Email Address</label>
                         <input type="email" name="email" class="form-control" maxlength="255" required>
                     </div>
