@@ -35,8 +35,12 @@ if (isset($_POST['update_profile'])) {
     $phone_number = trim($_POST['phone_number'] ?? '');
     $profile_image = $user['profile_image'] ?? ''; 
 
-    // I-check kung may in-upload na bagong picture
-    if (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
+    // Logic para sa pag-remove ng Profile Picture
+    if (isset($_POST['remove_profile_image']) && $_POST['remove_profile_image'] == '1') {
+        $profile_image = ''; // Gagawing empty para bumalik sa default
+    } 
+    // Logic para sa pag-upload ng bagong picture
+    elseif (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['profile_image']['tmp_name'];
         if (!empty($tmp) && file_exists($tmp)) {
             $check_image = getimagesize($tmp);
@@ -72,6 +76,9 @@ if (isset($_POST['update_profile'])) {
         ]);
 
         $_SESSION['username'] = $new_username; 
+        if (!empty($fullname)) {
+            $_SESSION['fullname'] = $fullname;
+        }
         $message = "Profile updated successfully!";
         $msg_type = "success";
 
@@ -83,6 +90,20 @@ if (isset($_POST['update_profile'])) {
         $msg_type = "danger";
     }
 }
+
+// Fallback logic para sa profile image path (Paggamit ng default avatar kung walang image)
+$default_avatar = '../assets/default-avatar.png'; // Siguraduhing may ganitong image sa assets folder
+$user_display_photo = $default_avatar;
+
+if (!empty($user['profile_image'])) {
+    $photo_path = __DIR__ . '/../' . $user['profile_image'];
+    if (file_exists($photo_path)) {
+        $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+    }
+}
+
+// Name to display on top
+$display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'];
 ?>
 
 <!DOCTYPE html>
@@ -164,7 +185,7 @@ if (isset($_POST['update_profile'])) {
             transition: margin 0.3s ease;
         }
 
-        /* PROFILE CONTAINER - Ginawa nang full-width at kapareho ng kulay ng sidebar (#001f4d) */
+        /* PROFILE CONTAINER */
         .profile-container {
             background: #001f4d;
             color: #fff;
@@ -180,6 +201,7 @@ if (isset($_POST['update_profile'])) {
             object-fit: cover;
             border-radius: 50%;
             border: 2px solid #0d6efd;
+            background-color: #fff;
         }
 
         /* Input fields container */
@@ -241,7 +263,7 @@ if (isset($_POST['update_profile'])) {
 
     <!-- Mobile Navbar -->
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"> <i class="bi bi-person-badge"></i><?= htmlspecialchars($_SESSION['fullname'] ?? 'My Profile'); ?></span>
+        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge me-2"></i><?= htmlspecialchars($display_name); ?></span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
             <i class="bi bi-list fs-4"></i>
         </button>
@@ -277,11 +299,11 @@ if (isset($_POST['update_profile'])) {
 
             <div class="profile-container">
                 
-                <!-- Header Section -->
+                <!-- Header Section: Nakalagay na ang Full Name sa tabi ng Profile Picture -->
                 <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-light border-opacity-25">
-                    <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" class="profile-img-lg shadow-sm" alt="Profile">
+                    <img src="<?= $user_display_photo; ?>" class="profile-img-lg shadow-sm" alt="Profile Picture">
                     <div>
-                        <h4 class="fw-bold mb-1 text-white">My Profile</h4>
+                        <h4 class="fw-bold mb-1 text-white"><?= htmlspecialchars($display_name); ?></h4>
                         <p class="text-white-50 small mb-1">Manage your personal information and account security.</p>
                         <span class="badge bg-success text-white fw-bold px-2 py-1" style="font-size: 0.75rem;">Active Account</span>
                     </div>
@@ -336,10 +358,20 @@ if (isset($_POST['update_profile'])) {
                         </div>
                     </div>
 
-                    <!-- Profile Picture Upload (Optional) -->
+                    <!-- Change Profile Picture and Remove Option -->
                     <div class="mb-4">
                         <label class="form-label small text-white-50">Change Profile Picture</label>
-                        <input type="file" name="profile_image" class="form-control text-white border-light border-opacity-25" accept=".jpg, .jpeg, .png, .webp" style="height: auto; padding: 10px; background-color: rgba(255,255,255,0.08);">
+                        <input type="file" name="profile_image" class="form-control text-white border-light border-opacity-25 mb-2" accept=".jpg, .jpeg, .png, .webp" style="height: auto; padding: 10px; background-color: rgba(255,255,255,0.08);">
+                        
+                        <!-- Checkbox para sa pag-remove ng profile picture papuntang default photo -->
+                        <?php if (!empty($user['profile_image'])): ?>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="remove_profile_image" value="1" id="removePhotoCheck">
+                                <label class="form-check-label small text-danger fw-bold" for="removePhotoCheck">
+                                    Remove profile picture (revert to default)
+                                </label>
+                            </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Account Role & Status Info (Read-only) -->
@@ -360,7 +392,6 @@ if (isset($_POST['update_profile'])) {
         </div>
     </div>
 
-    <!-- Scripts para sa Sidebar Toggle at pag-enable ng input fields kapag pinindot ang edit logo -->
     <script>
         function enableField(fieldId) {
             const field = document.getElementById(fieldId);
