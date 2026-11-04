@@ -715,12 +715,12 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
                             <label class="form-label">Username <span class="text-danger">*</span></label>
-                            <input type="text" name="username" class="form-control" placeholder="e.g. jdoe" maxlength="100" required>
+                            <input type="text" name="username" class="form-control" placeholder="e.g. juandc" maxlength="100" required>
                         </div>
 
                         <div class="col-12 col-md-6">
                             <label class="form-label">Full Name <span class="text-danger">*</span></label>
-                            <input type="text" name="fullname" class="form-control" placeholder="e.g. John Doe" maxlength="100" required>
+                            <input type="text" name="fullname" class="form-control" placeholder="e.g. Juan Dela Cruz" maxlength="100" required>
                         </div>
 
                         <div class="col-12 col-md-6">
@@ -740,7 +740,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
 
                         <div class="col-12 col-md-6">
                             <label class="form-label">Email Address <span class="text-danger">*</span></label>
-                            <input type="email" name="email" class="form-control" placeholder="jdoe@example.com" maxlength="255" required>
+                            <input type="email" name="email" class="form-control" placeholder="juan@example.com" maxlength="255" required>
                         </div>
 
                         <div class="col-12 col-md-6">
