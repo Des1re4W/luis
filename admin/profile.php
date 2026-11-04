@@ -265,7 +265,7 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
 
     <!-- Mobile Navbar -->
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge me-2"></i>My Profile></span>
+        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge me-2"></i>My Profile</span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
             <i class="bi bi-list fs-4"></i>
         </button>
