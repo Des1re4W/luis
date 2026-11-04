@@ -39,7 +39,7 @@ if (isset($_POST['update_profile'])) {
     if (isset($_POST['remove_profile_image']) && $_POST['remove_profile_image'] == '1') {
         $profile_image = ''; // Gagawing empty para bumalik sa default
     } 
-    // Logic para sa pag-upload ng bagong picture
+    // Logic para sa pag-upload ng bagong picture (Base64 Encoding para manatili sa DB)
     elseif (isset($_FILES['profile_image']) && $_FILES['profile_image']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['profile_image']['tmp_name'];
         if (!empty($tmp) && file_exists($tmp)) {
@@ -49,16 +49,10 @@ if (isset($_POST['update_profile'])) {
                 $allowed = ['jpg', 'jpeg', 'png', 'webp'];
 
                 if (in_array($ext, $allowed)) {
-                    $new_filename = "profile_" . $user_id . "_" . time() . "." . $ext;
-                    $folder = "../uploads/profiles/" . $new_filename;
-
-                    if (!is_dir("../uploads/profiles/")) {
-                        mkdir("../uploads/profiles/", 0777, true);
-                    }
-
-                    if (move_uploaded_file($tmp, $folder)) {
-                        $profile_image = "uploads/profiles/" . $new_filename;
-                    }
+                    $mime_type = mime_content_type($tmp);
+                    $file_data = file_get_contents($tmp);
+                    // I-save bilang Base64 Data URI o local path fallback
+                    $profile_image = 'data:' . $mime_type . ';base64,' . base64_encode($file_data);
                 }
             }
         }
@@ -91,14 +85,22 @@ if (isset($_POST['update_profile'])) {
     }
 }
 
-// Fallback logic para sa profile image path (Paggamit ng default avatar kung walang image)
-$default_avatar = '../assets/default-avatar.png'; // Siguraduhing may ganitong image sa assets folder
+// Built-in Default Avatar (SVG Data URI - Hindi na kailangan ng physical file)
+$default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+
 $user_display_photo = $default_avatar;
 
 if (!empty($user['profile_image'])) {
-    $photo_path = __DIR__ . '/../' . $user['profile_image'];
-    if (file_exists($photo_path)) {
-        $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+    // Kung Base64
+    if (stripos($user['profile_image'], 'data:image/') === 0) {
+        $user_display_photo = $user['profile_image'];
+    } 
+    // Kung local file path at umiiral pa sa server
+    else {
+        $photo_path = __DIR__ . '/../' . $user['profile_image'];
+        if (file_exists($photo_path)) {
+            $user_display_photo = '../' . htmlspecialchars($user['profile_image']);
+        }
     }
 }
 
@@ -299,7 +301,7 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
 
             <div class="profile-container">
                 
-                <!-- Header Section: Nakalagay na ang Full Name sa tabi ng Profile Picture -->
+                <!-- Header Section -->
                 <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom border-light border-opacity-25">
                     <img src="<?= $user_display_photo; ?>" class="profile-img-lg shadow-sm" alt="Profile Picture">
                     <div>
