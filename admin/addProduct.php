@@ -54,8 +54,20 @@ if (isset($_POST['submit'])) {
                             $message = "Error: Only JPG, JPEG, PNG, and WEBP extensions are allowed.";
                         } else {
                             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
-                            $folder = "../uploads/" . $new_image_name;
 
+// Get the correct uploads folder
+$uploadDir = dirname(__DIR__) . '/uploads/';
+
+// Create uploads folder if it does not exist
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0755, true);
+}
+
+// Check if folder is writable
+if (!is_writable($uploadDir)) {
+    $message = "Error: Upload folder is not writable.";
+} else {
+    $folder = $uploadDir . $new_image_name;
                             if (move_uploaded_file($tmp, $folder)) {
                                 $savePath = "uploads/" . $new_image_name;
 

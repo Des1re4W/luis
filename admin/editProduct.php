@@ -55,8 +55,16 @@ if (isset($_POST['update'])) {
                 $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
                 if (in_array($ext, $allowed_extensions)) {
-                    $new_image_name = uniqid("prod_", true) . '.' . $ext;
-                    $folder = "../uploads/" . $new_image_name;
+                   $new_image_name = uniqid("prod_", true) . '.' . $ext;
+
+$uploadDir = dirname(__DIR__) . '/uploads/';
+
+if (!is_dir($uploadDir)) {
+    mkdir($uploadDir, 0755, true);
+}
+
+if (is_writable($uploadDir)) {
+    $folder = $uploadDir . $new_image_name;
 
                     if (move_uploaded_file($tmp, $folder)) {
                         $image_path = "uploads/" . $new_image_name;
