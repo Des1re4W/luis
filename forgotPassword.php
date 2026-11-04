@@ -87,7 +87,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Please wait 60 seconds before requesting another OTP.";
             $messageType = "warning";
         } else {
-            $stmt = $conn->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
+            // BINAGO: Pinalitan ang $conn ng $pdo
+            $stmt = $pdo->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
             if (!$stmt) {
                 $message = "A system error occurred. Please try again later.";
                 $messageType = "danger";
@@ -171,13 +172,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $email = $_SESSION['pw_reset_email'];
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-                $stmt = $conn->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
+                // BINAGO: Pinalitan ang $conn ng $pdo at pinalitan ang MySQLi bind_param/affected_rows sa PDO execute/rowCount
+                $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active'");
                 if (!$stmt) {
                     $message = "A system error occurred. Please try again later.";
                     $messageType = "danger";
                 } else {
-                    $stmt->bind_param("ss", $hashedPassword, $email);
-                    if ($stmt->execute() && $stmt->affected_rows === 1) {
+                    if ($stmt->execute([$hashedPassword, $email]) && $stmt->rowCount() > 0) {
                         clearResetSession();
                         $message = "Your password has been changed successfully. You can now log in.";
                         $messageType = "success";
@@ -185,7 +186,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $message = "Password could not be updated. Please request a new OTP and try again.";
                         $messageType = "danger";
                     }
-                    $stmt->close();
                 }
             }
         }
@@ -273,7 +273,6 @@ if (!empty($_SESSION['pw_reset_email'])) {
             border-radius: 10px
         }
 
-        /* Pagtugma ng background ng eye button sa textfield */
         .input-group .btn-outline-secondary {
             background-color: #fff;
             border-color: #dee2e6;
@@ -355,7 +354,6 @@ if (!empty($_SESSION['pw_reset_email'])) {
             <form method="POST" autocomplete="off">
                 <input type="hidden" name="action" value="reset_password">
 
-                <!-- New Password Field na may Toggle Eye Symbol -->
                 <div class="mb-3">
                     <label for="new_password" class="form-label fw-semibold">New Password</label>
                     <div class="input-group">
@@ -367,7 +365,6 @@ if (!empty($_SESSION['pw_reset_email'])) {
                     </div>
                 </div>
 
-                <!-- Confirm New Password Field na may Toggle Eye Symbol -->
                 <div class="mb-3">
                     <label for="confirm_password" class="form-label fw-semibold">Confirm New Password</label>
                     <div class="input-group">
