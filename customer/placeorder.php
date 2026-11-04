@@ -30,7 +30,7 @@ if (isset($_POST['place_order'])) {
     $fullname = trim($_POST['fullname']);
     $surname = trim($_POST['surname']);
     $contact_number = trim($_POST['contact_number']);
-    $tel_no = trim($_POST['tel_no'] ?? '');
+    $tel_no = !empty($_POST['tel_no']) ? trim($_POST['tel_no']) : null;
     $email = trim($_POST['email']);
     $full_address = trim($_POST['full_address']);
     $landmark = trim($_POST['landmark']);
@@ -38,7 +38,7 @@ if (isset($_POST['place_order'])) {
     $cart_json = json_encode($items_to_process);
 
     $proof_of_payment = null;
-    $ref_no = "";
+    $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
     $paid_amount = 0;
 
     // Kalkulahin ang paid amount base sa scheme
@@ -49,8 +49,6 @@ if (isset($_POST['place_order'])) {
     }
 
     if (in_array($payment_method, ['GCash', 'Maya'])) {
-        $ref_no = trim($_POST['ref_no'] ?? '');
-        
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
             $tmp = $_FILES['proof_of_payment']['tmp_name'];
             
@@ -74,6 +72,9 @@ if (isset($_POST['place_order'])) {
     }
 
     try {
+        // Tiyaking nakaset ang PDO sa EXCEPTION mode
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
         $pdo->beginTransaction();
 
         // 1. I-insert ang order gamit ang PDO prepared statement
@@ -147,9 +148,18 @@ if (isset($_POST['place_order'])) {
         exit();
 
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log("Checkout error: " . $e->getMessage());
-        die("<script>alert('Error processing your order. Please try again.'); history.back();</script>");
+        
+        // Displays exact database error for debugging
+        echo "<div style='color:red; padding:20px; font-family:sans-serif;'>";
+        echo "<h3>Checkout Processing Failed</h3>";
+        echo "<p><b>Error Details:</b> " . htmlspecialchars($e->getMessage()) . "</p>";
+        echo "<p><a href='javascript:history.back()'>Go back and try again</a></p>";
+        echo "</div>";
+        exit();
     }
 }
 ?>
@@ -211,8 +221,6 @@ if (isset($_POST['place_order'])) {
         <div class="col-12 col-md-7 order-2">
             <div class="card border-0 shadow-sm p-4">
                 <h4 class="mb-4 text-primary"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
-                
-                <!-- INILAGAY ANG FORM ACTION SA SARILING PAGE -->
                 <form action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']) . (isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''); ?>" method="POST" enctype="multipart/form-data">
                     <div class="row g-3">
                         <div class="col-12 col-sm-6">
