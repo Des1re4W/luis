@@ -16,7 +16,7 @@ if (isset($_POST['submit'])) {
     $category = $_POST['category'];
     $stock = $_POST['stock'];
     $description = $_POST['product_description'];
-}
+
     // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if (floatval($cost_price) > floatval($price)) {
         $message = "Error: Cost price cannot be higher than the selling price!";
@@ -55,19 +55,22 @@ if (isset($_POST['submit'])) {
                         } else {
                             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
 
-// Get the correct uploads folder
-$uploadDir = dirname(__DIR__) . '/uploads/';
+// Absolute folder path
+$uploadDir = dirname(__DIR__) . '/assets/images/';
 
-// Create uploads folder if it does not exist
+// Create folder if missing
 if (!is_dir($uploadDir)) {
     mkdir($uploadDir, 0755, true);
 }
 
-// Check if folder is writable
-if (!is_writable($uploadDir)) {
-    $message = "Error: Upload folder is not writable.";
-} else {
-    $folder = $uploadDir . $new_image_name;
+$folder = $uploadDir . $new_image_name;
+
+if (move_uploaded_file($tmp, $folder)) {
+
+    // Save relative path to database
+    $savePath = "assets/images/" . $new_image_name;
+
+}
                             if (move_uploaded_file($tmp, $folder)) {
                                 $savePath = "uploads/" . $new_image_name;
 
