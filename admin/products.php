@@ -530,7 +530,7 @@ try {
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="../<?php echo !empty($p_image) ? $p_image : 'assets/no-image.jpg'; ?>"
+                                        <img src="/<?php echo !empty($p_image) ? $p_image : 'assets/no-image.jpg'; ?>"
                                             alt="Product Image">
                                     </td>
                                     <td>
