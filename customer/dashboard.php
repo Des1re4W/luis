@@ -10,60 +10,63 @@ $sort_label = '';
 try {
     $sql = "
         SELECT
-            id,
-            product_name,
-            category,
-            price,
-            stock,
-            image,
-            price AS min_price,
-            price AS max_price,
+            p.id,
+            p.product_name,
+            p.category,
+            p.price,
+            p.stock,
+            p.image,
+            p.price AS min_price,
+            p.price AS max_price,
             0 AS variant_count,
-            0 AS total_sold
-        FROM public.products
-        WHERE is_archived = 0
+            COALESCE(SUM(oi.qty), 0) AS total_sold
+        FROM public.products p
+        LEFT JOIN public.order_items oi ON p.id = oi.product_id
+        WHERE p.is_archived = 0
     ";
 
     $params = [];
 
     if ($category !== '') {
-        $sql .= " AND category = :category";
+        $sql .= " AND p.category = :category";
         $params[':category'] = $category;
     }
 
+    $sql .= " GROUP BY p.id, p.product_name, p.category, p.price, p.stock, p.image";
+
     switch ($sort) {
         case 'price_low':
-            $sql .= " ORDER BY price ASC";
+            $sql .= " ORDER BY p.price ASC";
             $sort_label = "(Price: Low to High)";
             break;
 
         case 'price_high':
-            $sql .= " ORDER BY price DESC";
+            $sql .= " ORDER BY p.price DESC";
             $sort_label = "(Price: High to Low)";
             break;
 
         case 'az':
-            $sql .= " ORDER BY product_name ASC";
+            $sql .= " ORDER BY p.product_name ASC";
             $sort_label = "(A-Z)";
             break;
 
         case 'za':
-            $sql .= " ORDER BY product_name DESC";
+            $sql .= " ORDER BY p.product_name DESC";
             $sort_label = "(Z-A)";
             break;
 
         case 'newest':
-            $sql .= " ORDER BY id DESC";
+            $sql .= " ORDER BY p.id DESC";
             $sort_label = "(Newest Arrivals)";
             break;
 
         case 'oldest':
-            $sql .= " ORDER BY id ASC";
+            $sql .= " ORDER BY p.id ASC";
             $sort_label = "(Oldest Stock)";
             break;
 
         default:
-            $sql .= " ORDER BY id DESC";
+            $sql .= " ORDER BY p.id DESC";
             break;
     }
 
@@ -638,7 +641,7 @@ try {
                     <a href="https://www.google.com/maps/place/Ronel+Steel+Roof+Trading+and+Hardware+Supply/@14.5602582,121.1374471,17z/data=!3m1!4b1!4m6!3m5!1s0x3397c727501f019b:0xe2dfa8a1b3aec65f!8m2!3d14.5602583!4d121.142318!16s%2Fg%2F11t2lf3b8r?entry=ttu&g_ep=EgoyMDI2MDQyOS4wIKXMDSoASAFQAw%3D%3D"
                         target="_blank" class="text-info small d-block mb-2">View Map</a>
                     <p class="small mb-0">📍 Gerona-Guimba Rd. Purok Masagana Brgy. Abagon Gerona Tarlac</p>
-                    <a href="https://maps.app.goo.gl/EV3Bm6fdCaLFzzFi9" target="_blank" class="text-info small">View
+                    <a href="https://maps.app.goo.gl/EV3Bm6fdCaLFzzFi" target="_blank" class="text-info small">View
                         Map</a>
                     <p class="small mb-0">📍 Sitio Bato-bato 1 Brgy. San Juan Taytay, Rizal</p>
                     <a href="https://www.google.com/maps/place/R.+TAIPAN+CONSTRUCTION+SUPPLY+%26+SERVICES/@14.5644077,121.148692,149m/data=!3m1!1e3!4m15!1m8!3m7!1s0x3397c742f1b3202b:0x1fac35e429b5b598!2sCabrera+Rd,+Taytay,+1920+Rizal!3b1!8m2!3d14.5645132!4d121.1468918!16s%2Fg%2F1tg76l83!3m5!1s0x3397c70059cfff9b:0xd3229729a93f8cf5!8m2!3d14.5643595!4d121.1495273!16s%2Fg%2F11yrsfnwtl?entry=ttu&g_ep=EgoyMDI2MDQyOS4wIKXMDSoASAFQAw%3D%3D"
@@ -658,7 +661,6 @@ try {
             <div class="text-center small">© 2026 R. Taipan Hardware Store. All Rights Reserved.</div>
         </div>
     </footer>
-    </div>
 </body>
 
 </html>
