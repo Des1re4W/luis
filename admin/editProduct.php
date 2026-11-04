@@ -44,7 +44,7 @@ if (isset($_POST['update'])) {
     $image_path = $row['image']; // Default sa lumang image
 
     $image_changed = false;
-
+}
     // I-check kung may in-upload na bagong image
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
         $tmp = $_FILES['image']['tmp_name'];
