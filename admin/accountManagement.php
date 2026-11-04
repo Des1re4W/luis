@@ -33,12 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($action === 'add_account') {
             $username = trim($_POST['username'] ?? '');
+            $fullname = trim($_POST['fullname'] ?? '');
+            $phone_number = trim($_POST['phone_number'] ?? '');
             $email = trim($_POST['email'] ?? '');
             $password = (string)($_POST['password'] ?? '');
             $role = strtolower(trim($_POST['role'] ?? ''));
             $allowedRoles = ['admin', 'cashier', 'owner'];
 
-            if ($username === '' || $email === '' || $password === '' || $role === '') {
+            if ($username === '' || $fullname === '' || $phone_number === '' || $email === '' || $password === '' || $role === '') {
                 $error = "Please fill in all required fields.";
             } elseif (mb_strlen($username) > 100) {
                 $error = "Username must not exceed 100 characters.";
@@ -58,11 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
                     $stmt = $pdo->prepare(
-                        "INSERT INTO users (username, email, password, role, status)
-                         VALUES (?, ?, ?, ?, 'Active')"
+                        "INSERT INTO users (username, fullname, phone_number, email, password, role, status)
+                         VALUES (?, ?, ?, ?, ?, ?, 'Active')"
                     );
                     
-                    if ($stmt->execute([$username, $email, $hashedPassword, $role])) {
+                    if ($stmt->execute([$username, $fullname, $phone_number, $email, $hashedPassword, $role])) {
                         $success = "Account successfully created.";
 
                         // ─── AUDIT TRAIL LOG FOR ADD ACCOUNT ───
@@ -77,6 +79,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     } else {
                         $error = "Failed to create account. Please try again.";
+                    }
+                }
+            }
+        } elseif ($action === 'reset_password') {
+            $userId = filter_var($_POST['user_id'] ?? '', FILTER_VALIDATE_INT);
+
+            if (!$userId || $userId <= 0) {
+                $error = "Invalid account selected.";
+            } else {
+                $check = $pdo->prepare("SELECT id, username FROM users WHERE id = ? LIMIT 1");
+                $check->execute([$userId]);
+                $account = $check->fetch(PDO::FETCH_ASSOC);
+
+                if (!$account) {
+                    $error = "Account not found.";
+                } else {
+                    $targetUsername = $account['username'];
+                    $defaultPasswordHash = password_hash('password', PASSWORD_DEFAULT);
+                    $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
+                    
+                    if ($stmt->execute([$defaultPasswordHash, $userId])) {
+                        $success = "Password for account '{$targetUsername}' has been successfully reset to 'password'.";
+
+                        // ─── AUDIT TRAIL LOG FOR RESET PASSWORD ───
+                        $auditAction = "Reset Password";
+                        $details = "Admin reset password to default for account: {$targetUsername} (ID: {$userId})";
+                        $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'N/A';
+                        $adminRole = $_SESSION['role'] ?? 'admin';
+
+                        $auditStmt = $pdo->prepare("INSERT INTO audit_log (user_id, username, role, action, details, ip_address) VALUES (?, ?, ?, ?, ?, ?)");
+                        if ($auditStmt) {
+                            $auditStmt->execute([$currentAdminId > 0 ? $currentAdminId : null, $admin_name, $adminRole, $auditAction, $details, $ipAddress]);
+                        }
+                    } else {
+                        $error = "Failed to reset password.";
                     }
                 }
             }
@@ -204,6 +241,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                     <?php endif; ?>
                 </td>
                 <td>
+                    <button type="button" class="btn btn-warning-custom btn-sm fw-bold"
+                            data-bs-toggle="modal" data-bs-target="#resetPasswordModal"
+                            data-id="<?= (int)$account['id'] ?>"
+                            data-username="<?= e($account['username']) ?>">
+                        <i class="bi bi-key me-1"></i>Reset Password
+                    </button>
+                </td>
+                <td>
                     <?php if ($tab === 'active'): ?>
                         <?php if ($currentAdminId <= 0 || (int)$account['id'] !== $currentAdminId): ?>
                             <button type="button" class="btn btn-archive"
@@ -230,7 +275,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
     else:
         ?>
         <tr>
-            <td colspan="6">
+            <td colspan="7">
                 <div class="empty-state">
                     <i class="bi bi-inbox"></i>
                     <h6>No accounts found</h6>
@@ -360,6 +405,15 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
             font-weight: 600;
         }
         .btn-primary-custom:hover { background: #0b315f; color: #fff; }
+        .btn-warning-custom {
+            background: #ffc107;
+            color: #000;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .btn-warning-custom:hover { background: #e0a800; color: #000; }
         .stats-container {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -407,7 +461,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
         .search-box { display: flex; gap: 8px; width: 100%; max-width: 430px; }
         .search-box input { border-radius: 7px; min-width: 0; }
         .table-responsive { width: 100%; }
-        .table { margin: 0; min-width: 760px; }
+        .table { margin: 0; min-width: 860px; }
         .table thead th {
             background: #f8f9fa;
             color: #495057;
@@ -436,10 +490,11 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
         .btn-unarchive:hover { background: #0d6efd; color: #fff; }
         .empty-state { padding: 45px 20px; text-align: center; color: #6c757d; }
         .empty-state i { font-size: 40px; display: block; margin-bottom: 12px; }
-        .modal-header { background: #051c3c; color: #fff; }
+        .modal-header { background: #051c3c; color: #fff; border-bottom: none; }
         .modal-header .btn-close { filter: invert(1); }
-        .form-label { font-weight: 600; font-size: 14px; }
-        .form-control, .form-select { padding: 11px 12px; border-radius: 7px; }
+        .form-label { font-weight: 600; font-size: 13px; color: #334155; margin-bottom: 6px; }
+        .form-control, .form-select { padding: 10px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
+        .form-control:focus, .form-select:focus { border-color: #0d6efd; box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.15); }
         .alert { border-radius: 8px; }
 
         @media (max-width: 991.98px) {
@@ -483,7 +538,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
             .tabs { gap: 18px; padding: 16px 15px 0; overflow-x: auto; }
             .table-toolbar { padding: 15px; }
             .search-box { max-width: 100%; }
-            .table { min-width: 760px; }
+            .table { min-width: 860px; }
         }
         @media (max-width: 400px) {
             .stats-container { grid-template-columns: 1fr; }
@@ -578,7 +633,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
             <table class="table table-hover">
                 <thead>
                     <tr>
-                        <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th>
+                        <th>ID</th><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Reset Password</th><th>Action</th>
                     </tr>
                 </thead>
                 <tbody id="accountTableBody">
@@ -595,6 +650,14 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                                 <?php else: ?>
                                     <span class="status-badge status-archived">Archived</span>
                                 <?php endif; ?>
+                            </td>
+                            <td>
+                                <button type="button" class="btn btn-warning-custom btn-sm fw-bold"
+                                        data-bs-toggle="modal" data-bs-target="#resetPasswordModal"
+                                        data-id="<?= (int)$account['id'] ?>"
+                                        data-username="<?= e($account['username']) ?>">
+                                    <i class="bi bi-key me-1"></i>Reset Password
+                                </button>
                             </td>
                             <td>
                                 <?php if ($tab === 'active'): ?>
@@ -621,7 +684,7 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
                     <?php endforeach; ?>
                 <?php else: ?>
                     <tr>
-                        <td colspan="6">
+                        <td colspan="7">
                             <div class="empty-state">
                                 <i class="bi bi-inbox"></i>
                                 <h6>No accounts found</h6>
@@ -638,71 +701,114 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
 
 <!-- Add Account Modal -->
 <div class="modal fade" id="addAccountModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-person-plus me-2"></i>Add New Account</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header px-4 py-3">
+                <h5 class="modal-title fw-bold fs-5"><i class="bi bi-person-plus me-2"></i>Add New Account</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form method="POST">
                 <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
                 <input type="hidden" name="action" value="add_account">
+                <div class="modal-body p-4">
+                    
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Username <span class="text-danger">*</span></label>
+                            <input type="text" name="username" class="form-control" placeholder="e.g. jdoe" maxlength="100" required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Full Name <span class="text-danger">*</span></label>
+                            <input type="text" name="fullname" class="form-control" placeholder="e.g. John Doe" maxlength="100" required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Phone Number <span class="text-danger">*</span></label>
+                            <input 
+                                type="text" 
+                                name="phone_number" 
+                                class="form-control" 
+                                placeholder="09XXXXXXXXX"
+                                maxlength="11"
+                                minlength="11"
+                                pattern="09[0-9]{9}"
+                                inputmode="numeric"
+                                oninput="this.value = this.value.replace(/[^0-9]/g, '')"
+                                required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Email Address <span class="text-danger">*</span></label>
+                            <input type="email" name="email" class="form-control" placeholder="jdoe@example.com" maxlength="255" required>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Role <span class="text-danger">*</span></label>
+                            <select name="role" class="form-select" required>
+                                <option value="" disabled selected>Select Role</option>
+                                <option value="admin">Admin</option>
+                                <option value="cashier">Cashier</option>
+                                <option value="owner">Owner</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Default Password <span class="text-danger">*</span></label>
+                            <div class="input-group">
+                                <input type="password" name="password" id="passwordField" class="form-control"
+                                       placeholder="At least 8 characters" minlength="8" autocomplete="new-password" required>
+                                <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn">
+                                    <i class="bi bi-eye" id="togglePasswordIcon"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info small mt-4 mb-0 d-flex align-items-center">
+                        <i class="bi bi-info-circle fs-5 me-2"></i>
+                        <div>
+                            The password will be securely hashed before being saved into the database.
+                        </div>
+                    </div>
+
+                </div>
+                <div class="modal-footer bg-light px-4 py-3 border-top-0">
+                    <button type="button" class="btn btn-outline-secondary px-3 fw-bold" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary-custom px-4 fw-bold">
+                        <i class="bi bi-check-lg me-1"></i>Create Account
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Confirmation Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title fw-bold"><i class="bi bi-key me-2"></i>Reset Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?= e($csrfToken) ?>">
+                <input type="hidden" name="action" value="reset_password">
+                <input type="hidden" name="user_id" id="resetUserId">
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label">Username</label>
-                        <input type="text" name="username" class="form-control" maxlength="100" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Full Name</label>
-                        <input type="text" name="fullname" class="form-control" maxlength="100" required>
-                    </div>
-                    <div class="mb-3">
-                   <label class="form-label">Phone Number</label>
-                     <input 
-                       type="text" 
-                         name="phone_number" 
-                        class="form-control" 
-                        placeholder="09XXXXXXXXX"
-                        maxlength="11"
-                        minlength="11"
-                        pattern="09[0-9]{9}"
-                        inputmode="numeric"
-                        oninput="this.value = this.value.replace(/[^0-9]/g, '')"
-                         required>
-                        </div>
-                    <div class="mb-3">
-                        <label class="form-label">Email Address</label>
-                        <input type="email" name="email" class="form-control" maxlength="255" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Role</label>
-                        <select name="role" class="form-select" required>
-                            <option value="">Select Role</option>
-                            <option value="admin">Admin</option>
-                            <option value="cashier">Cashier</option>
-                            <option value="owner">Owner</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Default Password</label>
-                        <div class="input-group">
-                            <input type="password" name="password" id="passwordField" class="form-control"
-                                   minlength="8" autocomplete="new-password" required>
-                            <button class="btn btn-outline-secondary" type="button" id="togglePasswordBtn">
-                                <i class="bi bi-eye" id="togglePasswordIcon"></i>
-                            </button>
-                        </div>
-                        <small class="text-muted">Minimum 8 characters.</small>
-                    </div>
-                    <div class="alert alert-info small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>
-                        The password will be securely hashed before being saved.
+                    <p class="mb-2">Are you sure you want to reset the password for this account?</p>
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Account: <strong id="resetUsername"></strong>
+                        <br>
+                        <small>The password will be reset to: <strong>password</strong></small>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-primary-custom">
-                        <i class="bi bi-check-lg me-1"></i>Create Account
+                    <button type="submit" class="btn btn-warning fw-bold">
+                        <i class="bi bi-key me-1"></i>Confirm Reset
                     </button>
                 </div>
             </form>
@@ -798,6 +904,16 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         window.addEventListener('resize', function () {
             if (window.innerWidth >= 992) closeSidebar();
+        });
+    }
+
+    // Reset Password Modal Data Filler
+    const resetPasswordModal = document.getElementById('resetPasswordModal');
+    if (resetPasswordModal) {
+        resetPasswordModal.addEventListener('show.bs.modal', function (event) {
+            const button = event.relatedTarget;
+            document.getElementById('resetUserId').value = button.getAttribute('data-id') || '';
+            document.getElementById('resetUsername').textContent = button.getAttribute('data-username') || '';
         });
     }
 
