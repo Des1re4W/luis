@@ -532,7 +532,7 @@ try {
                                 $img_src = '../assets/no-image.jpg';
                                 if (!empty($p_image)) {
                                     // 1. Kung nakatabi na sa DB bilang Base64 data string
-                                    if (str_istr($p_image, 'data:image/') === 0) {
+                                    if (stripos($p_image, 'data:image/') === 0) {
                                         $img_src = $p_image;
                                     } 
                                     // 2. Kung nakatabi bilang ganap na HTTPS Cloud URL (halimbawa Cloudinary o Supabase)
