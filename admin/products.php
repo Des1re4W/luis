@@ -527,11 +527,16 @@ try {
 
                                     $t_stock = $row['total_stock'];
                                 }
+
+                                // Kinukuha lang ang mismong filename para maiwasan ang doble o maling uploads/ path
+                                $image_file = !empty($p_image) ? basename($p_image) : '';
+                                $img_src = (!empty($image_file) && file_exists(__DIR__ . '/../uploads/' . $image_file))
+                                    ? '../uploads/' . htmlspecialchars($image_file)
+                                    : '../assets/no-image.jpg';
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="/<?php echo !empty($p_image) ? $p_image : 'assets/no-image.jpg'; ?>"
-                                            alt="Product Image">
+                                        <img src="<?php echo $img_src; ?>" alt="Product Image">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
