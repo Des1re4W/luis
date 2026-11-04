@@ -45,7 +45,7 @@ if (isset($_POST['send_email_update'])) {
             $mail->Host       = 'smtp.gmail.com'; 
             $mail->SMTPAuth   = true;
             $mail->Username   = 'rtaipancss@gmail.com'; 
-            $mail->Password   = 'untvtpzeiqyrkrpx';   
+            $mail->Password   = 'miohifpavqdzvzvn';   
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = 587;
 
