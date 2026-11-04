@@ -181,7 +181,7 @@ $admin_name = $_SESSION['username'] ?? 'Admin';
     <div class="main">
 
         <div class="d-flex align-items-center mb-3 flex-wrap gap-3">
-    <img src="../<?php echo !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" 
+    <img src="../<?= !empty($user['profile_image']) ? htmlspecialchars($user['profile_image']) : 'assets/no-image.jpg'; ?>" 
          alt="Profile Picture"
          style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #ccc;"
          onerror="this.onerror=null;this.src='../assets/no-image.jpg';">
