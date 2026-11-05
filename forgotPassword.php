@@ -85,7 +85,7 @@ function clearResetSession(): void
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    // STEP 1: Search Account via Username, Email, or Phone (FB-style Search)
+  // STEP 1: Search Account gamit ang username, email, o phone_number
     if ($action === 'search_account') {
         $input = trim($_POST['search_credential'] ?? '');
 
@@ -93,10 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Please enter your username, email, or phone number.";
             $messageType = "danger";
         } else {
-            // Hinahanap sa username, email, o phone column (Baguhin ang column names depende sa DB schema mo)
-            $$stmt = $pdo->prepare("SELECT id, username, email, phone FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?) AND status = 'Active' LIMIT 1");
-            
-            if ($stmt && $stmt->execute([$input, $input, $input])) {
+            try {
+                // Inihahanda ang SQL Query gamit ang tamang column names
+                $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
+                $stmt->execute([$input, $input, $input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if (!$user) {
@@ -104,14 +104,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "danger";
                 } else {
                     clearResetSession();
-                    // I-save sa session ang nahanap na account
                     $_SESSION['pw_reset_account'] = [
-                        'id' => $user['id'],
-                        'name' => $user['name'] ?? $user['username'] ?? 'User',
-                        'email' => $user['email']
+                        'id'       => $user['id'],
+                        'name'     => $user['fullname'] ?? $user['username'] ?? 'User Account',
+                        'email'    => $user['email']
                     ];
                 }
-            } else {
+            } catch (\PDOException $e) {
+                error_log("SEARCH ACCOUNT ERROR: " . $e->getMessage());
                 $message = "A system error occurred. Please try again later.";
                 $messageType = "danger";
             }
