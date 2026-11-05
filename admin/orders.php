@@ -947,13 +947,18 @@ function viewCustomer(data) {
     let htmlContent = "";
     if (currentMOP === "GCASH" || currentMOP === "MAYA") {
         let referenceNumber = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : "Not Provided");
-        let paymentScheme = data.payment_scheme ? data.payment_scheme : 'fullpayment';
+        let paymentScheme = data.payment_scheme ? data.payment_scheme : 'full_payment';
+        
+        // Kukunin ang amount at receiptdt mula sa data object
+        let amountSent = data.paid_amount ? '₱' + parseFloat(data.paid_amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "Not Provided";
+        let receiptDateTime = data.receiptdt ? data.receiptdt : "Not Provided";
+
         htmlContent += `
             <div class="alert alert-secondary py-1 px-2 mb-2 text-start small">
                 <b>Mode of Payment:</b> <span class="badge bg-primary">${currentMOP}</span><br>
                 <b>Reference No:</b> <span class="text-danger fw-bold">${referenceNumber}</span><br>
-                <b>Amount Sent:</b> <span class="text-danger fw-bold">${paid_amount}</span><br>
-                <b>Date and Time:</b> <span class="text-danger fw-bold">${receiptdt}</span><br>
+                <b>Amount Sent:</b> <span class="text-danger fw-bold">${amountSent}</span><br>
+                <b>Date and Time:</b> <span class="text-danger fw-bold">${receiptDateTime}</span><br>
                 <b>Payment Type:</b> <span class="text-danger fw-bold">${paymentScheme}</span>
             </div>
         `;
