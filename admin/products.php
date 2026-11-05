@@ -18,7 +18,7 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
     );
     $is_archive_action = isset($_GET['archive_id']);
     $new_status = $is_archive_action ? 1 : 0;
-    
+
     $action_name = $is_archive_action ? 'Archive Product' : 'Unarchive Product';
 
     if ($target_id === false || $target_id === null || $target_id <= 0) {
@@ -52,7 +52,7 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
         $role = $_SESSION['role'] ?? 'admin';
         $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
-        
+
         $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
                 (user_id, username, role, action, details, timestamp)
@@ -216,7 +216,7 @@ try {
         $query .= " ORDER BY product_id DESC";
 
     } else {
-        
+
         // Normal inventory list or archived list based on filter
         $archived_condition = ($filter === 'archived') ? "p.is_archived = 1" : "p.is_archived = 0";
 
@@ -481,10 +481,13 @@ try {
                             <th class="text-center" style="width: 80px;">Image</th>
                             <th>Product Name</th>
                             <th>Category</th>
-                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Specific Item / Variant' : 'Variants List'; ?></th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Specific Item / Variant' : 'Variants List'; ?>
+                            </th>
                             <th class="text-center">
-                                <?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Stock Level' : 'Main Stock'; ?></th>
-                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Price' : 'Price Range / Single Price'; ?></th>
+                                <?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Stock Level' : 'Main Stock'; ?>
+                            </th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Price' : 'Price Range / Single Price'; ?>
+                            </th>
                             <th class="text-center" style="width: 260px;">Actions</th>
                         </tr>
                     </thead>
@@ -529,22 +532,30 @@ try {
                                 }
 
                                 // Handle Image Source Logic (Base64 / URL / File Path)
+                        
                                 $img_src = '../assets/images/no-image.png';
+
                                 if (!empty($p_image)) {
-                                    // 1. Kung nakatabi na sa DB bilang Base64 data string
+
+                                    // 1. Base64 image
                                     if (stripos($p_image, 'data:image/') === 0) {
                                         $img_src = $p_image;
-                                    } 
-                                    // 2. Kung nakatabi bilang ganap na HTTPS Cloud URL (halimbawa Cloudinary o Supabase)
+                                    }
+
+                                    // 2. Online image URL
                                     elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
                                         $img_src = $p_image;
-                                    } 
-                                    // 3. Kung nakatabi bilang local file name sa server folder
+                                    }
+
+                                    // 3. Local uploaded image
                                     else {
-                                        $image_file = basename($p_image);
-                                        $file_path = __DIR__ . '/../uploads/' . $image_file;
+                                        $image_path = ltrim($p_image, '/');
+
+                                        // Check the original stored path
+                                        $file_path = __DIR__ . '/../' . $image_path;
+
                                         if (file_exists($file_path)) {
-                                            $img_src = '../uploads/' . htmlspecialchars($image_file);
+                                            $img_src = '../' . htmlspecialchars($image_path);
                                         }
                                     }
                                 }
@@ -617,7 +628,7 @@ try {
                                         </div>
                                     </td>
                                 </tr>
-                            <?php
+                                <?php
                             } while ($row = $result->fetch(PDO::FETCH_ASSOC));
                         } else {
                             echo "<tr><td colspan='7' class='text-center py-4 text-muted'>No products found.</td></tr>";
