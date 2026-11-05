@@ -536,25 +536,21 @@ try {
 
                                 if (!empty($p_image)) {
 
-                                    // Existing Base64 images
                                     if (stripos($p_image, 'data:image/') === 0) {
 
                                         $img_src = $p_image;
 
                                     }
-                                    // Existing external image URLs
                                     elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
 
                                         $img_src = $p_image;
 
                                     }
-                                    // New Google Drive image IDs
                                     elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $p_image)) {
 
                                         $img_src = '../drive-image.php?id=' . urlencode($p_image);
 
                                     }
-                                    // Existing local image paths
                                     else {
 
                                         $image_path = ltrim($p_image, '/');
