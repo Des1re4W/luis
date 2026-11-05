@@ -541,9 +541,7 @@ try {
 
                                         $img_src = $image_value;
 
-                                    }
-
-                                    elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+                                    } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
 
                                         $parsed_url = parse_url($image_value);
                                         $host = strtolower($parsed_url['host'] ?? '');
@@ -557,9 +555,7 @@ try {
 
                                             if (!empty($query_params['id'])) {
                                                 $file_id = $query_params['id'];
-                                            }
-
-                                            elseif (
+                                            } elseif (
                                                 preg_match(
                                                     '#/file/d/([A-Za-z0-9_-]+)#',
                                                     $parsed_url['path'] ?? '',
@@ -579,15 +575,11 @@ try {
 
                                         }
 
-                                    }
-
-                                    elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
+                                    } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
 
                                         $img_src = '../drive-image.php?id=' . urlencode($image_value);
 
-                                    }
-
-                                    else {
+                                    } else {
 
                                         $image_path = ltrim($image_value, '/');
                                         $file_path = __DIR__ . '/../' . $image_path;
@@ -604,7 +596,9 @@ try {
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                         src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>" alt="Product Image">
+                                        <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                            alt="Product Image"
+                                            onerror="this.onerror=null;this.src='../assets/images/no-image.png';">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
