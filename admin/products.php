@@ -531,57 +531,45 @@ try {
                                     $t_stock = $row['total_stock'];
                                 }
 
+
                                 $img_src = '../assets/images/no-image.png';
 
                                 if (!empty($p_image)) {
 
-                                    // Keep existing Base64 images working
+                                    // Existing Base64 images
                                     if (stripos($p_image, 'data:image/') === 0) {
 
                                         $img_src = $p_image;
 
                                     }
-                                    // Keep existing external image URLs working
+                                    // Existing external image URLs
                                     elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
 
                                         $img_src = $p_image;
 
-                                    } else {
+                                    }
+                                    // New Google Drive image IDs
+                                    elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $p_image)) {
+
+                                        $img_src = '../drive-image.php?id=' . urlencode($p_image);
+
+                                    }
+                                    // Existing local image paths
+                                    else {
 
                                         $image_path = ltrim($p_image, '/');
+                                        $file_path = __DIR__ . '/../' . $image_path;
 
-                                        // Check if image is stored in Google Drive
-                                        if (!array_key_exists($image_path, $driveImageCache)) {
-
-                                            $driveImageLookup->execute([
-                                                ':image_path' => $image_path
-                                            ]);
-
-                                            $driveImageCache[$image_path] =
-                                                $driveImageLookup->fetch(PDO::FETCH_ASSOC);
-                                        }
-
-                                        $drive_image = $driveImageCache[$image_path];
-
-                                        if ($drive_image) {
-
-                                            $img_src = '../drive-image.php?path=' . urlencode($image_path);
-
-                                        } else {
-
-                                            // Existing local image fallback
-                                            $file_path = __DIR__ . '/../' . $image_path;
-
-                                            if (file_exists($file_path)) {
-                                                $img_src = '../' . htmlspecialchars(
-                                                    $image_path,
-                                                    ENT_QUOTES,
-                                                    'UTF-8'
-                                                );
-                                            }
+                                        if (file_exists($file_path)) {
+                                            $img_src = '../' . htmlspecialchars(
+                                                $image_path,
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            );
                                         }
                                     }
                                 }
+
                                 ?>
                                 <tr>
                                     <td class="text-center">
