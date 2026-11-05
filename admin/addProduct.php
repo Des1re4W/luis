@@ -98,7 +98,7 @@ if (isset($_POST['submit'])) {
                                     ':details' => 'Added new product: ' . $name
                                 ]);
 
-                                $message = "Product added successfully! Google Drive File ID: " . htmlspecialchars($file_id);
+                                $message = "Product added successfully! ";
 
                             } catch (Throwable $e) {
 
