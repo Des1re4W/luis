@@ -7,6 +7,7 @@ require_once __DIR__ . "/libs/src/PHPMailer.php";
 require_once __DIR__ . "/libs/src/SMTP.php";
 
 use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 use PHPMailer\PHPMailer\SMTP;
 
 date_default_timezone_set('Asia/Manila');
@@ -14,55 +15,47 @@ date_default_timezone_set('Asia/Manila');
 $message = "";
 $messageType = "info";
 
-// Gmail SMTP configuration.
-// IMPORTANT: Replace the password below with a NEW Google App Password.
-// Do not use an App Password that has been shared or uploaded previously.
+// ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-const SMTP_PASSWORD = 'miohifpavqdzvzvn';
-const SMTP_PORT = 587;
+// Replace with your 16-character Google App Password (without spaces)
+const SMTP_PASSWORD = 'miohifpavqdzvzvn'; 
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
-function h($value): string
+function h($value)
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
 function sendResetOtp(string $email, string $otp): bool
 {
-    $mail = null;
-
+    $mail = new PHPMailer(true);
     try {
-        $smtpUsername = trim(SMTP_USERNAME);
-        $smtpPassword = trim(SMTP_PASSWORD);
-
-        if (
-            $smtpUsername === '' ||
-            $smtpPassword === '' ||
-            $smtpPassword === 'PASTE_NEW_16_CHARACTER_GOOGLE_APP_PASSWORD_HERE'
-        ) {
-            throw new RuntimeException('Please configure a new Google App Password in SMTP_PASSWORD.');
-        }
-
-        $mail = new PHPMailer(true);
         $mail->isSMTP();
+        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
+
+$mail->Debugoutput = function ($str, $level) {
+    error_log("SMTP DEBUG [$level]: $str");
+};
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
-        $mail->Username   = $smtpUsername;
-        $mail->Password   = $smtpPassword;
+        $mail->Username   = SMTP_USERNAME;
+        $mail->Password   = SMTP_PASSWORD;
+        
+        // STARTTLS on Port 587 for maximum local (XAMPP) compatibility
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = SMTP_PORT;
+        $mail->Port       = 587;
         $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 30;
+        
+        // Timeout and SSL options to bypass local certificate verification issues
+        $mail->Timeout       = 15;
         $mail->SMTPKeepAlive = false;
-        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
-$mail->Debugoutput = 'error_log';
 
-        $mail->setFrom($smtpUsername, SMTP_FROM_NAME);
+        $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
         $mail->isHTML(true);
         $mail->Subject = 'Password Reset OTP - R. Taipan Hardware';
-        $mail->Body = "
+        $mail->Body    = "
             <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
                 <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
                 <p>We received a request to reset your R. Taipan Hardware account password.</p>
@@ -74,15 +67,12 @@ $mail->Debugoutput = 'error_log';
         $mail->AltBody = "Your R. Taipan Hardware password reset OTP is: {$otp}. It expires in 5 minutes. Do not share it.";
 
         $mail->send();
-        error_log('OTP EMAIL SENT SUCCESSFULLY to ' . $email);
         return true;
-    } catch (\Throwable $e) {
-        error_log('OTP EMAIL ERROR: ' . $e->getMessage());
-        if ($mail instanceof PHPMailer) {
-            error_log('OTP SMTP ERROR: ' . $mail->ErrorInfo);
-        }
-        return false;
-    }
+ } catch (\Throwable $e) {
+    error_log("OTP EMAIL ERROR: " . $e->getMessage());
+    error_log("OTP SMTP ERROR: " . ($mail->ErrorInfo ?? 'No SMTP error details'));
+    return false;
+}
 }
 
 function clearResetSession(): void
