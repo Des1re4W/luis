@@ -537,17 +537,14 @@ try {
 
                                 if (!empty($p_image)) {
 
-                                    // 1. Base64 image
                                     if (stripos($p_image, 'data:image/') === 0) {
                                         $img_src = $p_image;
                                     }
 
-                                    // 2. Online image URL
                                     elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
                                         $img_src = $p_image;
                                     }
 
-                                    // 3. Local uploaded image
                                     else {
                                         $image_path = ltrim($p_image, '/');
 
