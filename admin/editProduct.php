@@ -12,6 +12,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 $message = "";
+$messageType = ""; // 'success' o 'danger' para sa Bootstrap alert class
 
 // Get product ID
 $product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
@@ -51,9 +52,7 @@ if (isset($_POST['update'])) {
             !is_numeric($cost_price) || !is_numeric($price) ||
             floatval($cost_price) < 0 || floatval($price) < 0
         ) {
-
             throw new Exception("Please enter valid prices.");
-
         }
 
         if (floatval($cost_price) > floatval($price)) {
@@ -187,6 +186,7 @@ if (isset($_POST['update'])) {
         ]);
 
         $message = "Product updated successfully!";
+        $messageType = "success";
 
         // Refresh product information
         $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
@@ -198,6 +198,7 @@ if (isset($_POST['update'])) {
         error_log("EDIT PRODUCT ERROR: " . $e->getMessage());
 
         $message = "Error updating product: " . $e->getMessage();
+        $messageType = "danger";
     }
 }
 ?>
@@ -222,9 +223,15 @@ if (isset($_POST['update'])) {
             </div>
             <div class="card-body p-4">
 
-                <?php echo $message; ?>
+                <?php if (!empty($message)): ?>
+                    <div class="alert alert-<?php echo $messageType; ?> alert-dismissible fade show" role="alert">
+                        <i class="bi bi-<?php echo ($messageType === 'success') ? 'check-circle-fill' : 'exclamation-triangle-fill'; ?> me-2"></i>
+                        <?php echo htmlspecialchars($message, ENT_QUOTES, 'UTF-8'); ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                <?php endif; ?>
 
-                <form action="" method="POST" enctype="multipart/form-data">
+                <form action="editProduct.php?product_id=<?php echo $product_id; ?>" method="POST" enctype="multipart/form-data">
 
                     <label class="form-label fw-bold">Product Name</label>
                     <input type="text" name="product_name" class="form-control mb-3"
