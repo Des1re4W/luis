@@ -72,12 +72,11 @@ if (isset($_POST['place_order'])) {
     }
 
     try {
-        // Tiyaking nakaset ang PDO sa EXCEPTION mode
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         
         $pdo->beginTransaction();
 
-        // 1. I-insert ang order gamit ang PDO prepared statement
+        // 1. I-insert ang order
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
             VALUES 
@@ -153,7 +152,6 @@ if (isset($_POST['place_order'])) {
         }
         error_log("Checkout error: " . $e->getMessage());
         
-        // Displays exact database error for debugging
         echo "<div style='color:red; padding:20px; font-family:sans-serif;'>";
         echo "<h3>Checkout Processing Failed</h3>";
         echo "<p><b>Error Details:</b> " . htmlspecialchars($e->getMessage()) . "</p>";
@@ -171,6 +169,9 @@ if (isset($_POST['place_order'])) {
     <title>Checkout | Hardware System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <!-- Tesseract.js OCR Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body class="bg-light">
 <div class="container py-4">
@@ -280,10 +281,20 @@ if (isset($_POST['place_order'])) {
                             <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
                         </div>
 
+                        <!-- ONLINE PAYMENT FIELDS WITH OCR INTEGRATION -->
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
-                            <input type="text" name="ref_no" class="form-control mb-2" placeholder="Reference Number" maxlength="20" oninput="this.value=this.value.replace(/[^a-zA-Z0-9 -]/g,'');">
-                            <input type="file" name="proof_of_payment" class="form-control" accept=".jpg,.jpeg,.png,.webp">
+                            
+                            <!-- OCR Status Message Box -->
+                            <div id="ocr_status" class="alert alert-info py-2 d-none small">
+                                <span id="ocr_status_text">Binabasa ang receipt...</span>
+                            </div>
+
+                            <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
+                            <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-2" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
+
+                            <label class="form-label small fw-bold">Reference Number</label>
+                            <input type="text" name="ref_no" id="ref_no_input" class="form-control mb-2" placeholder="Reference Number" maxlength="30" oninput="this.value=this.value.replace(/[^a-zA-Z0-9 -]/g,'');">
                         </div>
 
                         <div class="col-12 form-check ps-4">
@@ -300,6 +311,7 @@ if (isset($_POST['place_order'])) {
         </div>
     </div>
 </div>
+
 <script>
 const grandTotal = <?php echo $grand_total; ?>;
 
@@ -311,15 +323,21 @@ function togglePaymentFields() {
     const onlineFields = document.getElementById('online_payment_fields');
     const codMessage = document.getElementById('cod_message');
     const optionBox = document.getElementById('payment_option_box');
+    const proofInput = document.getElementById('proof_of_payment_input');
+    const refInput = document.getElementById('ref_no_input');
 
     if (selectedMethod === 'GCash' || selectedMethod === 'Maya') {
         if (onlineFields) onlineFields.classList.remove('d-none');
         if (codMessage) codMessage.classList.add('d-none');
         if (optionBox) optionBox.classList.remove('d-none');
+        if (proofInput) proofInput.required = true;
+        if (refInput) refInput.required = true;
     } else if (selectedMethod === 'Cash on Delivery (COD)') {
         if (onlineFields) onlineFields.classList.add('d-none');
         if (codMessage) codMessage.classList.remove('d-none');
         if (optionBox) optionBox.classList.add('d-none');
+        if (proofInput) proofInput.required = false;
+        if (refInput) refInput.required = false;
     }
 }
 
@@ -349,6 +367,72 @@ function toggleSubmitButton() {
     const submitBtn = document.getElementById("submitBtn");
     if (checkbox && submitBtn) {
         submitBtn.disabled = !checkbox.checked;
+    }
+}
+
+// Tesseract OCR Receipt Scanner Function
+async function processReceiptOCR(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const statusBox = document.getElementById('ocr_status');
+    const statusText = document.getElementById('ocr_status_text');
+    const refInput = document.getElementById('ref_no_input');
+
+    statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    statusBox.classList.add('alert-info');
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt via OCR...';
+
+    try {
+        const result = await Tesseract.recognize(
+            file,
+            'eng',
+            {
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        let progress = Math.round(m.progress * 100);
+                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading text: ${progress}%`;
+                    }
+                }
+            }
+        );
+
+        const text = result.data.text;
+        console.log("OCR Extracted Text:\n", text);
+
+        // 1. Ref No. extraction
+        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([A-Za-z0-9\s]{9,20})/i);
+        if (!refMatch) {
+            refMatch = text.match(/\b\d{4}\s?\d{3,4}\s?\d{3,4}\b/);
+        }
+
+        // 2. Amount extraction
+        let amountMatch = text.match(/(?:Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
+
+        let detectedRef = refMatch ? refMatch[1].replace(/\s+/g, '').trim() : '';
+        let detectedAmount = amountMatch ? amountMatch[1].replace(/,/g, '') : '';
+
+        if (detectedRef !== '') {
+            refInput.value = detectedRef;
+            statusBox.classList.remove('alert-info');
+            statusBox.classList.add('alert-success');
+            
+            let message = `<strong>✓ Receipt scanned successfully!</strong><br>Ref No: <b>${detectedRef}</b>`;
+            if (detectedAmount) {
+                message += `<br>Detected Amount: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+            }
+            statusText.innerHTML = message;
+        } else {
+            statusBox.classList.remove('alert-info');
+            statusBox.classList.add('alert-warning');
+            statusText.innerHTML = '⚠️ Receipt read, but Reference Number was not clearly detected. Please double-check or type it manually.';
+        }
+
+    } catch (error) {
+        console.error("OCR Reading Error:", error);
+        statusBox.classList.remove('alert-info');
+        statusBox.classList.add('alert-danger');
+        statusText.innerHTML = '❌ Could not read text from image. Please ensure image is clear or type Ref No manually.';
     }
 }
 
