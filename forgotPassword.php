@@ -18,7 +18,8 @@ $messageType = "info";
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-const SMTP_PASSWORD = 'miohifpavqdzvzvn';
+// Replace with your 16-character Google App Password (without spaces)
+const SMTP_PASSWORD = 'miohifpavqdzvzvn'; 
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
 function h($value)
@@ -31,23 +32,23 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->Host = SMTP_HOST;
-        $mail->SMTPAuth = true;
-        $mail->Username = SMTP_USERNAME;
-        $mail->Password = SMTP_PASSWORD;
+        $mail->Host       = SMTP_HOST;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USERNAME;
+        $mail->Password   = SMTP_PASSWORD;
         
-        // GUMAMIT NG SSL (PORT 465) PARA MAS MATATAG AT HINDI MABAGAL
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        $mail->Port = 465;
-        $mail->CharSet = 'UTF-8';
+        // STARTTLS on Port 587 for maximum local (XAMPP) compatibility
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        $mail->CharSet    = 'UTF-8';
         
-        // TIMEOUT AT SSL VERIFICATION BYPASS (LALONG-LALO NA SA LOCAL ENVIRONMENT / XAMPP)
-        $mail->Timeout = 15;
+        // Timeout and SSL options to bypass local certificate verification issues
+        $mail->Timeout       = 15;
         $mail->SMTPKeepAlive = false;
-        $mail->SMTPOptions = [
+        $mail->SMTPOptions   = [
             'ssl' => [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
                 'allow_self_signed' => true
             ]
         ];
@@ -56,7 +57,7 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->addAddress($email);
         $mail->isHTML(true);
         $mail->Subject = 'Password Reset OTP - R. Taipan Hardware';
-        $mail->Body = "
+        $mail->Body    = "
             <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
                 <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
                 <p>We received a request to reset your R. Taipan Hardware account password.</p>
@@ -66,6 +67,7 @@ function sendResetOtp(string $email, string $otp): bool
                 <p>If you did not request a password reset, you can ignore this email.</p>
             </div>";
         $mail->AltBody = "Your R. Taipan Hardware password reset OTP is: {$otp}. It expires in 5 minutes. Do not share it.";
+
         $mail->send();
         return true;
     } catch (Exception $e) {
@@ -104,7 +106,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$stmt) {
                 $message = "A system error occurred. Please try again later.";
                 $messageType = "danger";
-
             } else {
                 $stmt->execute([$email]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -117,10 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     if (sendResetOtp($user['email'], $otp)) {
                         clearResetSession();
-                        $_SESSION['pw_reset_email'] = $user['email'];
-                        $_SESSION['pw_reset_otp_hash'] = password_hash($otp, PASSWORD_DEFAULT);
-                        $_SESSION['pw_reset_expires'] = time() + 300;
-                        $_SESSION['pw_reset_attempts'] = 0;
+                        $_SESSION['pw_reset_email']     = $user['email'];
+                        $_SESSION['pw_reset_otp_hash']  = password_hash($otp, PASSWORD_DEFAULT);
+                        $_SESSION['pw_reset_expires']   = time() + 300;
+                        $_SESSION['pw_reset_attempts']  = 0;
                         $_SESSION['pw_reset_last_sent'] = time();
 
                         $message = "OTP sent to your email. Please check your inbox and spam folder.";
@@ -171,7 +172,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "Please verify your OTP first.";
             $messageType = "danger";
         } else {
-            $password = $_POST['new_password'] ?? '';
+            $password        = $_POST['new_password'] ?? '';
             $confirmPassword = $_POST['confirm_password'] ?? '';
 
             if (strlen($password) < 8) {
@@ -181,7 +182,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "Passwords do not match.";
                 $messageType = "danger";
             } else {
-                $email = $_SESSION['pw_reset_email'];
+                $email          = $_SESSION['pw_reset_email'];
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
                 $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active'");
@@ -204,12 +205,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $showPasswordForm = !empty($_SESSION['pw_reset_verified']) && !empty($_SESSION['pw_reset_email']);
-$showOtpForm = !$showPasswordForm && !empty($_SESSION['pw_reset_email']) && !empty($_SESSION['pw_reset_otp_hash']);
-$maskedEmail = '';
+$showOtpForm      = !$showPasswordForm && !empty($_SESSION['pw_reset_email']) && !empty($_SESSION['pw_reset_otp_hash']);
+$maskedEmail      = '';
 if (!empty($_SESSION['pw_reset_email'])) {
-    $parts = explode('@', $_SESSION['pw_reset_email']);
-    $name = $parts[0] ?? '';
-    $domain = $parts[1] ?? '';
+    $parts       = explode('@', $_SESSION['pw_reset_email']);
+    $name        = $parts[0] ?? '';
+    $domain      = $parts[1] ?? '';
     $maskedEmail = (strlen($name) > 2 ? substr($name, 0, 2) : substr($name, 0, 1)) . str_repeat('*', max(2, strlen($name) - 2)) . '@' . $domain;
 }
 ?>
