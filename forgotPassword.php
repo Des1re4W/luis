@@ -17,6 +17,8 @@ $messageType = "info";
 // Set SMTP_USERNAME and SMTP_PASSWORD in your hosting environment settings.
 // SMTP_PASSWORD must be a NEW Google App Password, without spaces.
 const SMTP_HOST = 'smtp.gmail.com';
+const SMTP_USERNAME = 'rtaipancss@gmail.com';
+const SMTP_PASSWORD = 'miohifpavqdzvzvn';
 const SMTP_PORT = 587;
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
