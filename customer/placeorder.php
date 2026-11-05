@@ -463,7 +463,7 @@ async function processReceiptOCR(fileInput) {
             let message = `
     <strong>Receipt scanned successfully!</strong><br>
     <small class="text-warning">
-        Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid payment rejection.
+        Reminder: Please ensure that the payment amount exactly matches the total amount to avoid order rejection.
     </small><br>
 `;
             message += `Ref No: <b>${detectedRef}</b>`;
