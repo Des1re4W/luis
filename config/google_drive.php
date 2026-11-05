@@ -1,79 +1,47 @@
 <?php
+
 require_once __DIR__ . '/../vendor/autoload.php';
 
 function getGoogleDriveClient(): Google\Client
 {
-    $client = new Google\Client();
-
-    $client->setClientId(getenv('GOOGLE_CLIENT_ID'));
-    $client->setClientSecret(getenv('GOOGLE_CLIENT_SECRET'));
-    $client->setRedirectUri(getenv('GOOGLE_REDIRECT_URI'));
-
-    $client->setAccessType('offline');
-    $client->setScopes([
-        Google\Service\Drive::DRIVE_FILE
-    ]);
-
-    return $client;
-}
-
-function uploadProductImageToDrive(string $filePath, string $fileName): string
-{
+    $clientId = getenv('GOOGLE_CLIENT_ID');
+    $clientSecret = getenv('GOOGLE_CLIENT_SECRET');
     $refreshToken = getenv('GOOGLE_REFRESH_TOKEN');
 
-    if (!$refreshToken) {
-        throw new Exception('GOOGLE_REFRESH_TOKEN is missing in Render.');
-    }
-
-    if (!file_exists($filePath)) {
-        throw new Exception('Temporary image file does not exist.');
-    }
-
-    $client = getGoogleDriveClient();
-
-    $token = $client->fetchAccessTokenWithRefreshToken($refreshToken);
-
-    if (isset($token['error'])) {
-        throw new Exception(
-            $token['error_description'] ?? $token['error']
+    if (!$clientId || !$clientSecret || !$refreshToken) {
+        throw new RuntimeException(
+            'Missing Google OAuth environment variables.'
         );
     }
 
-    $client->setAccessToken($token);
+    $client = new Google\Client();
 
-    $drive = new Google\Service\Drive($client);
-
-    $metadata = new Google\Service\Drive\DriveFile([
-        'name' => $fileName
+    $client->setClientId($clientId);
+    $client->setClientSecret($clientSecret);
+    $client->setAccessType('offline');
+    $client->setScopes([
+        Google\Service\Drive::DRIVE
     ]);
 
-    // Optional: upload into a specific Drive folder.
-    $folderId = getenv('GOOGLE_DRIVE_FOLDER_ID');
+    // Exchange refresh token for a valid access token
+    $token = $client->fetchAccessTokenWithRefreshToken($refreshToken);
 
-    if ($folderId) {
-        $metadata->setParents([$folderId]);
+    if (isset($token['error'])) {
+        error_log(
+            'Google OAuth error: ' .
+            ($token['error_description'] ?? $token['error'])
+        );
+
+        throw new RuntimeException(
+            'Unable to authenticate with Google Drive. Check your OAuth credentials.'
+        );
     }
 
-    $uploadedFile = $drive->files->create($metadata, [
-        'data' => file_get_contents($filePath),
-        'mimeType' => mime_content_type($filePath),
-        'uploadType' => 'multipart',
-        'fields' => 'id,name,webViewLink'
-    ]);
-
-    $fileId = $uploadedFile->getId();
-
-    if (!$fileId) {
-        throw new Exception('Google Drive did not return a file ID.');
+    if (empty($token['access_token'])) {
+        throw new RuntimeException(
+            'Google did not return an access token.'
+        );
     }
 
-    // Allow the website to display the product image publicly.
-    $permission = new Google\Service\Drive\Permission([
-        'type' => 'anyone',
-        'role' => 'reader'
-    ]);
-
-    $drive->permissions->create($fileId, $permission);
-
-    return $fileId;
+    return $client;
 }
