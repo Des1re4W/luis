@@ -14,19 +14,27 @@ date_default_timezone_set('Asia/Manila');
 
 $message = "";
 $messageType = "info";
+
+// Built-in Default Avatar (SVG Data URI - pareho sa dashboard.php)
+$default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-// Palitan ito ng bagong 16-character Google App Password (walang spaces)
 const SMTP_PASSWORD = 'chcbrtktgudysiue'; 
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
+
+function h($value)
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
 
 function sendResetOtp(string $email, string $otp): bool
 {
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->SMTPDebug = SMTP::DEBUG_OFF; // I-turn off ang debug output kapag working na
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
 
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
@@ -95,7 +103,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = "danger";
         } else {
             try {
-                // Ginamit ang profile_image bilang column name mula sa database schema
                 $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number, profile_image FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
                 $stmt->execute([$input, $input, $input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -105,11 +112,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $messageType = "danger";
                 } else {
                     clearResetSession();
+                    
+                    // Logic para sa profile picture at default avatar fallback
+                    $userPhoto = $default_avatar;
+                    if (!empty($user['profile_image'])) {
+                        if (stripos($user['profile_image'], 'data:image/') === 0) {
+                            $userPhoto = $user['profile_image'];
+                        } else {
+                            $photoPath = __DIR__ . '/' . $user['profile_image'];
+                            if (file_exists($photoPath)) {
+                                $userPhoto = htmlspecialchars($user['profile_image']);
+                            }
+                        }
+                    }
+
                     $_SESSION['pw_reset_account'] = [
                         'id'            => $user['id'],
                         'name'          => $user['fullname'] ?? $user['username'] ?? 'User Account',
                         'email'         => $user['email'],
-                        'profile_image' => !empty($user['profile_image']) ? $user['profile_image'] : null
+                        'profile_image' => $userPhoto
                     ];
                 }
             } catch (\PDOException $e) {
@@ -283,11 +304,12 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         }
 
         .user-profile-img {
-            width: 80px;
-            height: 80px;
+            width: 75px;
+            height: 75px;
             border-radius: 50%;
             object-fit: cover;
-            border: 3px solid var(--navy);
+            border: 2px solid var(--navy);
+            background-color: #ffffff;
             margin: 0 auto 12px;
             display: block;
         }
@@ -412,10 +434,11 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         <!-- STEP 2: Show Found Account & Confirmation -->
         <?php elseif ($showAccountFound): ?>
             <div class="text-center p-3 mb-3 border rounded bg-light">
-                <!-- IPAPAKITA LANG ANG PROFILE PICTURE KUNG MAY NAKALAGAY SA DATABASE -->
-                <?php if (!empty($_SESSION['pw_reset_account']['profile_image'])): ?>
-                    <img src="<?= h($_SESSION['pw_reset_account']['profile_image']) ?>" alt="Profile Picture" class="user-profile-img">
-                <?php endif; ?>
+                <!-- IPAPAKITA ANG PROFILE IMAGE O DEFAULT AVATAR (KAPAG WALANG PROFILE PIC O PAG BROKEN PATH) -->
+                <img src="<?= h($_SESSION['pw_reset_account']['profile_image']) ?>" 
+                     alt="Profile Picture" 
+                     class="user-profile-img"
+                     onerror="this.onerror=null;this.src='<?= $default_avatar; ?>';">
                 
                 <h5 class="fw-bold text-dark mb-1 text-break"><?= h($_SESSION['pw_reset_account']['name']) ?></h5>
                 <p class="text-muted small mb-0 text-break">Email: <?= h($maskedEmail) ?></p>
