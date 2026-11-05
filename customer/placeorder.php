@@ -39,11 +39,12 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Kukunin ang Reference Number at Paid Amount na na-detect ng OCR
+    // Kukunin ang Reference Number, Paid Amount, at Receipt Date/Time mula sa OCR Hidden Inputs
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
+    $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
-    // Kalkulahin ang default paid amount base sa scheme kung sakaling hindi na-detect ng OCR
+    // Kalkulahin ang paid amount base sa scheme kung sakaling hindi na-detect ng OCR
     if ($detected_paid_amount > 0) {
         $paid_amount = $detected_paid_amount;
     } elseif ($grand_total >= 5000 && $payment_scheme === '50_percent') {
@@ -80,11 +81,11 @@ if (isset($_POST['place_order'])) {
         
         $pdo->beginTransaction();
 
-        // 1. I-insert ang order (naka-save dito ang ref_no at paid_amount mula sa OCR/Form)
+        // 1. I-insert ang order kasama ang receiptdt column
         $order_query = "INSERT INTO orders 
-            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
+            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, order_date, status) 
             VALUES 
-            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, CURRENT_TIMESTAMP, 'pending')";
+            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, :receiptdt, CURRENT_TIMESTAMP, 'pending')";
         
         $stmt = $pdo->prepare($order_query);
         $stmt->execute([
@@ -101,7 +102,8 @@ if (isset($_POST['place_order'])) {
             ':payment_method' => $payment_method,
             ':payment_scheme' => $payment_scheme,
             ':ref_no' => $ref_no,
-            ':proof_of_payment' => $proof_of_payment
+            ':proof_of_payment' => $proof_of_payment,
+            ':receiptdt' => $receiptdt
         ]);
 
         $order_id = $pdo->lastInsertId();
@@ -289,9 +291,10 @@ if (isset($_POST['place_order'])) {
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
                             
-                            <!-- Hidden Inputs: Awtomatikong masesave sa DATABASE (ref_no at paid_amount) -->
+                            <!-- Hidden Inputs: Awtomatikong masesave sa Database (ref_no, paid_amount, at receiptdt) -->
                             <input type="hidden" name="ref_no" id="ref_no_input">
                             <input type="hidden" name="paid_amount" id="paid_amount_input">
+                            <input type="hidden" name="receiptdt" id="receiptdt_input">
 
                             <!-- OCR Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
@@ -381,6 +384,7 @@ async function processReceiptOCR(fileInput) {
     const statusText = document.getElementById('ocr_status_text');
     const refInput = document.getElementById('ref_no_input');
     const paidInput = document.getElementById('paid_amount_input');
+    const dtInput = document.getElementById('receiptdt_input');
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
@@ -403,19 +407,19 @@ async function processReceiptOCR(fileInput) {
         const text = result.data.text;
         console.log("OCR Extracted Raw Text:\n", text);
 
-        // 1. REF NO EXTRACTION (Iniiwasan ang dates/times tulad ng 2026-11-05 o 11:15 AM)
+        // 1. REF NO EXTRACTION (Strict: PURONG NUMERO LANG para hindi sumama ang 'Oct4' o anumang date string)
         let detectedRef = '';
         
-        // Hahanap muna ng keyword (e.g. Ref No: 1234 567 890 o Ref 0012345678)
-        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([A-Za-z0-9\s]{9,20})/i);
+        // Match explicit Ref No followed by digits (e.g. Ref No. 0045761084221)
+        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*(\d{9,15})/i);
         
         if (refMatch) {
-            detectedRef = refMatch[1].replace(/[^A-Za-z0-9]/g, '').trim();
+            detectedRef = refMatch[1].trim();
         } else {
-            // Fallback: Naghahanap ng 9 hanggang 13-digit continuous number (na walang colon, hyphen o slash na karaniwan sa Date/Time)
-            let digitsMatch = text.match(/\b\d{4}\s?\d{3,4}\s?\d{3,4}\b/);
+            // Fallback: Naghahanap ng 9-15 continuous numeric digits lamang
+            let digitsMatch = text.match(/\b\d{9,15}\b/);
             if (digitsMatch) {
-                detectedRef = digitsMatch[0].replace(/\s+/g, '').trim();
+                detectedRef = digitsMatch[0].trim();
             }
         }
 
@@ -426,22 +430,25 @@ async function processReceiptOCR(fileInput) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
         }
 
-        // 3. DATE & TIME EXTRACTION (Para sa display feedback lamang)
+        // 3. DATE & TIME EXTRACTION (Extracting Date & Time e.g., Oct 4, 2026 7:40 PM or 10/04/2026 19:40)
         let detectedDateTime = '';
         let dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b)\s*(?:at\s*)?(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
         if (dateTimeMatch) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // I-assign ang values sa Hidden Inputs para direktang ma-save sa Database!
+        // I-assign ang values sa Hidden Inputs para masesave sa orders table columns (ref_no, paid_amount, receiptdt)!
         if (detectedRef !== '') {
             refInput.value = detectedRef;
         }
         if (detectedAmount !== '') {
             paidInput.value = detectedAmount;
         }
+        if (detectedDateTime !== '') {
+            dtInput.value = detectedDateTime;
+        }
 
-        // Magpakita ngmalinaw na Feedback UI sa User
+        // UI Feedback sa User
         if (detectedRef !== '') {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-success');
