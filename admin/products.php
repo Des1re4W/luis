@@ -530,8 +530,6 @@ try {
 
                                     $t_stock = $row['total_stock'];
                                 }
-
-                                // Handle Image Source Logic (Base64 / URL / File Path)
                         
                                 $img_src = '../assets/images/no-image.png';
 
@@ -548,7 +546,6 @@ try {
                                     else {
                                         $image_path = ltrim($p_image, '/');
 
-                                        // Check the original stored path
                                         $file_path = __DIR__ . '/../' . $image_path;
 
                                         if (file_exists($file_path)) {
