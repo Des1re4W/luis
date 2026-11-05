@@ -192,8 +192,7 @@ max-height:45vh
 <i class="bi bi-person-badge"></i> <span>My Profile</span>
 </a>
 <span class="text-white small">
-<i class="bi bi-person-circle"></i>
-<b><?php echo htmlspecialchars($_SESSION['username']); ?></b>
+    Welcome, <b><?php echo htmlspecialchars($_SESSION['username']); ?>!</b>
 </span>
 <a href="../logout.php" class="btn btn-link text-danger text-decoration-none p-1" onclick="return confirm('Are you sure you want to log out?')">
 <i class="bi bi-box-arrow-right"></i> Logout
