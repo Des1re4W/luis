@@ -457,7 +457,7 @@ async function processReceiptOCR(fileInput) {
     <strong>✓ Receipt scanned successfully!</strong><br>
     <small class="text-warning">
         Reminder: Please ensure that the payment amount exactly matches the total amount to avoid Order rejection.
-    </small>
+    </small><br>
 `;
             message += `Ref No: <b>${detectedRef}</b>`;
             if (detectedAmount !== '') {
