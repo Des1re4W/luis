@@ -439,12 +439,12 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // Determine raw image string (Variant image -> Main product image fallback)
-                                        $v_img_raw = !empty($v['variant_image']) ? $v['variant_image'] : ($product['image'] ?? '');
+                                        // 100% Exact Copy ng Image Resolver mula sa products.php
+                                        $target_raw_image = !empty($v['variant_image']) ? $v['variant_image'] : ($product['image'] ?? '');
                                         $img_src = '../assets/images/no-image.png';
 
-                                        if (!empty($v_img_raw)) {
-                                            $image_value = trim($v_img_raw);
+                                        if (!empty($target_raw_image)) {
+                                            $image_value = trim($target_raw_image);
                                             $file_id = '';
 
                                             if (stripos($image_value, 'data:image/') === 0) {
@@ -453,12 +453,21 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 $parsed_url = parse_url($image_value);
                                                 $host = strtolower($parsed_url['host'] ?? '');
 
-                                                if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                                                if (
+                                                    $host === 'drive.google.com' ||
+                                                    $host === 'docs.google.com'
+                                                ) {
                                                     parse_str($parsed_url['query'] ?? '', $query_params);
 
                                                     if (!empty($query_params['id'])) {
                                                         $file_id = $query_params['id'];
-                                                    } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                                                    } elseif (
+                                                        preg_match(
+                                                            '#/file/d/([A-Za-z0-9_-]+)#',
+                                                            $parsed_url['path'] ?? '',
+                                                            $matches
+                                                        )
+                                                    ) {
                                                         $file_id = $matches[1];
                                                     }
 
@@ -475,7 +484,11 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                 $file_path = __DIR__ . '/../' . $image_path;
 
                                                 if (file_exists($file_path)) {
-                                                    $img_src = '../' . htmlspecialchars($image_path, ENT_QUOTES, 'UTF-8');
+                                                    $img_src = '../' . htmlspecialchars(
+                                                        $image_path,
+                                                        ENT_QUOTES,
+                                                        'UTF-8'
+                                                    );
                                                 }
                                             }
                                         }
@@ -486,7 +499,8 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                     alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
                                                     class="rounded"
                                                     style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
-                                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+                                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                                    loading="lazy">
                                             </td>
 
                                             <td class="fw-bold text-dark">
