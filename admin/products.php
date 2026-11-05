@@ -604,7 +604,7 @@ try {
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="<?php echo $img_src; ?>" alt="Product Image">
+                                         src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>" alt="Product Image">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
