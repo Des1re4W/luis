@@ -34,20 +34,20 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->SMTPDebug = SMTP::DEBUG_OFF; // I-turn off ang debug output kapag working na
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
 
-        $mail->Host       = SMTP_HOST;
+        $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
         $mail->Password   = SMTP_PASSWORD;
         
-        // Gagamitin ang SSL sa Port 465 para maiwasan ang Port 587 Firewall Timeout
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPSecure;
+        // Gamitin ang ENCRYPTION_SMTPS at Port 465 (SSL)
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
         $mail->Port       = 465;
         $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 30; // Taasan ang timeout para sa mas mabagal na network connection
+        $mail->Timeout    = 30;
 
-        // Bypass Local SSL Certificate Verification (Ligtas para sa local development/XAMPP)
+        // Bypass SSL Check para sa local environment
         $mail->SMTPOptions = array(
             'ssl' => array(
                 'verify_peer'       => false,
