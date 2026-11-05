@@ -597,8 +597,10 @@ try {
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="../drive-image.php?id=<?php echo urlencode($p_image); ?>" alt="Product Image"
-                                            onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+                                        <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                            alt="<?php echo htmlspecialchars($p_name, ENT_QUOTES, 'UTF-8'); ?>"
+                                            onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                            loading="lazy">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
