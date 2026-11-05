@@ -461,7 +461,7 @@ async function processReceiptOCR(fileInput) {
             statusBox.classList.add('alert-success');
             
             let message = `
-    <strong>✓ Receipt scanned successfully!</strong><br>
+    <strong>Receipt scanned successfully!</strong><br>
     <small class="text-warning">
         Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid payment rejection.
     </small><br>
