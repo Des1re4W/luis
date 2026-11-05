@@ -533,25 +533,23 @@ try {
 
                                 // Handle Image Source Logic (Base64 / URL / File Path)
                         
-
                                 $img_src = '../assets/images/no-image.png';
 
                                 if (!empty($p_image)) {
 
                                     if (stripos($p_image, 'data:image/') === 0) {
                                         $img_src = $p_image;
-                                    } elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
+                                    }
+
+                                    elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
                                         $img_src = $p_image;
-                                    } else {
+                                    }
+
+                                    else {
                                         $image_path = ltrim($p_image, '/');
 
-                                        // Absolute server path
-                                        $file_path = dirname(__DIR__) . '/' . $image_path;
-
-                                        // DEBUG: Check Render filesystem
-                                        error_log("Database image: " . $p_image);
-                                        error_log("Checking file: " . $file_path);
-                                        error_log("File exists: " . (file_exists($file_path) ? 'YES' : 'NO'));
+                                        // Check the original stored path
+                                        $file_path = __DIR__ . '/../' . $image_path;
 
                                         if (file_exists($file_path)) {
                                             $img_src = '../' . htmlspecialchars($image_path);
