@@ -25,7 +25,7 @@ COPY . /var/www/html/
 
 # Apache configuration
 RUN printf '%s\n' \
-    '<Directory /var/www/html>' \
+    '<WORKDIR /var/www/html/hardwareSystem>' \
     '    DirectoryIndex login.php index.php index.html' \
     '    AllowOverride All' \
     '    Require all granted' \
