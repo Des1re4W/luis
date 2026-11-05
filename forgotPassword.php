@@ -14,8 +14,9 @@ date_default_timezone_set('Asia/Manila');
 $message = "";
 $messageType = "info";
 
-// Set SMTP_USERNAME and SMTP_PASSWORD in your hosting environment settings.
-// SMTP_PASSWORD must be a NEW Google App Password, without spaces.
+// Gmail SMTP configuration.
+// IMPORTANT: Replace the password below with a NEW Google App Password.
+// Do not use an App Password that has been shared or uploaded previously.
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
 const SMTP_PASSWORD = 'miohifpavqdzvzvn';
@@ -32,11 +33,15 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = null;
 
     try {
-        $smtpUsername = trim((string) getenv('SMTP_USERNAME'));
-        $smtpPassword = trim((string) getenv('SMTP_PASSWORD'));
+        $smtpUsername = trim(SMTP_USERNAME);
+        $smtpPassword = trim(SMTP_PASSWORD);
 
-        if ($smtpUsername === '' || $smtpPassword === '') {
-            throw new RuntimeException('SMTP_USERNAME or SMTP_PASSWORD environment variable is missing.');
+        if (
+            $smtpUsername === '' ||
+            $smtpPassword === '' ||
+            $smtpPassword === 'PASTE_NEW_16_CHARACTER_GOOGLE_APP_PASSWORD_HERE'
+        ) {
+            throw new RuntimeException('Please configure a new Google App Password in SMTP_PASSWORD.');
         }
 
         $mail = new PHPMailer(true);
