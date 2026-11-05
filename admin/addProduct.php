@@ -57,10 +57,8 @@ if (isset($_POST['submit'])) {
 
                             try {
 
-                                // Upload directly from PHP temporary storage to Google Drive.
                                 $file_id = uploadProductImageToDrive($tmp, $new_image_name);
 
-                                // Save Google Drive image URL in Supabase.
                                 $savePath = "https://drive.google.com/uc?export=view&id=" . $file_id;
 
                                 $query = "INSERT INTO products

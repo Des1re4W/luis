@@ -530,30 +530,66 @@ try {
 
                                     $t_stock = $row['total_stock'];
                                 }
-
-
                                 $img_src = '../assets/images/no-image.png';
 
                                 if (!empty($p_image)) {
 
-                                    if (stripos($p_image, 'data:image/') === 0) {
+                                    $image_value = trim($p_image);
+                                    $file_id = '';
 
-                                        $img_src = $p_image;
+                                    if (stripos($image_value, 'data:image/') === 0) {
 
-                                    }
-                                    elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
-
-                                        $img_src = $p_image;
+                                        $img_src = $image_value;
 
                                     }
-                                    elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $p_image)) {
 
-                                        $img_src = '../drive-image.php?id=' . urlencode($p_image);
+                                    elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+
+                                        $parsed_url = parse_url($image_value);
+                                        $host = strtolower($parsed_url['host'] ?? '');
+
+                                        if (
+                                            $host === 'drive.google.com' ||
+                                            $host === 'docs.google.com'
+                                        ) {
+
+                                            parse_str($parsed_url['query'] ?? '', $query_params);
+
+                                            if (!empty($query_params['id'])) {
+                                                $file_id = $query_params['id'];
+                                            }
+
+                                            elseif (
+                                                preg_match(
+                                                    '#/file/d/([A-Za-z0-9_-]+)#',
+                                                    $parsed_url['path'] ?? '',
+                                                    $matches
+                                                )
+                                            ) {
+                                                $file_id = $matches[1];
+                                            }
+
+                                            if ($file_id !== '') {
+                                                $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                                            }
+
+                                        } else {
+
+                                            $img_src = $image_value;
+
+                                        }
 
                                     }
+
+                                    elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
+
+                                        $img_src = '../drive-image.php?id=' . urlencode($image_value);
+
+                                    }
+
                                     else {
 
-                                        $image_path = ltrim($p_image, '/');
+                                        $image_path = ltrim($image_value, '/');
                                         $file_path = __DIR__ . '/../' . $image_path;
 
                                         if (file_exists($file_path)) {
@@ -565,7 +601,6 @@ try {
                                         }
                                     }
                                 }
-
                                 ?>
                                 <tr>
                                     <td class="text-center">
