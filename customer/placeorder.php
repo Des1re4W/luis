@@ -460,7 +460,12 @@ async function processReceiptOCR(fileInput) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-success');
             
-            let message = `<strong>✓ Receipt scanned successfully!</strong><br>`;
+            let message = `
+    <strong>✓ Receipt scanned successfully!</strong><br>
+    <small class="text-warning">
+        Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid payment rejection.
+    </small><br>
+`;
             message += `Ref No: <b>${detectedRef}</b>`;
             if (detectedAmount !== '') {
                 message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
