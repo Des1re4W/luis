@@ -38,11 +38,15 @@ if (isset($_POST['place_order'])) {
     $cart_json = json_encode($items_to_process);
 
     $proof_of_payment = null;
+    
+    // Kukunin ang Reference Number at Paid Amount na na-detect ng OCR
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
-    $paid_amount = 0;
+    $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
-    // Kalkulahin ang paid amount base sa scheme
-    if ($grand_total >= 5000 && $payment_scheme === '50_percent') {
+    // Kalkulahin ang default paid amount base sa scheme kung sakaling hindi na-detect ng OCR
+    if ($detected_paid_amount > 0) {
+        $paid_amount = $detected_paid_amount;
+    } elseif ($grand_total >= 5000 && $payment_scheme === '50_percent') {
         $paid_amount = $grand_total * 0.5;
     } else {
         $paid_amount = $grand_total;
@@ -76,7 +80,7 @@ if (isset($_POST['place_order'])) {
         
         $pdo->beginTransaction();
 
-        // 1. I-insert ang order
+        // 1. I-insert ang order (naka-save dito ang ref_no at paid_amount mula sa OCR/Form)
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, order_date, status) 
             VALUES 
@@ -281,10 +285,14 @@ if (isset($_POST['place_order'])) {
                             <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
                         </div>
 
-                        <!-- ONLINE PAYMENT FIELDS WITH OCR INTEGRATION -->
+                        <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC OCR EXTRACTOR -->
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
                             
+                            <!-- Hidden Inputs: Awtomatikong masesave sa DATABASE (ref_no at paid_amount) -->
+                            <input type="hidden" name="ref_no" id="ref_no_input">
+                            <input type="hidden" name="paid_amount" id="paid_amount_input">
+
                             <!-- OCR Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
                                 <span id="ocr_status_text">Binabasa ang receipt...</span>
@@ -292,9 +300,6 @@ if (isset($_POST['place_order'])) {
 
                             <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
                             <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-2" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
-
-                            <label class="form-label small fw-bold">Reference Number</label>
-                            <input type="text" name="ref_no" id="ref_no_input" class="form-control mb-2" placeholder="Reference Number" maxlength="30" oninput="this.value=this.value.replace(/[^a-zA-Z0-9 -]/g,'');">
                         </div>
 
                         <div class="col-12 form-check ps-4">
@@ -324,20 +329,17 @@ function togglePaymentFields() {
     const codMessage = document.getElementById('cod_message');
     const optionBox = document.getElementById('payment_option_box');
     const proofInput = document.getElementById('proof_of_payment_input');
-    const refInput = document.getElementById('ref_no_input');
 
     if (selectedMethod === 'GCash' || selectedMethod === 'Maya') {
         if (onlineFields) onlineFields.classList.remove('d-none');
         if (codMessage) codMessage.classList.add('d-none');
         if (optionBox) optionBox.classList.remove('d-none');
         if (proofInput) proofInput.required = true;
-        if (refInput) refInput.required = true;
     } else if (selectedMethod === 'Cash on Delivery (COD)') {
         if (onlineFields) onlineFields.classList.add('d-none');
         if (codMessage) codMessage.classList.remove('d-none');
         if (optionBox) optionBox.classList.add('d-none');
         if (proofInput) proofInput.required = false;
-        if (refInput) refInput.required = false;
     }
 }
 
@@ -378,10 +380,11 @@ async function processReceiptOCR(fileInput) {
     const statusBox = document.getElementById('ocr_status');
     const statusText = document.getElementById('ocr_status_text');
     const refInput = document.getElementById('ref_no_input');
+    const paidInput = document.getElementById('paid_amount_input');
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt via OCR...';
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Binabasa ang receipt...';
 
     try {
         const result = await Tesseract.recognize(
@@ -391,48 +394,78 @@ async function processReceiptOCR(fileInput) {
                 logger: m => {
                     if (m.status === 'recognizing text') {
                         let progress = Math.round(m.progress * 100);
-                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading text: ${progress}%`;
+                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt: ${progress}%`;
                     }
                 }
             }
         );
 
         const text = result.data.text;
-        console.log("OCR Extracted Text:\n", text);
+        console.log("OCR Extracted Raw Text:\n", text);
 
-        // 1. Ref No. extraction
+        // 1. REF NO EXTRACTION (Iniiwasan ang dates/times tulad ng 2026-11-05 o 11:15 AM)
+        let detectedRef = '';
+        
+        // Hahanap muna ng keyword (e.g. Ref No: 1234 567 890 o Ref 0012345678)
         let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([A-Za-z0-9\s]{9,20})/i);
-        if (!refMatch) {
-            refMatch = text.match(/\b\d{4}\s?\d{3,4}\s?\d{3,4}\b/);
+        
+        if (refMatch) {
+            detectedRef = refMatch[1].replace(/[^A-Za-z0-9]/g, '').trim();
+        } else {
+            // Fallback: Naghahanap ng 9 hanggang 13-digit continuous number (na walang colon, hyphen o slash na karaniwan sa Date/Time)
+            let digitsMatch = text.match(/\b\d{4}\s?\d{3,4}\s?\d{3,4}\b/);
+            if (digitsMatch) {
+                detectedRef = digitsMatch[0].replace(/\s+/g, '').trim();
+            }
         }
 
-        // 2. Amount extraction
+        // 2. AMOUNT EXTRACTION (Extracting Total Amount Sent)
+        let detectedAmount = '';
         let amountMatch = text.match(/(?:Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
+        if (amountMatch) {
+            detectedAmount = amountMatch[1].replace(/,/g, '');
+        }
 
-        let detectedRef = refMatch ? refMatch[1].replace(/\s+/g, '').trim() : '';
-        let detectedAmount = amountMatch ? amountMatch[1].replace(/,/g, '') : '';
+        // 3. DATE & TIME EXTRACTION (Para sa display feedback lamang)
+        let detectedDateTime = '';
+        let dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b)\s*(?:at\s*)?(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
+        if (dateTimeMatch) {
+            detectedDateTime = dateTimeMatch[0].trim();
+        }
 
+        // I-assign ang values sa Hidden Inputs para direktang ma-save sa Database!
         if (detectedRef !== '') {
             refInput.value = detectedRef;
+        }
+        if (detectedAmount !== '') {
+            paidInput.value = detectedAmount;
+        }
+
+        // Magpakita ngmalinaw na Feedback UI sa User
+        if (detectedRef !== '') {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-success');
             
-            let message = `<strong>✓ Receipt scanned successfully!</strong><br>Ref No: <b>${detectedRef}</b>`;
-            if (detectedAmount) {
-                message += `<br>Detected Amount: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+            let message = `<strong>✓ Receipt scanned successfully!</strong><br>`;
+            message += `Ref No: <b>${detectedRef}</b>`;
+            if (detectedAmount !== '') {
+                message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+            }
+            if (detectedDateTime !== '') {
+                message += `<br>Date & Time: <b>${detectedDateTime}</b>`;
             }
             statusText.innerHTML = message;
         } else {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Receipt read, but Reference Number was not clearly detected. Please double-check or type it manually.';
+            statusText.innerHTML = '⚠️ Nabasang resibo ngunit pakitiyak na malinaw ang Reference Number.';
         }
 
     } catch (error) {
         console.error("OCR Reading Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Could not read text from image. Please ensure image is clear or type Ref No manually.';
+        statusText.innerHTML = '❌ Hindi mabasa ang text sa image. Pakitiyak na malinaw ang resibo.';
     }
 }
 
