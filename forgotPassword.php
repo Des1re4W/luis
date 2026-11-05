@@ -14,28 +14,20 @@ date_default_timezone_set('Asia/Manila');
 
 $message = "";
 $messageType = "info";
-
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
+// Palitan ito ng bagong 16-character Google App Password (walang spaces)
 const SMTP_PASSWORD = 'chcbrtktgudysiue'; 
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
-
-function h($value)
-{
-    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
-}
 
 function sendResetOtp(string $email, string $otp): bool
 {
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
+        $mail->SMTPDebug = SMTP::DEBUG_OFF; // I-turn off ang debug output kapag working na
 
-        $mail->Debugoutput = function ($str, $level) {
-            error_log("SMTP DEBUG [$level]: $str");
-        };
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
@@ -45,6 +37,15 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->Port       = 587;
         $mail->CharSet    = 'UTF-8';
         $mail->Timeout    = 15;
+
+        // Kinakailangan sa XAMPP Local Host para hindi i-block ng SSL certificate verification
+        $mail->SMTPOptions = array(
+            'ssl' => array(
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true
+            )
+        );
 
         $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
