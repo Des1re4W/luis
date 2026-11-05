@@ -2,164 +2,160 @@
 session_start();
 
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../config/image.php';
 require_once __DIR__ . '/../config/google_drive.php';
+require_once __DIR__ . '/../config/image.php';
 
+// Check admin access
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-$message = '';
+$message = "";
 
-$product_id = filter_var(
-    $_GET['product_id'] ?? null,
-    FILTER_VALIDATE_INT
-);
+// Get product ID
+$product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
 
-if (!$product_id || $product_id <= 0) {
-    $_SESSION['message'] = "Invalid product ID.";
-    header("Location: products.php");
-    exit();
+if (!$product_id) {
+    die("Invalid product ID.");
 }
 
 // Fetch existing product
-try {
-    $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
-    $stmt->execute([':id' => $product_id]);
+$stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
+$stmt->execute([':id' => $product_id]);
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$row) {
-        $_SESSION['message'] = "Product not found.";
-        header("Location: products.php");
-        exit();
-    }
-
-} catch (PDOException $e) {
-    error_log("Fetch product error: " . $e->getMessage());
-    die("Database error occurred.");
+if (!$row) {
+    die("Product not found.");
 }
 
 // ==========================================
-// UPDATE PRODUCT AND UPLOAD IMAGE TO GOOGLE DRIVE
+// UPDATE PRODUCT
 // ==========================================
+if (isset($_POST['update'])) {
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
-
-    $product_name = trim($_POST['product_name'] ?? '');
-    $cost_price = $_POST['cost_price'] ?? 0;
-    $price = $_POST['price'] ?? 0;
-    $category = $_POST['category'] ?? '';
-    $stock = $_POST['stock'] ?? 0;
-    $product_description = trim($_POST['product_description'] ?? '');
+    $name = trim($_POST['product_name']);
+    $cost_price = $_POST['cost_price'];
+    $price = $_POST['price'];
+    $category = $_POST['category'];
+    $stock = $_POST['stock'];
+    $description = trim($_POST['product_description']);
 
     // Keep the existing image unless a new one is uploaded
-    $image_path = $row['image'] ?? '';
-    $image_changed = false;
+    $image_path = $row['image'];
 
     try {
+
+        // Validate prices
+        if (!is_numeric($cost_price) || !is_numeric($price) ||
+            floatval($cost_price) < 0 || floatval($price) < 0) {
+
+            throw new Exception("Please enter valid prices.");
+
+        }
+
+        if (floatval($cost_price) > floatval($price)) {
+            throw new Exception("Cost price cannot be higher than the selling price.");
+        }
+
+        // Check duplicate product name, excluding the current product
+        $check_stmt = $pdo->prepare("
+            SELECT id
+            FROM products
+            WHERE LOWER(product_name) = LOWER(:name)
+            AND id != :id
+        ");
+
+        $check_stmt->execute([
+            ':name' => $name,
+            ':id' => $product_id
+        ]);
+
+        if ($check_stmt->fetch()) {
+            throw new Exception("Another product with this name already exists.");
+        }
 
         // ==========================================
         // GOOGLE DRIVE IMAGE UPLOAD
         // ==========================================
 
-        if (isset($_FILES['image']) &&
-            $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+        if (
+            isset($_FILES['image']) &&
+            $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE
+        ) {
 
             if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception("Image upload failed. Please try again.");
+                throw new Exception(
+                    "Image upload failed. Error code: " . $_FILES['image']['error']
+                );
             }
 
             $tmp = $_FILES['image']['tmp_name'];
+            $original_name = $_FILES['image']['name'];
 
-            if (!is_uploaded_file($tmp)) {
-                throw new Exception("Invalid uploaded image.");
+            if (empty($tmp) || !file_exists($tmp)) {
+                throw new Exception("Uploaded image temporary file is invalid.");
             }
 
-            $image_info = getimagesize($tmp);
+            // Confirm that the uploaded file is an actual image
+            $check_image = getimagesize($tmp);
 
-            if ($image_info === false) {
-                throw new Exception("The uploaded file is not a valid image.");
+            if ($check_image === false) {
+                throw new Exception("Invalid image. Please upload JPG, JPEG, PNG, or WEBP.");
             }
 
-            $allowed_mimes = [
-                'image/jpeg',
-                'image/png',
-                'image/webp'
-            ];
-
-            if (!in_array($image_info['mime'], $allowed_mimes, true)) {
-                throw new Exception("Only JPG, PNG, and WEBP images are allowed.");
-            }
-
-            $extension = [
-                'image/jpeg' => 'jpg',
-                'image/png' => 'png',
-                'image/webp' => 'webp'
-            ][$image_info['mime']];
-
-            // Get authenticated Google Drive client
-            $client = getGoogleDriveClient();
-
-            $driveService = new Google\Service\Drive($client);
-
-            // Create Google Drive file metadata
-            $fileMetadata = new Google\Service\Drive\DriveFile([
-                'name' => 'product_' . $product_id . '_' . uniqid() . '.' . $extension
-            ]);
-
-            // Upload to configured Google Drive folder
-            $folderId = getenv('GOOGLE_DRIVE_FOLDER_ID');
-
-            if (!empty($folderId)) {
-                $fileMetadata->setParents([$folderId]);
-            }
-
-            $uploadedFile = $driveService->files->create(
-                $fileMetadata,
-                [
-                    'data' => file_get_contents($tmp),
-                    'mimeType' => $image_info['mime'],
-                    'uploadType' => 'multipart',
-                    'fields' => 'id'
-                ]
+            // Validate extension
+            $image_extension = strtolower(
+                pathinfo($original_name, PATHINFO_EXTENSION)
             );
 
-            if (empty($uploadedFile->id)) {
-                throw new Exception("Google Drive did not return a file ID.");
+            $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
+
+            if (!in_array($image_extension, $allowed_extensions, true)) {
+                throw new Exception("Only JPG, JPEG, PNG, and WEBP images are allowed.");
             }
 
-            // Save Google Drive file ID in the database
-            $image_path = $uploadedFile->id;
-            $image_changed = true;
+            // Generate unique filename
+            $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
+
+            // Use the SAME working function from addProduct.php
+            $file_id = uploadProductImageToDrive($tmp, $new_image_name);
+
+            if (empty($file_id)) {
+                throw new Exception("Google Drive did not return an image file ID.");
+            }
+
+            // Save the same URL format used by addProduct.php
+            $image_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
         }
 
         // ==========================================
-        // UPDATE PRODUCT IN DATABASE
+        // UPDATE DATABASE
         // ==========================================
 
-        $update_stmt = $pdo->prepare("
+        $update_query = "
             UPDATE products
             SET
-                product_name = :product_name,
+                product_name = :name,
                 cost_price = :cost_price,
                 price = :price,
                 category = :category,
+                image = :image,
                 stock = :stock,
-                product_description = :product_description,
-                image = :image
+                product_description = :description
             WHERE id = :id
-        ");
+        ";
+
+        $update_stmt = $pdo->prepare($update_query);
 
         $update_stmt->execute([
-            ':product_name' => $product_name,
+            ':name' => $name,
             ':cost_price' => $cost_price,
             ':price' => $price,
             ':category' => $category,
-            ':stock' => $stock,
-            ':product_description' => $product_description,
             ':image' => $image_path,
+            ':stock' => $stock,
+            ':description' => $description,
             ':id' => $product_id
         ]);
 
@@ -167,69 +163,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
         // AUDIT TRAIL
         // ==========================================
 
-        $changes = [];
+        $username = $_SESSION['username'] ?? 'Admin';
+        $role = $_SESSION['role'] ?? 'admin';
+        $user_id = $_SESSION['user_id'] ?? null;
 
-        if ($row['product_name'] !== $product_name) {
-            $changes[] = "Product name updated";
-        }
-
-        if ((float)$row['cost_price'] !== (float)$cost_price) {
-            $changes[] = "Cost price updated";
-        }
-
-        if ((float)$row['price'] !== (float)$price) {
-            $changes[] = "Selling price updated";
-        }
-
-        if ((int)$row['stock'] !== (int)$stock) {
-            $changes[] = "Stock updated";
-        }
-
-        if ($row['category'] !== $category) {
-            $changes[] = "Category updated";
-        }
-
-        if ($row['product_description'] !== $product_description) {
-            $changes[] = "Description updated";
-        }
-
-        if ($image_changed) {
-            $changes[] = "Product image uploaded to Google Drive";
-        }
-
-        $details_text = "Updated product: " . $product_name;
-
-        if (!empty($changes)) {
-            $details_text .= " (" . implode(", ", $changes) . ")";
-        }
-
-        $log_stmt = $pdo->prepare("
+        $log_query = "
             INSERT INTO audit_log
-                (user_id, username, role, action, details, timestamp)
+            (user_id, username, role, action, details, timestamp)
             VALUES
-                (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
-        ");
+            (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
+        ";
+
+        $log_stmt = $pdo->prepare($log_query);
 
         $log_stmt->execute([
-            ':user_id' => $_SESSION['user_id'] ?? null,
-            ':username' => $_SESSION['username'] ?? 'Admin',
-            ':role' => $_SESSION['role'] ?? 'admin',
-            ':action' => 'Edit Product',
-            ':details' => $details_text
+            ':user_id' => $user_id,
+            ':username' => $username,
+            ':role' => $role,
+            ':action' => 'Update Product',
+            ':details' => 'Updated product: ' . $name
         ]);
 
-        $_SESSION['message'] = "Product updated successfully!";
+        $message = "Product updated successfully!";
 
-        header("Location: products.php");
-        exit();
+        // Refresh product information
+        $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
+        $stmt->execute([':id' => $product_id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
 
-        error_log("Update product / Google Drive error: " . $e->getMessage());
+        error_log("EDIT PRODUCT ERROR: " . $e->getMessage());
 
-        $message = '<div class="alert alert-danger">' .
-            htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') .
-            '</div>';
+        $message = "Error updating product: " . $e->getMessage();
     }
 }
 ?>
