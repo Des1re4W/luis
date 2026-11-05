@@ -34,25 +34,20 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        // I-set sa SERVER debug para makita sa browser screen ang SMTP conversation
-        $mail->SMTPDebug = SMTP::DEBUG_SERVER; 
-
-        $mail->Debugoutput = function ($str, $level) {
-            // I-echo sa screen habang nag-te-test
-            echo "<pre style='background:#f8f9fa;color:#333;padding:10px;border:1px solid #ccc;font-size:12px;'>SMTP LOG [$level]: " . htmlspecialchars($str) . "</pre>";
-        };
+        $mail->SMTPDebug = SMTP::DEBUG_OFF; // I-turn off ang debug output kapag working na
 
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
         $mail->Password   = SMTP_PASSWORD;
         
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+        // Gagamitin ang SSL sa Port 465 para maiwasan ang Port 587 Firewall Timeout
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPSecure;
+        $mail->Port       = 465;
         $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 15;
+        $mail->Timeout    = 30; // Taasan ang timeout para sa mas mabagal na network connection
 
-        // Bypass Local SSL Verification (Para sa XAMPP/Localhost)
+        // Bypass Local SSL Certificate Verification (Ligtas para sa local development/XAMPP)
         $mail->SMTPOptions = array(
             'ssl' => array(
                 'verify_peer'       => false,
@@ -79,7 +74,7 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->send();
         return true;
     } catch (\Throwable $e) {
-        echo "<pre style='background:#fff0f0;color:#c00;padding:10px;border:1px solid #fcc;'>PHPMailer Exception: " . htmlspecialchars($e->getMessage()) . "</pre>";
+        error_log("OTP EMAIL ERROR: " . $e->getMessage());
         return false;
     }
 }
