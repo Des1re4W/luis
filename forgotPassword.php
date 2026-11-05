@@ -85,7 +85,7 @@ function clearResetSession(): void
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-  // STEP 1: Search Account gamit ang username, email, o phone_number
+    // STEP 1: Search Account gamit ang username, email, o phone_number
     if ($action === 'search_account') {
         $input = trim($_POST['search_credential'] ?? '');
 
@@ -94,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = "danger";
         } else {
             try {
-                // Inihahanda ang SQL Query gamit ang tamang column names
-                $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
+                // Isinama ang profile_pic sa SELECT query (palitan ang profile_pic kung iba ang column name sa DB mo, hal. avatar / profile_image)
+                $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number, profile_pic FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
                 $stmt->execute([$input, $input, $input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -105,9 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     clearResetSession();
                     $_SESSION['pw_reset_account'] = [
-                        'id'       => $user['id'],
-                        'name'     => $user['fullname'] ?? $user['username'] ?? 'User Account',
-                        'email'    => $user['email']
+                        'id'          => $user['id'],
+                        'name'        => $user['fullname'] ?? $user['username'] ?? 'User Account',
+                        'email'       => $user['email'],
+                        'profile_pic' => !empty($user['profile_pic']) ? $user['profile_pic'] : null
                     ];
                 }
             } catch (\PDOException $e) {
@@ -118,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // STEP 2: Send OTP to the found account's email
+    // STEP 2: Send OTP sa email ng nahanap na account
     elseif ($action === 'send_otp') {
         if (empty($_SESSION['pw_reset_account']['email'])) {
             $message = "Session expired. Please search for your account again.";
@@ -207,13 +208,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Action para mag-cancel o mag-search ng ibang account
+    // Action para mag-search ng ibang account
     elseif ($action === 'reset_flow') {
         clearResetSession();
     }
 }
 
-// State Handlers para sa UI
+// UI State Management
 $showPasswordForm = !empty($_SESSION['pw_reset_verified']) && !empty($_SESSION['pw_reset_email']);
 $showOtpForm      = !$showPasswordForm && !empty($_SESSION['pw_reset_otp_hash']);
 $showAccountFound = !$showPasswordForm && !$showOtpForm && !empty($_SESSION['pw_reset_account']);
@@ -237,39 +238,140 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        :root { --navy: #001f4d; --blue: #0d6efd; }
-        * { box-sizing: border-box; }
+        :root { 
+            --navy: #001f4d; 
+            --blue: #0d6efd; 
+        }
+
+        * { 
+            box-sizing: border-box; 
+        }
+
         body {
-            margin: 0; min-height: 100vh;
+            margin: 0; 
+            min-height: 100vh;
             background: linear-gradient(135deg, #edf3fb, #f8fafc);
-            font-family: Arial, sans-serif;
-            display: flex; align-items: center; justify-content: center; padding: 20px;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            padding: 16px;
         }
+
         .reset-card {
-            width: 100%; max-width: 480px; background: #fff;
-            border-radius: 18px; padding: clamp(22px, 5vw, 38px);
-            box-shadow: 0 12px 38px rgba(0, 31, 77, .12);
+            width: 100%; 
+            max-width: 440px; 
+            background: #ffffff;
+            border-radius: 16px; 
+            padding: clamp(20px, 5vw, 32px);
+            box-shadow: 0 10px 30px rgba(0, 31, 77, 0.08);
+            border: 1px solid rgba(0, 31, 77, 0.05);
         }
+
         .brand-icon {
-            width: 66px; height: 66px; border-radius: 50%;
-            background: var(--navy); color: #fff;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 29px; margin: 0 auto 16px;
+            width: 60px; 
+            height: 60px; 
+            border-radius: 50%;
+            background: var(--navy); 
+            color: #ffffff;
+            display: flex; 
+            align-items: center; 
+            justify-content: center;
+            font-size: 26px; 
+            margin: 0 auto 16px;
         }
-        .user-avatar {
-            width: 70px; height: 70px; border-radius: 50%;
-            background: #e9ecef; color: var(--navy);
-            display: flex; align-items: center; justify-content: center;
-            font-size: 32px; margin: 0 auto 12px;
+
+        .user-profile-img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 3px solid var(--navy);
+            margin: 0 auto 12px;
+            display: block;
         }
-        h1 { font-size: clamp(1.4rem, 4vw, 1.8rem); font-weight: 700; color: var(--navy); text-align: center; }
-        .subtitle { text-align: center; color: #6c757d; font-size: .95rem; margin-bottom: 24px; }
-        .form-control { min-height: 48px; border-radius: 10px; }
-        .btn-primary { background: var(--navy); border-color: var(--navy); min-height: 48px; border-radius: 10px; font-weight: 600; }
-        .btn-primary:hover { background: #06336f; border-color: #06336f; }
-        .alert { border-radius: 10px; font-size: .92rem; }
-        .back-link { display: block; text-align: center; margin-top: 20px; color: var(--navy); text-decoration: none; font-weight: 600; }
-        .back-link:hover { text-decoration: underline; }
+
+        h1 { 
+            font-size: clamp(1.3rem, 4vw, 1.6rem); 
+            font-weight: 700; 
+            color: var(--navy); 
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .subtitle { 
+            text-align: center; 
+            color: #6c757d; 
+            font-size: clamp(0.875rem, 2.5vw, 0.95rem); 
+            margin-bottom: 20px; 
+        }
+
+        .form-control { 
+            min-height: 46px; 
+            border-radius: 8px; 
+            font-size: 0.95rem;
+        }
+
+        .form-control:focus {
+            border-color: var(--navy);
+            box-shadow: 0 0 0 0.25rem rgba(0, 31, 77, 0.15);
+        }
+
+        .input-group .btn-outline-secondary {
+            border-color: #dee2e6;
+            color: #6c757d;
+        }
+
+        .btn-primary { 
+            background: var(--navy); 
+            border-color: var(--navy); 
+            min-height: 46px; 
+            border-radius: 8px; 
+            font-weight: 600; 
+            font-size: 0.95rem;
+        }
+
+        .btn-primary:hover, .btn-primary:focus { 
+            background: #06336f; 
+            border-color: #06336f; 
+        }
+
+        .btn-outline-secondary {
+            min-height: 44px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+
+        .alert { 
+            border-radius: 8px; 
+            font-size: 0.88rem; 
+            word-wrap: break-word;
+        }
+
+        .back-link { 
+            display: inline-block; 
+            width: 100%;
+            text-align: center; 
+            margin-top: 18px; 
+            color: var(--navy); 
+            text-decoration: none; 
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .back-link:hover { 
+            text-decoration: underline; 
+        }
+
+        @media (max-width: 480px) {
+            body { 
+                padding: 12px; 
+            }
+            .reset-card { 
+                border-radius: 12px; 
+                padding: 20px 16px;
+            }
+        }
     </style>
 </head>
 
@@ -279,44 +381,48 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         
         <?php if ($showSearchForm): ?>
             <h1>Find Your Account</h1>
-            <p class="subtitle">Please enter your email, username, or mobile number to search for your account.</p>
+            <p class="subtitle">Enter your email, username, or phone number to search for your account.</p>
         <?php elseif ($showAccountFound): ?>
             <h1>Is this your account?</h1>
-            <p class="subtitle">We found an account linked to your search details.</p>
+            <p class="subtitle">We found an account matching your search criteria.</p>
         <?php elseif ($showOtpForm): ?>
             <h1>Enter Verification Code</h1>
-            <p class="subtitle">Enter the 6-digit OTP code sent to <strong><?= h($maskedEmail) ?></strong>.</p>
+            <p class="subtitle">We sent a 6-digit OTP code to <strong><?= h($maskedEmail) ?></strong>.</p>
         <?php elseif ($showPasswordForm): ?>
             <h1>Create New Password</h1>
-            <p class="subtitle">Your identity is verified. Set a new password for your account.</p>
+            <p class="subtitle">Your identity has been verified. Set a new password below.</p>
         <?php endif; ?>
 
         <?php if ($message !== ''): ?>
-            <div class="alert alert-<?= h($messageType) ?>"><?= h($message) ?></div>
+            <div class="alert alert-<?= h($messageType) ?> mb-3"><?= h($message) ?></div>
         <?php endif; ?>
 
-        <!-- STEP 1: Search Form -->
+        <!-- STEP 1: Search Account Form -->
         <?php if ($showSearchForm): ?>
             <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="search_account">
                 <div class="mb-3">
                     <label for="search_credential" class="form-label fw-semibold">Email, Username, or Phone</label>
-                    <input type="text" class="form-control" id="search_credential" name="search_credential" required placeholder="Enter credentials">
+                    <input type="text" class="form-control" id="search_credential" name="search_credential" required placeholder="e.g. johndoe or 09123456789">
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Search Account</button>
             </form>
 
-        <!-- STEP 2: Display Account Found & Trigger Send OTP -->
+        <!-- STEP 2: Show Found Account & Confirmation -->
         <?php elseif ($showAccountFound): ?>
             <div class="text-center p-3 mb-3 border rounded bg-light">
-                <div class="user-avatar"><i class="bi bi-person-fill"></i></div>
-                <h5 class="fw-bold text-dark mb-1"><?= h($_SESSION['pw_reset_account']['name']) ?></h5>
-                <p class="text-muted small mb-0">Email: <?= h($maskedEmail) ?></p>
+                <!-- IPAPAKITA LAMANG ANG PROFILE PICTURE KUNG MAY KINUHA SA DATABASE -->
+                <?php if (!empty($_SESSION['pw_reset_account']['profile_pic'])): ?>
+                    <img src="<?= h($_SESSION['pw_reset_account']['profile_pic']) ?>" alt="Profile Picture" class="user-profile-img">
+                <?php endif; ?>
+                
+                <h5 class="fw-bold text-dark mb-1 text-break"><?= h($_SESSION['pw_reset_account']['name']) ?></h5>
+                <p class="text-muted small mb-0 text-break">Email: <?= h($maskedEmail) ?></p>
             </div>
             <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="send_otp">
                 <button type="submit" class="btn btn-primary w-100 mb-2">
-                    <i class="bi bi-envelope me-2"></i>Send Verification Code to Email
+                    <i class="bi bi-envelope me-2"></i>Send Code to Email
                 </button>
             </form>
             <form method="POST">
@@ -330,18 +436,18 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                 <input type="hidden" name="action" value="verify_otp">
                 <div class="mb-3">
                     <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
-                    <input type="text" class="form-control text-center" id="otp" name="otp" inputmode="numeric"
-                        pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="Enter OTP"
-                        autocomplete="one-time-code" style="letter-spacing:8px;font-size:1.25rem">
+                    <input type="text" class="form-control text-center fw-bold" id="otp" name="otp" inputmode="numeric"
+                        pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="******"
+                        autocomplete="one-time-code" style="letter-spacing:6px; font-size:1.2rem;">
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
             </form>
             <form method="POST" class="mt-2" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="send_otp">
-                <button type="submit" class="btn btn-link text-decoration-none w-100 text-center">Resend OTP Code</button>
+                <button type="submit" class="btn btn-link text-decoration-none w-100 text-center text-muted small">Resend OTP Code</button>
             </form>
 
-        <!-- STEP 4: Password Reset Form -->
+        <!-- STEP 4: Reset Password Form -->
         <?php elseif ($showPasswordForm): ?>
             <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="reset_password">
@@ -351,7 +457,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                     <div class="input-group">
                         <input type="password" class="form-control" id="new_password" name="new_password" minlength="8"
                             required autocomplete="new-password" placeholder="At least 8 characters">
-                        <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword">
+                        <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword" aria-label="Toggle password visibility">
                             <i class="bi bi-eye" id="iconNewPassword"></i>
                         </button>
                     </div>
@@ -362,7 +468,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                     <div class="input-group">
                         <input type="password" class="form-control" id="confirm_password" name="confirm_password"
                             minlength="8" required autocomplete="new-password" placeholder="Re-enter new password">
-                        <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword">
+                        <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword" aria-label="Toggle password visibility">
                             <i class="bi bi-eye" id="iconConfirmPassword"></i>
                         </button>
                     </div>
@@ -405,4 +511,5 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         <?php endif; ?>
     </script>
 </body>
+
 </html>
