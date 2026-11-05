@@ -439,17 +439,17 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // Dynamic Image Resolver for Local Uploads, Google Drive links, and Fallbacks
-                                        $v_img_raw = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
+                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product[cite: 2]
+                                        $v_image_val = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
                                         $img_src = '';
 
-                                        if (!empty($v_img_raw)) {
+                                        if (!empty($v_image_val)) {
                                             $file_id = '';
 
-                                            if (stripos($v_img_raw, 'data:image/') === 0) {
-                                                $img_src = $v_img_raw;
-                                            } elseif (filter_var($v_img_raw, FILTER_VALIDATE_URL)) {
-                                                $parsed_url = parse_url($v_img_raw);
+                                            if (stripos($v_image_val, 'data:image/') === 0) {
+                                                $img_src = $v_image_val;
+                                            } elseif (filter_var($v_image_val, FILTER_VALIDATE_URL)) {
+                                                $parsed_url = parse_url($v_image_val);
                                                 $host = strtolower($parsed_url['host'] ?? '');
 
                                                 if ($host === 'drive.google.com' || $host === 'docs.google.com') {
@@ -465,12 +465,13 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                         $img_src = '../drive-image.php?id=' . urlencode($file_id);
                                                     }
                                                 } else {
-                                                    $img_src = $v_img_raw;
+                                                    $img_src = $v_image_val;
                                                 }
-                                            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $v_img_raw) && !str_contains($v_img_raw, '/')) {
-                                                $img_src = '../drive-image.php?id=' . urlencode($v_img_raw);
+                                            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $v_image_val) && !str_contains($v_image_val, '/')) {
+                                                $img_src = '../drive-image.php?id=' . urlencode($v_image_val);
                                             } else {
-                                                $clean_path = ltrim($v_img_raw, '/');
+                                                // Siguraduhing tama ang relative path depende sa uploaded filename[cite: 2]
+                                                $clean_path = ltrim($v_image_val, '/');
                                                 if (str_starts_with($clean_path, '../')) {
                                                     $img_src = $clean_path;
                                                 } else {
