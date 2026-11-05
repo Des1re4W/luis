@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
 
 // Check admin access
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
@@ -18,7 +19,7 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
     );
     $is_archive_action = isset($_GET['archive_id']);
     $new_status = $is_archive_action ? 1 : 0;
-    
+
     $action_name = $is_archive_action ? 'Archive Product' : 'Unarchive Product';
 
     if ($target_id === false || $target_id === null || $target_id <= 0) {
@@ -52,7 +53,7 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
         $role = $_SESSION['role'] ?? 'admin';
         $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
-        
+
         $log_stmt = $pdo->prepare("
             INSERT INTO audit_log
                 (user_id, username, role, action, details, timestamp)
@@ -216,7 +217,7 @@ try {
         $query .= " ORDER BY product_id DESC";
 
     } else {
-        
+
         // Normal inventory list or archived list based on filter
         $archived_condition = ($filter === 'archived') ? "p.is_archived = 1" : "p.is_archived = 0";
 
@@ -481,10 +482,13 @@ try {
                             <th class="text-center" style="width: 80px;">Image</th>
                             <th>Product Name</th>
                             <th>Category</th>
-                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Specific Item / Variant' : 'Variants List'; ?></th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Specific Item / Variant' : 'Variants List'; ?>
+                            </th>
                             <th class="text-center">
-                                <?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Stock Level' : 'Main Stock'; ?></th>
-                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Price' : 'Price Range / Single Price'; ?></th>
+                                <?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Stock Level' : 'Main Stock'; ?>
+                            </th>
+                            <th><?php echo ($filter == 'low_stock' || $filter == 'out_of_stock') ? 'Price' : 'Price Range / Single Price'; ?>
+                            </th>
                             <th class="text-center" style="width: 260px;">Actions</th>
                         </tr>
                     </thead>
@@ -527,31 +531,76 @@ try {
 
                                     $t_stock = $row['total_stock'];
                                 }
+                                $img_src = '../assets/images/no-image.png';
 
-                                // Handle Image Source Logic (Base64 / URL / File Path)
-                                $img_src = '../assets/no-image.jpg';
                                 if (!empty($p_image)) {
-                                    // 1. Kung nakatabi na sa DB bilang Base64 data string
-                                    if (stripos($p_image, 'data:image/') === 0) {
-                                        $img_src = $p_image;
-                                    } 
-                                    // 2. Kung nakatabi bilang ganap na HTTPS Cloud URL (halimbawa Cloudinary o Supabase)
-                                    elseif (filter_var($p_image, FILTER_VALIDATE_URL)) {
-                                        $img_src = $p_image;
-                                    } 
-                                    // 3. Kung nakatabi bilang local file name sa server folder
-                                    else {
-                                        $image_file = basename($p_image);
-                                        $file_path = __DIR__ . '/../uploads/' . $image_file;
+
+                                    $image_value = trim($p_image);
+                                    $file_id = '';
+
+                                    if (stripos($image_value, 'data:image/') === 0) {
+
+                                        $img_src = $image_value;
+
+                                    } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+
+                                        $parsed_url = parse_url($image_value);
+                                        $host = strtolower($parsed_url['host'] ?? '');
+
+                                        if (
+                                            $host === 'drive.google.com' ||
+                                            $host === 'docs.google.com'
+                                        ) {
+
+                                            parse_str($parsed_url['query'] ?? '', $query_params);
+
+                                            if (!empty($query_params['id'])) {
+                                                $file_id = $query_params['id'];
+                                            } elseif (
+                                                preg_match(
+                                                    '#/file/d/([A-Za-z0-9_-]+)#',
+                                                    $parsed_url['path'] ?? '',
+                                                    $matches
+                                                )
+                                            ) {
+                                                $file_id = $matches[1];
+                                            }
+
+                                            if ($file_id !== '') {
+                                                $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                                            }
+
+                                        } else {
+
+                                            $img_src = $image_value;
+
+                                        }
+
+                                    } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
+
+                                        $img_src = '../drive-image.php?id=' . urlencode($image_value);
+
+                                    } else {
+
+                                        $image_path = ltrim($image_value, '/');
+                                        $file_path = __DIR__ . '/../' . $image_path;
+
                                         if (file_exists($file_path)) {
-                                            $img_src = '../uploads/' . htmlspecialchars($image_file);
+                                            $img_src = '../' . htmlspecialchars(
+                                                $image_path,
+                                                ENT_QUOTES,
+                                                'UTF-8'
+                                            );
                                         }
                                     }
                                 }
                                 ?>
                                 <tr>
                                     <td class="text-center">
-                                        <img src="<?php echo $img_src; ?>" alt="Product Image">
+                                        <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                            alt="<?php echo htmlspecialchars($p_name, ENT_QUOTES, 'UTF-8'); ?>"
+                                            onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                            loading="lazy">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
@@ -617,7 +666,7 @@ try {
                                         </div>
                                     </td>
                                 </tr>
-                            <?php
+                                <?php
                             } while ($row = $result->fetch(PDO::FETCH_ASSOC));
                         } else {
                             echo "<tr><td colspan='7' class='text-center py-4 text-muted'>No products found.</td></tr>";
