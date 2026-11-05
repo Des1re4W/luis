@@ -94,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = "danger";
         } else {
             try {
-                // Isinama ang profile_pic sa SELECT query (palitan ang profile_pic kung iba ang column name sa DB mo, hal. avatar / profile_image)
-                $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number, profile_pic FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
+                // Ginamit ang profile_image bilang column name mula sa database schema
+                $stmt = $pdo->prepare("SELECT id, fullname, username, email, phone_number, profile_image FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone_number = ?) AND status = 'Active' LIMIT 1");
                 $stmt->execute([$input, $input, $input]);
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -105,10 +105,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     clearResetSession();
                     $_SESSION['pw_reset_account'] = [
-                        'id'          => $user['id'],
-                        'name'        => $user['fullname'] ?? $user['username'] ?? 'User Account',
-                        'email'       => $user['email'],
-                        'profile_pic' => !empty($user['profile_pic']) ? $user['profile_pic'] : null
+                        'id'            => $user['id'],
+                        'name'          => $user['fullname'] ?? $user['username'] ?? 'User Account',
+                        'email'         => $user['email'],
+                        'profile_image' => !empty($user['profile_image']) ? $user['profile_image'] : null
                     ];
                 }
             } catch (\PDOException $e) {
@@ -411,9 +411,9 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         <!-- STEP 2: Show Found Account & Confirmation -->
         <?php elseif ($showAccountFound): ?>
             <div class="text-center p-3 mb-3 border rounded bg-light">
-                <!-- IPAPAKITA LAMANG ANG PROFILE PICTURE KUNG MAY KINUHA SA DATABASE -->
-                <?php if (!empty($_SESSION['pw_reset_account']['profile_pic'])): ?>
-                    <img src="<?= h($_SESSION['pw_reset_account']['profile_pic']) ?>" alt="Profile Picture" class="user-profile-img">
+                <!-- IPAPAKITA LANG ANG PROFILE PICTURE KUNG MAY NAKALAGAY SA DATABASE -->
+                <?php if (!empty($_SESSION['pw_reset_account']['profile_image'])): ?>
+                    <img src="<?= h($_SESSION['pw_reset_account']['profile_image']) ?>" alt="Profile Picture" class="user-profile-img">
                 <?php endif; ?>
                 
                 <h5 class="fw-bold text-dark mb-1 text-break"><?= h($_SESSION['pw_reset_account']['name']) ?></h5>
