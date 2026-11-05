@@ -55,7 +55,8 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->CharSet    = 'UTF-8';
         $mail->Timeout    = 30;
         $mail->SMTPKeepAlive = false;
-        $mail->SMTPDebug  = SMTP::DEBUG_OFF;
+        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
+$mail->Debugoutput = 'error_log';
 
         $mail->setFrom($smtpUsername, SMTP_FROM_NAME);
         $mail->addAddress($email);
