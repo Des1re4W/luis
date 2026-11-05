@@ -39,18 +39,20 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Retrieve Reference Number, Paid Amount, and Receipt Date/Time from OCR Hidden Inputs
+    // Retrieve OCR Values
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
-    // Calculate paid amount based on payment scheme if OCR amount detection is unavailable
-    if ($detected_paid_amount > 0) {
+    // BACKEND STRICT VALIDATION FOR GCASH / MAYA
+    if (in_array($payment_method, ['GCash', 'Maya'])) {
+        if (empty($ref_no) || $detected_paid_amount <= 0) {
+            die("<script>alert('Order Failed: Invalid receipt photo. No valid Reference Number or Paid Amount detected by the OCR scanner.'); history.back();</script>");
+        }
         $paid_amount = $detected_paid_amount;
-    } elseif ($grand_total >= 5000 && $payment_scheme === '50_percent') {
-        $paid_amount = $grand_total * 0.5;
     } else {
-        $paid_amount = $grand_total;
+        // COD logic
+        $paid_amount = 0;
     }
 
     if (in_array($payment_method, ['GCash', 'Maya'])) {
@@ -81,7 +83,7 @@ if (isset($_POST['place_order'])) {
         
         $pdo->beginTransaction();
 
-        // 1. Insert order into database with receiptdt column
+        // Insert order into database
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, order_date, status) 
             VALUES 
@@ -108,7 +110,7 @@ if (isset($_POST['place_order'])) {
 
         $order_id = $pdo->lastInsertId();
 
-        // 2. Insert order items and update product stock
+        // Insert order items & update stock
         foreach ($items_to_process as $item) {
             $qty = (int)$item['qty'];
             $price = (float)$item['price'];
@@ -291,7 +293,7 @@ if (isset($_POST['place_order'])) {
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
                             
-                            <!-- Hidden Inputs: Automatically saved to Database (ref_no, paid_amount, and receiptdt) -->
+                            <!-- Hidden Inputs: Automatically saved to Database -->
                             <input type="hidden" name="ref_no" id="ref_no_input">
                             <input type="hidden" name="paid_amount" id="paid_amount_input">
                             <input type="hidden" name="receiptdt" id="receiptdt_input">
@@ -303,7 +305,7 @@ if (isset($_POST['place_order'])) {
 
                             <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
                             <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-1" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
-                            <small class="text-muted d-block mb-2"><i>Note: For best results, please upload a direct screenshot instead of taking a photo of another screen.</i></small>
+                            <small class="text-muted d-block mb-2"><i>Note: For best results, please upload a direct screenshot of your payment receipt.</i></small>
                         </div>
 
                         <div class="col-12 form-check ps-4">
@@ -344,6 +346,11 @@ function togglePaymentFields() {
         if (codMessage) codMessage.classList.remove('d-none');
         if (optionBox) optionBox.classList.add('d-none');
         if (proofInput) proofInput.required = false;
+        
+        // Reset hidden OCR inputs for COD
+        document.getElementById('ref_no_input').value = "";
+        document.getElementById('paid_amount_input').value = "";
+        document.getElementById('receiptdt_input').value = "";
     }
 }
 
@@ -376,7 +383,7 @@ function toggleSubmitButton() {
     }
 }
 
-// Tesseract OCR Receipt Scanner Function
+// Tesseract OCR Receipt Scanner Function with Strict Validation
 async function processReceiptOCR(fileInput) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -386,10 +393,16 @@ async function processReceiptOCR(fileInput) {
     const refInput = document.getElementById('ref_no_input');
     const paidInput = document.getElementById('paid_amount_input');
     const dtInput = document.getElementById('receiptdt_input');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // CLEAR HIDDEN INPUTS BEFORE SCANNING
+    refInput.value = "";
+    paidInput.value = "";
+    dtInput.value = "";
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt image...';
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt image via OCR...';
 
     try {
         const result = await Tesseract.recognize(
@@ -412,9 +425,8 @@ async function processReceiptOCR(fileInput) {
         let detectedAmount = '';
         let detectedDateTime = '';
 
-        // 1. REF NO EXTRACTION (Strictly numeric digits to prevent dates like 'Oct4' from attaching)
+        // 1. REF NO EXTRACTION
         let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([0-9\s]{9,20})/i);
-        
         if (refMatch) {
             let cleanedDigits = refMatch[1].replace(/\s+/g, '').trim();
             if (cleanedDigits.length >= 9 && cleanedDigits.length <= 15) {
@@ -422,7 +434,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
         
-        // Fallback: Looking for continuous space-separated numeric digits (GCash 0044 323 949002 format)
         if (!detectedRef) {
             let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}\b/);
             if (spaceSeparatedMatch) {
@@ -430,7 +441,7 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // 2. AMOUNT EXTRACTION (Extracting Total Amount Sent)
+        // 2. AMOUNT EXTRACTION
         let amountMatch = text.match(/(?:Total\s*Amount\s*Sent|Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
         if (amountMatch) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
@@ -441,7 +452,7 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // 3. DATE & TIME EXTRACTION (e.g., Aug 25, 2026 11:35 AM or 10/04/2026 19:40)
+        // 3. DATE & TIME EXTRACTION
         let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i);
         if (!dateTimeMatch) {
             dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
@@ -450,45 +461,54 @@ async function processReceiptOCR(fileInput) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // Assign extracted values to Hidden Inputs to automatically save into database columns
-        if (detectedRef) refInput.value = detectedRef;
-        if (detectedAmount) paidInput.value = detectedAmount;
-        if (detectedDateTime) dtInput.value = detectedDateTime;
-
-        // UI Feedback for User
-        if (detectedRef !== '') {
+        // STRICT CHECK: IF NO REFERENCE NUMBER OR AMOUNT IS DETECTED (e.g. photo of a dog)
+        if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
-            statusBox.classList.add('alert-success');
-            
-            let message = `
-    <strong>Receipt scanned successfully!</strong><br>
-    <small class="text-warning">
-        Reminder: Please ensure that the payment amount exactly matches the total amount to avoid order rejection.
-    </small><br>
-`;
-            message += `Ref No: <b>${detectedRef}</b>`;
-            if (detectedAmount !== '') {
-                message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
-            }
-            if (detectedDateTime !== '') {
-                message += `<br>Date & Time: <b>${detectedDateTime}</b>`;
-            }
-            statusText.innerHTML = message;
-        } else {
-            statusBox.classList.remove('alert-info');
-            statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Receipt read, but Reference Number was not clearly detected. Please ensure image is clear or upload a direct screenshot.';
+            statusBox.classList.add('alert-danger');
+            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear GCash/Maya payment receipt screenshot.';
+            fileInput.value = ""; // Clear file selection
+            return;
         }
+
+        // Assign values to hidden inputs ONLY IF VALID
+        refInput.value = detectedRef;
+        paidInput.value = detectedAmount;
+        dtInput.value = detectedDateTime ? detectedDateTime : "N/A";
+
+        // Display Success Message
+        statusBox.classList.remove('alert-info');
+        statusBox.classList.add('alert-success');
+        
+        let message = `<strong>✓ Receipt scanned successfully!</strong><br>`;
+        message += `Ref No: <b>${detectedRef}</b>`;
+        message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+        if (detectedDateTime !== '') {
+            message += `<br>Date & Time: <b>${detectedDateTime}</b>`;
+        }
+        statusText.innerHTML = message;
 
     } catch (error) {
         console.error("OCR Reading Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Could not read text from image. Please ensure image is clear or upload a direct screenshot.';
+        statusText.innerHTML = '❌ Could not process image. Please upload a clear valid GCash or Maya receipt screenshot.';
+        fileInput.value = "";
     }
 }
 
 document.querySelector('form').addEventListener('submit', function(e) {
+    const selectedRadio = document.querySelector('input[name="payment_method"]:checked');
+    if (selectedRadio && (selectedRadio.value === 'GCash' || selectedRadio.value === 'Maya')) {
+        const refNo = document.getElementById('ref_no_input').value;
+        const paidAmt = document.getElementById('paid_amount_input').value;
+        
+        if (!refNo || !paidAmt) {
+            alert("Checkout Blocked: Valid payment receipt details were not detected. Please upload a valid GCash or Maya payment receipt.");
+            e.preventDefault();
+            return false;
+        }
+    }
+
     const contact = document.querySelector('input[name="contact_number"]').value;
     if (!contact.startsWith('09') || contact.length !== 11) {
         alert("Contact number must start with '09' with 11 digits total");
