@@ -388,7 +388,7 @@ async function processReceiptOCR(fileInput) {
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Binabasa ang receipt...';
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt...';
 
     try {
         const result = await Tesseract.recognize(
