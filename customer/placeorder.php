@@ -39,12 +39,12 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Kukunin ang Reference Number, Paid Amount, at Receipt Date/Time mula sa OCR Hidden Inputs
+    // Retrieve Reference Number, Paid Amount, and Receipt Date/Time from OCR Hidden Inputs
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
-    // Kalkulahin ang paid amount base sa scheme kung sakaling hindi na-detect ng OCR
+    // Calculate paid amount based on payment scheme if OCR amount detection is unavailable
     if ($detected_paid_amount > 0) {
         $paid_amount = $detected_paid_amount;
     } elseif ($grand_total >= 5000 && $payment_scheme === '50_percent') {
@@ -81,7 +81,7 @@ if (isset($_POST['place_order'])) {
         
         $pdo->beginTransaction();
 
-        // 1. I-insert ang order kasama ang receiptdt column
+        // 1. Insert order into database with receiptdt column
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, order_date, status) 
             VALUES 
@@ -108,7 +108,7 @@ if (isset($_POST['place_order'])) {
 
         $order_id = $pdo->lastInsertId();
 
-        // 2. I-insert ang order items at i-update ang stock
+        // 2. Insert order items and update product stock
         foreach ($items_to_process as $item) {
             $qty = (int)$item['qty'];
             $price = (float)$item['price'];
@@ -291,18 +291,19 @@ if (isset($_POST['place_order'])) {
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
                             
-                            <!-- Hidden Inputs: Awtomatikong masesave sa Database (ref_no, paid_amount, at receiptdt) -->
+                            <!-- Hidden Inputs: Automatically saved to Database (ref_no, paid_amount, and receiptdt) -->
                             <input type="hidden" name="ref_no" id="ref_no_input">
                             <input type="hidden" name="paid_amount" id="paid_amount_input">
                             <input type="hidden" name="receiptdt" id="receiptdt_input">
 
                             <!-- OCR Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
-                                <span id="ocr_status_text">Reading receipt...</span>
+                                <span id="ocr_status_text">Reading receipt image...</span>
                             </div>
 
                             <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
-                            <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-2" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
+                            <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-1" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
+                            <small class="text-muted d-block mb-2"><i>Note: For best results, please upload a direct screenshot instead of taking a photo of another screen.</i></small>
                         </div>
 
                         <div class="col-12 form-check ps-4">
@@ -388,7 +389,7 @@ async function processReceiptOCR(fileInput) {
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt...';
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt image...';
 
     try {
         const result = await Tesseract.recognize(
@@ -398,7 +399,7 @@ async function processReceiptOCR(fileInput) {
                 logger: m => {
                     if (m.status === 'recognizing text') {
                         let progress = Math.round(m.progress * 100);
-                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt: ${progress}%`;
+                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading text: ${progress}%`;
                     }
                 }
             }
@@ -407,58 +408,59 @@ async function processReceiptOCR(fileInput) {
         const text = result.data.text;
         console.log("OCR Extracted Raw Text:\n", text);
 
-        // 1. REF NO EXTRACTION (Strict: PURONG NUMERO LANG para hindi sumama ang 'Oct4' o anumang date string)
         let detectedRef = '';
-        
-        // Match explicit Ref No followed by digits (e.g. Ref No. 0045761084221)
-        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*(\d{9,15})/i);
+        let detectedAmount = '';
+        let detectedDateTime = '';
+
+        // 1. REF NO EXTRACTION (Strictly numeric digits to prevent dates like 'Oct4' from attaching)
+        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([0-9\s]{9,20})/i);
         
         if (refMatch) {
-            detectedRef = refMatch[1].trim();
-        } else {
-            // Fallback: Naghahanap ng 9-15 continuous numeric digits lamang
-            let digitsMatch = text.match(/\b\d{9,15}\b/);
-            if (digitsMatch) {
-                detectedRef = digitsMatch[0].trim();
+            let cleanedDigits = refMatch[1].replace(/\s+/g, '').trim();
+            if (cleanedDigits.length >= 9 && cleanedDigits.length <= 15) {
+                detectedRef = cleanedDigits;
+            }
+        }
+        
+        // Fallback: Looking for continuous space-separated numeric digits (GCash 0044 323 949002 format)
+        if (!detectedRef) {
+            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}\b/);
+            if (spaceSeparatedMatch) {
+                detectedRef = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
             }
         }
 
         // 2. AMOUNT EXTRACTION (Extracting Total Amount Sent)
-        let detectedAmount = '';
-        let amountMatch = text.match(/(?:Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
+        let amountMatch = text.match(/(?:Total\s*Amount\s*Sent|Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
         if (amountMatch) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
+        } else {
+            let fallbackAmount = text.match(/\b[\d,]+\.\d{2}\b/);
+            if (fallbackAmount) {
+                detectedAmount = fallbackAmount[0].replace(/,/g, '');
+            }
         }
 
-        // 3. DATE & TIME EXTRACTION (Extracting Date & Time e.g., Oct 4, 2026 7:40 PM or 10/04/2026 19:40)
-        let detectedDateTime = '';
-        let dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4}|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* \d{1,2},? \d{4}\b)\s*(?:at\s*)?(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
+        // 3. DATE & TIME EXTRACTION (e.g., Aug 25, 2026 11:35 AM or 10/04/2026 19:40)
+        let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i);
+        if (!dateTimeMatch) {
+            dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
+        }
         if (dateTimeMatch) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // I-assign ang values sa Hidden Inputs para masesave sa orders table columns (ref_no, paid_amount, receiptdt)!
-        if (detectedRef !== '') {
-            refInput.value = detectedRef;
-        }
-        if (detectedAmount !== '') {
-            paidInput.value = detectedAmount;
-        }
-        if (detectedDateTime !== '') {
-            dtInput.value = detectedDateTime;
-        }
+        // Assign extracted values to Hidden Inputs to automatically save into database columns
+        if (detectedRef) refInput.value = detectedRef;
+        if (detectedAmount) paidInput.value = detectedAmount;
+        if (detectedDateTime) dtInput.value = detectedDateTime;
 
-        // UI Feedback sa User
+        // UI Feedback for User
         if (detectedRef !== '') {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-success');
             
-           let message = `
-    <strong>✓ Receipt scanned successfully!</strong><br>
-    <small class="text-warning">
-        Reminder: Please ensure that the payment amount exactly matches the total amount to avoid Order rejection.
-    </small><br>
-`;
+            let message = `<strong>✓ Receipt scanned successfully!</strong><br>`;
             message += `Ref No: <b>${detectedRef}</b>`;
             if (detectedAmount !== '') {
                 message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
@@ -470,14 +472,14 @@ async function processReceiptOCR(fileInput) {
         } else {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️  Unable to read the text in the image. Please ensure that the receipt is clear and readable.';
+            statusText.innerHTML = '⚠️ Receipt read, but Reference Number was not clearly detected. Please ensure image is clear or upload a direct screenshot.';
         }
 
     } catch (error) {
         console.error("OCR Reading Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Unable to read the text in the image. Please ensure that the receipt is clear and readable.';
+        statusText.innerHTML = '❌ Could not read text from image. Please ensure image is clear or upload a direct screenshot.';
     }
 }
 
