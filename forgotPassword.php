@@ -427,7 +427,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                 <input type="hidden" name="action" value="search_account">
                 <div class="mb-3">
                     <label for="search_credential" class="form-label fw-semibold">Email, Username, or Phone</label>
-                    <input type="text" class="form-control" id="search_credential" name="search_credential" required placeholder="e.g. johndoe or 09123456789">
+                    <input type="text" class="form-control" id="search_credential" name="search_credential" required>
                 </div>
                 <button type="submit" class="btn btn-primary w-100">Search Account</button>
             </form>
