@@ -32,6 +32,11 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
+        $mail->SMTPDebug = SMTP::DEBUG_SERVER;
+
+$mail->Debugoutput = function ($str, $level) {
+    error_log("SMTP DEBUG [$level]: $str");
+};
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
