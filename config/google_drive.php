@@ -23,7 +23,6 @@ function getGoogleDriveClient(): Google\Client
         Google\Service\Drive::DRIVE
     ]);
 
-    // Exchange refresh token for a valid access token
     $token = $client->fetchAccessTokenWithRefreshToken($refreshToken);
 
     if (isset($token['error'])) {
