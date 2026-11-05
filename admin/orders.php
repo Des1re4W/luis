@@ -958,9 +958,21 @@ function viewCustomer(data) {
     }
 
     if (data.proof_of_payment && data.proof_of_payment.trim() !== "" && currentMOP !== "COD") {
+        // Path resolver para maiwasan ang broken image path
+        let proofPath = data.proof_of_payment.trim();
+        let finalSrc = "";
+
+        if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
+            finalSrc = proofPath;
+        } else if (proofPath.startsWith('../')) {
+            finalSrc = proofPath;
+        } else {
+            finalSrc = '../' + proofPath.replace(/^\/+/, '');
+        }
+
         htmlContent += `
-            <a href="../${data.proof_of_payment}" target="_blank" title="Click to view full image">
-                <img src="../${data.proof_of_payment}" class="img-thumbnail mt-1" style="max-height: 200px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #ffc107;">
+            <a href="${finalSrc}" target="_blank" title="Click to view full image">
+                <img src="${finalSrc}" class="img-thumbnail mt-1" style="max-height: 200px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #ffc107;" onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
             </a>
             <small class="text-muted d-block mt-1"><i class="bi bi-zoom-in"></i> Click the image to view full size</small>
         `;
