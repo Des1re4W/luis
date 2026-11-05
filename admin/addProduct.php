@@ -17,18 +17,15 @@ if (isset($_POST['submit'])) {
     $stock = $_POST['stock'];
     $description = $_POST['product_description'];
 
-    // --- PRICE VALIDATION: Cost price must not be higher than selling price ---
     if (floatval($cost_price) > floatval($price)) {
         $message = "Error: Cost price cannot be higher than the selling price!";
     } else {
-        // --- DUPLICATE CHECK ---
         $check_stmt = $pdo->prepare("SELECT id FROM products WHERE product_name = :name");
         $check_stmt->execute([':name' => $name]);
 
         if ($check_stmt->rowCount() > 0) {
             $message = "Error: Product '$name' already exists in the inventory!";
         } else {
-            // --- FILE UPLOAD & VALIDATION CHECK ---
             if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
                 $error_code = $_FILES['image']['error'] ?? 'No file';
                 $message = "Error: Please select a valid product image to upload. (Code: " . $error_code . ")";
