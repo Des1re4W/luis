@@ -18,7 +18,6 @@ $messageType = "info";
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-// Replace with your 16-character Google App Password (without spaces)
 const SMTP_PASSWORD = 'miohifpavqdzvzvn'; 
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
@@ -34,22 +33,18 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->isSMTP();
         $mail->SMTPDebug = SMTP::DEBUG_SERVER;
 
-$mail->Debugoutput = function ($str, $level) {
-    error_log("SMTP DEBUG [$level]: $str");
-};
+        $mail->Debugoutput = function ($str, $level) {
+            error_log("SMTP DEBUG [$level]: $str");
+        };
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
         $mail->Password   = SMTP_PASSWORD;
         
-        // STARTTLS on Port 587 for maximum local (XAMPP) compatibility
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         $mail->CharSet    = 'UTF-8';
-        
-        // Timeout and SSL options to bypass local certificate verification issues
-        $mail->Timeout       = 15;
-        $mail->SMTPKeepAlive = false;
+        $mail->Timeout    = 15;
 
         $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
@@ -68,16 +63,16 @@ $mail->Debugoutput = function ($str, $level) {
 
         $mail->send();
         return true;
- } catch (\Throwable $e) {
-    error_log("OTP EMAIL ERROR: " . $e->getMessage());
-    error_log("OTP SMTP ERROR: " . ($mail->ErrorInfo ?? 'No SMTP error details'));
-    return false;
-}
+    } catch (\Throwable $e) {
+        error_log("OTP EMAIL ERROR: " . $e->getMessage());
+        return false;
+    }
 }
 
 function clearResetSession(): void
 {
     unset(
+        $_SESSION['pw_reset_account'],
         $_SESSION['pw_reset_email'],
         $_SESSION['pw_reset_otp_hash'],
         $_SESSION['pw_reset_expires'],
@@ -90,60 +85,75 @@ function clearResetSession(): void
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    // STEP 1: Validate email and send OTP.
-    if ($action === 'send_otp') {
-        $email = strtolower(trim($_POST['email'] ?? ''));
+    // STEP 1: Search Account via Username, Email, or Phone (FB-style Search)
+    if ($action === 'search_account') {
+        $input = trim($_POST['search_credential'] ?? '');
 
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $message = "Please enter a valid email address.";
+        if (empty($input)) {
+            $message = "Please enter your username, email, or phone number.";
             $messageType = "danger";
-        } elseif (!empty($_SESSION['pw_reset_last_sent']) && time() - (int) $_SESSION['pw_reset_last_sent'] < 60) {
-            $message = "Please wait 60 seconds before requesting another OTP.";
-            $messageType = "warning";
         } else {
-            $stmt = $pdo->prepare("SELECT id, email FROM users WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
-            if (!$stmt) {
-                $message = "A system error occurred. Please try again later.";
-                $messageType = "danger";
-            } else {
-                $stmt->execute([$email]);
+            // Hinahanap sa username, email, o phone column (Baguhin ang column names depende sa DB schema mo)
+            $stmt = $pdo->prepare("SELECT id, name, username, email, phone FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?) AND status = 'Active' LIMIT 1");
+            
+            if ($stmt && $stmt->execute([$input, $input, $input])) {
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if (!$user) {
-                    $message = "No active account was found with that email address.";
+                    $message = "No active account found matching those details.";
                     $messageType = "danger";
                 } else {
-                    $otp = (string) random_int(100000, 999999);
-
-                    if (sendResetOtp($user['email'], $otp)) {
-                        clearResetSession();
-                        $_SESSION['pw_reset_email']     = $user['email'];
-                        $_SESSION['pw_reset_otp_hash']  = password_hash($otp, PASSWORD_DEFAULT);
-                        $_SESSION['pw_reset_expires']   = time() + 300;
-                        $_SESSION['pw_reset_attempts']  = 0;
-                        $_SESSION['pw_reset_last_sent'] = time();
-
-                        $message = "OTP sent to your email. Please check your inbox and spam folder.";
-                        $messageType = "success";
-                    } else {
-                        $message = "Unable to send the OTP email. Please check the Gmail SMTP settings and try again.";
-                        $messageType = "danger";
-                    }
+                    clearResetSession();
+                    // I-save sa session ang nahanap na account
+                    $_SESSION['pw_reset_account'] = [
+                        'id' => $user['id'],
+                        'name' => $user['name'] ?? $user['username'] ?? 'User',
+                        'email' => $user['email']
+                    ];
                 }
+            } else {
+                $message = "A system error occurred. Please try again later.";
+                $messageType = "danger";
             }
         }
     }
 
-    // STEP 2: Verify OTP before showing the password form.
+    // STEP 2: Send OTP to the found account's email
+    elseif ($action === 'send_otp') {
+        if (empty($_SESSION['pw_reset_account']['email'])) {
+            $message = "Session expired. Please search for your account again.";
+            $messageType = "warning";
+        } elseif (!empty($_SESSION['pw_reset_last_sent']) && time() - (int) $_SESSION['pw_reset_last_sent'] < 60) {
+            $message = "Please wait 60 seconds before requesting another OTP.";
+            $messageType = "warning";
+        } else {
+            $email = $_SESSION['pw_reset_account']['email'];
+            $otp = (string) random_int(100000, 999999);
+
+            if (sendResetOtp($email, $otp)) {
+                $_SESSION['pw_reset_email']     = $email;
+                $_SESSION['pw_reset_otp_hash']  = password_hash($otp, PASSWORD_DEFAULT);
+                $_SESSION['pw_reset_expires']   = time() + 300;
+                $_SESSION['pw_reset_attempts']  = 0;
+                $_SESSION['pw_reset_last_sent'] = time();
+
+                $message = "An OTP code has been sent to your email.";
+                $messageType = "success";
+            } else {
+                $message = "Unable to send the OTP email. Please try again.";
+                $messageType = "danger";
+            }
+        }
+    }
+
+    // STEP 3: Verify OTP Code
     elseif ($action === 'verify_otp') {
         $otp = trim($_POST['otp'] ?? '');
 
         if (empty($_SESSION['pw_reset_email']) || empty($_SESSION['pw_reset_otp_hash']) || empty($_SESSION['pw_reset_expires'])) {
-            clearResetSession();
             $message = "Your OTP session has expired. Please request a new OTP.";
             $messageType = "warning";
         } elseif (time() > (int) $_SESSION['pw_reset_expires']) {
-            clearResetSession();
             $message = "Your OTP has expired. Please request a new one.";
             $messageType = "warning";
         } elseif (!preg_match('/^\d{6}$/', $otp)) {
@@ -151,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = "danger";
         } elseif ((int) ($_SESSION['pw_reset_attempts'] ?? 0) >= 5) {
             clearResetSession();
-            $message = "Too many incorrect attempts. Please request a new OTP.";
+            $message = "Too many incorrect attempts. Please search for your account again.";
             $messageType = "danger";
         } elseif (password_verify($otp, $_SESSION['pw_reset_otp_hash'])) {
             $_SESSION['pw_reset_verified'] = true;
@@ -165,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // STEP 3: Change password only after successful OTP verification.
+    // STEP 4: Reset Password
     elseif ($action === 'reset_password') {
         if (empty($_SESSION['pw_reset_verified']) || empty($_SESSION['pw_reset_email'])) {
             $message = "Please verify your OTP first.";
@@ -185,29 +195,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
                 $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active'");
-                if (!$stmt) {
-                    $message = "A system error occurred. Please try again later.";
-                    $messageType = "danger";
+                if ($stmt && $stmt->execute([$hashedPassword, $email]) && $stmt->rowCount() > 0) {
+                    clearResetSession();
+                    $message = "Your password has been changed successfully. You can now log in.";
+                    $messageType = "success";
                 } else {
-                    if ($stmt->execute([$hashedPassword, $email]) && $stmt->rowCount() > 0) {
-                        clearResetSession();
-                        $message = "Your password has been changed successfully. You can now log in.";
-                        $messageType = "success";
-                    } else {
-                        $message = "Password could not be updated. Please request a new OTP and try again.";
-                        $messageType = "danger";
-                    }
+                    $message = "Password could not be updated. Please try again.";
+                    $messageType = "danger";
                 }
             }
         }
     }
+
+    // Action para mag-cancel o mag-search ng ibang account
+    elseif ($action === 'reset_flow') {
+        clearResetSession();
+    }
 }
 
+// State Handlers para sa UI
 $showPasswordForm = !empty($_SESSION['pw_reset_verified']) && !empty($_SESSION['pw_reset_email']);
-$showOtpForm      = !$showPasswordForm && !empty($_SESSION['pw_reset_email']) && !empty($_SESSION['pw_reset_otp_hash']);
-$maskedEmail      = '';
-if (!empty($_SESSION['pw_reset_email'])) {
-    $parts       = explode('@', $_SESSION['pw_reset_email']);
+$showOtpForm      = !$showPasswordForm && !empty($_SESSION['pw_reset_otp_hash']);
+$showAccountFound = !$showPasswordForm && !$showOtpForm && !empty($_SESSION['pw_reset_account']);
+$showSearchForm   = !$showPasswordForm && !$showOtpForm && !$showAccountFound;
+
+$maskedEmail = '';
+if (!empty($_SESSION['pw_reset_account']['email'])) {
+    $parts       = explode('@', $_SESSION['pw_reset_account']['email']);
     $name        = $parts[0] ?? '';
     $domain      = $parts[1] ?? '';
     $maskedEmail = (strlen($name) > 2 ? substr($name, 0, 2) : substr($name, 0, 1)) . str_repeat('*', max(2, strlen($name) - 2)) . '@' . $domain;
@@ -219,149 +233,116 @@ if (!empty($_SESSION['pw_reset_email'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Forgot Password | R. Taipan Hardware</title>
+    <title>Find Your Account | R. Taipan Hardware</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <style>
-        :root {
-            --navy: #001f4d;
-            --blue: #0d6efd
-        }
-
-        * {
-            box-sizing: border-box
-        }
-
+        :root { --navy: #001f4d; --blue: #0d6efd; }
+        * { box-sizing: border-box; }
         body {
-            margin: 0;
-            min-height: 100vh;
+            margin: 0; min-height: 100vh;
             background: linear-gradient(135deg, #edf3fb, #f8fafc);
             font-family: Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px
+            display: flex; align-items: center; justify-content: center; padding: 20px;
         }
-
         .reset-card {
-            width: 100%;
-            max-width: 480px;
-            background: #fff;
-            border-radius: 18px;
-            padding: clamp(22px, 5vw, 38px);
-            box-shadow: 0 12px 38px rgba(0, 31, 77, .12)
+            width: 100%; max-width: 480px; background: #fff;
+            border-radius: 18px; padding: clamp(22px, 5vw, 38px);
+            box-shadow: 0 12px 38px rgba(0, 31, 77, .12);
         }
-
         .brand-icon {
-            width: 66px;
-            height: 66px;
-            border-radius: 50%;
-            background: var(--navy);
-            color: #fff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 29px;
-            margin: 0 auto 16px
+            width: 66px; height: 66px; border-radius: 50%;
+            background: var(--navy); color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 29px; margin: 0 auto 16px;
         }
-
-        h1 {
-            font-size: clamp(1.4rem, 4vw, 1.8rem);
-            font-weight: 700;
-            color: var(--navy);
-            text-align: center
+        .user-avatar {
+            width: 70px; height: 70px; border-radius: 50%;
+            background: #e9ecef; color: var(--navy);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 32px; margin: 0 auto 12px;
         }
-
-        .subtitle {
-            text-align: center;
-            color: #6c757d;
-            font-size: .95rem;
-            margin-bottom: 24px
-        }
-
-        .form-control {
-            min-height: 48px;
-            border-radius: 10px
-        }
-
-        .input-group .btn-outline-secondary {
-            background-color: #fff;
-            border-color: #dee2e6;
-            color: #6c757d;
-        }
-
-        .input-group .btn-outline-secondary:hover {
-            background-color: #e9ecef;
-            border-color: #dee2e6;
-            color: #495057;
-        }
-
-        .btn-primary {
-            background: var(--navy);
-            border-color: var(--navy);
-            min-height: 48px;
-            border-radius: 10px;
-            font-weight: 600
-        }
-
-        .btn-primary:hover {
-            background: #06336f;
-            border-color: #06336f
-        }
-
-        .alert {
-            border-radius: 10px;
-            font-size: .92rem
-        }
-
-        .back-link {
-            display: block;
-            text-align: center;
-            margin-top: 20px;
-            color: var(--navy);
-            text-decoration: none;
-            font-weight: 600
-        }
-
-        .back-link:hover {
-            text-decoration: underline
-        }
-
-        @media(max-width:420px) {
-            body {
-                padding: 12px
-            }
-
-            .reset-card {
-                border-radius: 14px
-            }
-
-            .subtitle {
-                font-size: .88rem
-            }
-        }
+        h1 { font-size: clamp(1.4rem, 4vw, 1.8rem); font-weight: 700; color: var(--navy); text-align: center; }
+        .subtitle { text-align: center; color: #6c757d; font-size: .95rem; margin-bottom: 24px; }
+        .form-control { min-height: 48px; border-radius: 10px; }
+        .btn-primary { background: var(--navy); border-color: var(--navy); min-height: 48px; border-radius: 10px; font-weight: 600; }
+        .btn-primary:hover { background: #06336f; border-color: #06336f; }
+        .alert { border-radius: 10px; font-size: .92rem; }
+        .back-link { display: block; text-align: center; margin-top: 20px; color: var(--navy); text-decoration: none; font-weight: 600; }
+        .back-link:hover { text-decoration: underline; }
     </style>
 </head>
 
 <body>
     <main class="reset-card">
         <div class="brand-icon"><i class="bi bi-shield-lock"></i></div>
-        <h1>Forgot Password?</h1>
-        <p class="subtitle">
-            <?php if ($showPasswordForm): ?>
-                OTP verified. Set a new password for your account.
-            <?php elseif ($showOtpForm): ?>
-                Enter the 6-digit code sent to <strong><?= h($maskedEmail) ?></strong>.
-            <?php else: ?>
-                Enter your registered email address and we'll send you a one-time verification code.
-            <?php endif; ?>
-        </p>
+        
+        <?php if ($showSearchForm): ?>
+            <h1>Find Your Account</h1>
+            <p class="subtitle">Please enter your email, username, or mobile number to search for your account.</p>
+        <?php elseif ($showAccountFound): ?>
+            <h1>Is this your account?</h1>
+            <p class="subtitle">We found an account linked to your search details.</p>
+        <?php elseif ($showOtpForm): ?>
+            <h1>Enter Verification Code</h1>
+            <p class="subtitle">Enter the 6-digit OTP code sent to <strong><?= h($maskedEmail) ?></strong>.</p>
+        <?php elseif ($showPasswordForm): ?>
+            <h1>Create New Password</h1>
+            <p class="subtitle">Your identity is verified. Set a new password for your account.</p>
+        <?php endif; ?>
 
         <?php if ($message !== ''): ?>
             <div class="alert alert-<?= h($messageType) ?>"><?= h($message) ?></div>
         <?php endif; ?>
 
-        <?php if ($showPasswordForm): ?>
+        <!-- STEP 1: Search Form -->
+        <?php if ($showSearchForm): ?>
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
+                <input type="hidden" name="action" value="search_account">
+                <div class="mb-3">
+                    <label for="search_credential" class="form-label fw-semibold">Email, Username, or Phone</label>
+                    <input type="text" class="form-control" id="search_credential" name="search_credential" required placeholder="Enter credentials">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Search Account</button>
+            </form>
+
+        <!-- STEP 2: Display Account Found & Trigger Send OTP -->
+        <?php elseif ($showAccountFound): ?>
+            <div class="text-center p-3 mb-3 border rounded bg-light">
+                <div class="user-avatar"><i class="bi bi-person-fill"></i></div>
+                <h5 class="fw-bold text-dark mb-1"><?= h($_SESSION['pw_reset_account']['name']) ?></h5>
+                <p class="text-muted small mb-0">Email: <?= h($maskedEmail) ?></p>
+            </div>
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
+                <input type="hidden" name="action" value="send_otp">
+                <button type="submit" class="btn btn-primary w-100 mb-2">
+                    <i class="bi bi-envelope me-2"></i>Send Verification Code to Email
+                </button>
+            </form>
+            <form method="POST">
+                <input type="hidden" name="action" value="reset_flow">
+                <button type="submit" class="btn btn-outline-secondary w-100">Not your account? Search again</button>
+            </form>
+
+        <!-- STEP 3: OTP Input Form -->
+        <?php elseif ($showOtpForm): ?>
+            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
+                <input type="hidden" name="action" value="verify_otp">
+                <div class="mb-3">
+                    <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
+                    <input type="text" class="form-control text-center" id="otp" name="otp" inputmode="numeric"
+                        pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="Enter OTP"
+                        autocomplete="one-time-code" style="letter-spacing:8px;font-size:1.25rem">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
+            </form>
+            <form method="POST" class="mt-2" onsubmit="showLoading(this)">
+                <input type="hidden" name="action" value="send_otp">
+                <button type="submit" class="btn btn-link text-decoration-none w-100 text-center">Resend OTP Code</button>
+            </form>
+
+        <!-- STEP 4: Password Reset Form -->
+        <?php elseif ($showPasswordForm): ?>
             <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
                 <input type="hidden" name="action" value="reset_password">
 
@@ -389,34 +370,6 @@ if (!empty($_SESSION['pw_reset_email'])) {
 
                 <button type="submit" class="btn btn-primary w-100">Change Password</button>
             </form>
-        <?php elseif ($showOtpForm): ?>
-            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
-                <input type="hidden" name="action" value="verify_otp">
-                <div class="mb-3">
-                    <label for="otp" class="form-label fw-semibold">6-Digit OTP</label>
-                    <input type="text" class="form-control text-center" id="otp" name="otp" inputmode="numeric"
-                        pattern="[0-9]{6}" maxlength="6" minlength="6" required placeholder="Enter OTP"
-                        autocomplete="one-time-code" style="letter-spacing:8px;font-size:1.25rem">
-                </div>
-                <button type="submit" class="btn btn-primary w-100">Verify OTP</button>
-            </form>
-            <form method="POST" class="mt-3" onsubmit="showLoading(this)">
-                <input type="hidden" name="action" value="send_otp">
-                <input type="hidden" name="email" value="<?= h($_SESSION['pw_reset_email']) ?>">
-                <button type="submit" class="btn btn-outline-secondary w-100">Resend OTP</button>
-            </form>
-        <?php else: ?>
-            <form method="POST" autocomplete="off" onsubmit="showLoading(this)">
-                <input type="hidden" name="action" value="send_otp">
-                <div class="mb-3">
-                    <label for="email" class="form-label fw-semibold">Registered Email Address</label>
-                    <input type="email" class="form-control" id="email" name="email" required maxlength="255"
-                        autocomplete="email" placeholder="name@example.com">
-                </div>
-                <button type="submit" class="btn btn-primary w-100" id="submitBtn">
-                    <i class="bi bi-envelope me-2"></i>Send OTP
-                </button>
-            </form>
         <?php endif; ?>
 
         <a href="login.php" class="back-link"><i class="bi bi-arrow-left me-1"></i>Back to Login</a>
@@ -427,7 +380,7 @@ if (!empty($_SESSION['pw_reset_email'])) {
             const btn = form.querySelector('button[type="submit"]');
             if (btn) {
                 btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending...';
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...';
             }
         }
 
@@ -452,5 +405,4 @@ if (!empty($_SESSION['pw_reset_email'])) {
         <?php endif; ?>
     </script>
 </body>
-
 </html>
