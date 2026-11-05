@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $messageType = "danger";
         } else {
             // Hinahanap sa username, email, o phone column (Baguhin ang column names depende sa DB schema mo)
-            $stmt = $pdo->prepare("SELECT id, name, username, email, phone FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?) AND status = 'Active' LIMIT 1");
+            $$stmt = $pdo->prepare("SELECT id, username, email, phone FROM users WHERE (LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?) OR phone = ?) AND status = 'Active' LIMIT 1");
             
             if ($stmt && $stmt->execute([$input, $input, $input])) {
                 $user = $stmt->fetch(PDO::FETCH_ASSOC);
