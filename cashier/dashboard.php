@@ -181,14 +181,15 @@ max-height:45vh
 <span>R. Taipan Hardware - Cashier Dashboard</span>
 </h2>
 <div class="navbar-tools">
-    <a href="profile.php" class="btn btn-outline-light btn-sm position-relative">
-<i class="bi bi-profile"></i> <span>My Profile</span>
 <input type="text" id="liveSearch" class="form-control form-control-sm search-box" placeholder="Search products..." onkeyup="filterProducts()">
 <a href="onlineOrders.php" class="btn btn-outline-light btn-sm position-relative">
 <i class="bi bi-globe"></i> <span>Online Orders</span>
 <?php if($order_count>0): ?>
 <span class="badge bg-danger position-absolute top-0 start-100 translate-middle"><?php echo $order_count; ?></span>
 <?php endif; ?>
+</a>
+<a href="profile.php" class="btn btn-outline-light btn-sm">
+<i class="bi bi-person-badge"></i> <span>My Profile</span>
 </a>
 <span class="text-white small">
 <i class="bi bi-person-circle"></i>
