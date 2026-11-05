@@ -1,17 +1,9 @@
 <?php
-/**
- * Supabase Storage Configuration
- * Keep your service role key private.
- */
 
 define('SUPABASE_URL', rtrim(getenv('SUPABASE_URL') ?: '', '/'));
 define('SUPABASE_SERVICE_KEY', getenv('SUPABASE_SERVICE_ROLE_KEY') ?: '');
 define('SUPABASE_BUCKET', 'product-images');
 
-/**
- * Upload product image to Supabase Storage.
- * Returns the permanent public URL.
- */
 function uploadProductImage($file)
 {
     if (
@@ -102,10 +94,6 @@ function uploadProductImage($file)
         . rawurlencode($fileName);
 }
 
-/**
- * Delete an old image from Supabase Storage.
- * Only deletes images belonging to product-images bucket.
- */
 function deleteProductImage($imageUrl)
 {
     if (

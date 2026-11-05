@@ -11,8 +11,6 @@ function getGoogleDriveClient(): Google\Client
     $client->setRedirectUri(getenv('GOOGLE_REDIRECT_URI'));
 
     $client->setAccessType('offline');
-    $client->setPrompt('consent');
-
     $client->setScopes([
         Google\Service\Drive::DRIVE_FILE
     ]);
@@ -20,53 +18,63 @@ function getGoogleDriveClient(): Google\Client
     return $client;
 }
 
-/**
- * Upload product image to Google Drive.
- */
 function uploadProductImageToDrive(string $filePath, string $fileName): string
 {
+    $refreshToken = getenv('GOOGLE_REFRESH_TOKEN');
+
+    if (!$refreshToken) {
+        throw new Exception('GOOGLE_REFRESH_TOKEN is missing in Render.');
+    }
+
+    if (!file_exists($filePath)) {
+        throw new Exception('Temporary image file does not exist.');
+    }
+
     $client = getGoogleDriveClient();
 
-    // Retrieve saved OAuth access token
-    $token = json_decode(
-        file_get_contents(__DIR__ . '/google_token.json'),
-        true
-    );
+    $token = $client->fetchAccessTokenWithRefreshToken($refreshToken);
 
-    if (!$token) {
-        throw new Exception('Google Drive token not found.');
+    if (isset($token['error'])) {
+        throw new Exception(
+            $token['error_description'] ?? $token['error']
+        );
     }
 
     $client->setAccessToken($token);
 
-    if ($client->isAccessTokenExpired()) {
-        if (!$client->getRefreshToken()) {
-            throw new Exception('Google Drive refresh token missing. Reauthorize Google.');
-        }
-
-        $client->fetchAccessTokenWithRefreshToken(
-            $client->getRefreshToken()
-        );
-
-        file_put_contents(
-            __DIR__ . '/google_token.json',
-            json_encode($client->getAccessToken())
-        );
-    }
-
     $drive = new Google\Service\Drive($client);
 
-    $fileMetadata = new Google\Service\Drive\DriveFile([
+    $metadata = new Google\Service\Drive\DriveFile([
         'name' => $fileName
     ]);
 
-    $uploadedFile = $drive->files->create($fileMetadata, [
+    // Optional: upload into a specific Drive folder.
+    $folderId = getenv('GOOGLE_DRIVE_FOLDER_ID');
+
+    if ($folderId) {
+        $metadata->setParents([$folderId]);
+    }
+
+    $uploadedFile = $drive->files->create($metadata, [
         'data' => file_get_contents($filePath),
         'mimeType' => mime_content_type($filePath),
         'uploadType' => 'multipart',
         'fields' => 'id,name,webViewLink'
     ]);
 
-    return $uploadedFile->id;
+    $fileId = $uploadedFile->getId();
+
+    if (!$fileId) {
+        throw new Exception('Google Drive did not return a file ID.');
+    }
+
+    // Allow the website to display the product image publicly.
+    $permission = new Google\Service\Drive\Permission([
+        'type' => 'anyone',
+        'role' => 'reader'
+    ]);
+
+    $drive->permissions->create($fileId, $permission);
+
+    return $fileId;
 }
-```
