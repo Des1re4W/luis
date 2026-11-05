@@ -439,35 +439,25 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // 100% Exact Copy ng Image Resolver mula sa products.php
-                                        $target_raw_image = !empty($v['variant_image']) ? $v['variant_image'] : ($product['image'] ?? '');
-                                        $img_src = '../assets/images/no-image.png';
+                                        // Dynamic Image Resolver for Local Uploads, Google Drive links, and Fallbacks
+                                        $v_img_raw = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
+                                        $img_src = '';
 
-                                        if (!empty($target_raw_image)) {
-                                            $image_value = trim($target_raw_image);
+                                        if (!empty($v_img_raw)) {
                                             $file_id = '';
 
-                                            if (stripos($image_value, 'data:image/') === 0) {
-                                                $img_src = $image_value;
-                                            } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
-                                                $parsed_url = parse_url($image_value);
+                                            if (stripos($v_img_raw, 'data:image/') === 0) {
+                                                $img_src = $v_img_raw;
+                                            } elseif (filter_var($v_img_raw, FILTER_VALIDATE_URL)) {
+                                                $parsed_url = parse_url($v_img_raw);
                                                 $host = strtolower($parsed_url['host'] ?? '');
 
-                                                if (
-                                                    $host === 'drive.google.com' ||
-                                                    $host === 'docs.google.com'
-                                                ) {
+                                                if ($host === 'drive.google.com' || $host === 'docs.google.com') {
                                                     parse_str($parsed_url['query'] ?? '', $query_params);
 
                                                     if (!empty($query_params['id'])) {
                                                         $file_id = $query_params['id'];
-                                                    } elseif (
-                                                        preg_match(
-                                                            '#/file/d/([A-Za-z0-9_-]+)#',
-                                                            $parsed_url['path'] ?? '',
-                                                            $matches
-                                                        )
-                                                    ) {
+                                                    } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
                                                         $file_id = $matches[1];
                                                     }
 
@@ -475,32 +465,31 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                                         $img_src = '../drive-image.php?id=' . urlencode($file_id);
                                                     }
                                                 } else {
-                                                    $img_src = $image_value;
+                                                    $img_src = $v_img_raw;
                                                 }
-                                            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
-                                                $img_src = '../drive-image.php?id=' . urlencode($image_value);
+                                            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $v_img_raw) && !str_contains($v_img_raw, '/')) {
+                                                $img_src = '../drive-image.php?id=' . urlencode($v_img_raw);
                                             } else {
-                                                $image_path = ltrim($image_value, '/');
-                                                $file_path = __DIR__ . '/../' . $image_path;
-
-                                                if (file_exists($file_path)) {
-                                                    $img_src = '../' . htmlspecialchars(
-                                                        $image_path,
-                                                        ENT_QUOTES,
-                                                        'UTF-8'
-                                                    );
+                                                $clean_path = ltrim($v_img_raw, '/');
+                                                if (str_starts_with($clean_path, '../')) {
+                                                    $img_src = $clean_path;
+                                                } else {
+                                                    $img_src = '../' . $clean_path;
                                                 }
                                             }
                                         }
                                         ?>
                                         <tr>
                                             <td class="text-center">
-                                                <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
-                                                    alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
-                                                    class="rounded"
-                                                    style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
-                                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
-                                                    loading="lazy">
+                                                <?php if (!empty($img_src)): ?>
+                                                    <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                                        alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
+                                                        class="rounded"
+                                                        style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
+                                                        loading="lazy">
+                                                <?php else: ?>
+                                                    <span class="badge bg-secondary">No Pic</span>
+                                                <?php endif; ?>
                                             </td>
 
                                             <td class="fw-bold text-dark">
