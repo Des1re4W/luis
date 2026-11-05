@@ -529,7 +529,7 @@ try {
                                 }
 
                                 // Handle Image Source Logic (Base64 / URL / File Path)
-                                $img_src = '../assets/no-image.jpg';
+                                $img_src = '../assets/images/no-image.png';
                                 if (!empty($p_image)) {
                                     // 1. Kung nakatabi na sa DB bilang Base64 data string
                                     if (stripos($p_image, 'data:image/') === 0) {
