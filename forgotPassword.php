@@ -34,7 +34,13 @@ function sendResetOtp(string $email, string $otp): bool
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
-        $mail->SMTPDebug = SMTP::DEBUG_OFF;
+        // I-set sa SERVER debug para makita sa browser screen ang SMTP conversation
+        $mail->SMTPDebug = SMTP::DEBUG_SERVER; 
+
+        $mail->Debugoutput = function ($str, $level) {
+            // I-echo sa screen habang nag-te-test
+            echo "<pre style='background:#f8f9fa;color:#333;padding:10px;border:1px solid #ccc;font-size:12px;'>SMTP LOG [$level]: " . htmlspecialchars($str) . "</pre>";
+        };
 
         $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
@@ -46,7 +52,7 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->CharSet    = 'UTF-8';
         $mail->Timeout    = 15;
 
-        // Kinakailangan sa XAMPP Local Host para hindi i-block ng SSL certificate verification
+        // Bypass Local SSL Verification (Para sa XAMPP/Localhost)
         $mail->SMTPOptions = array(
             'ssl' => array(
                 'verify_peer'       => false,
@@ -73,7 +79,7 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->send();
         return true;
     } catch (\Throwable $e) {
-        error_log("OTP EMAIL ERROR: " . $e->getMessage());
+        echo "<pre style='background:#fff0f0;color:#c00;padding:10px;border:1px solid #fcc;'>PHPMailer Exception: " . htmlspecialchars($e->getMessage()) . "</pre>";
         return false;
     }
 }
