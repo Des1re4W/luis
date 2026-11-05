@@ -1,27 +1,33 @@
 <?php
 session_start();
+
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/image.php';
+require_once __DIR__ . '/../config/google_drive.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
 }
 
-$message = ""; 
-$row = [];
+$message = '';
 
-$product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
+$product_id = filter_var(
+    $_GET['product_id'] ?? null,
+    FILTER_VALIDATE_INT
+);
 
-if (!$product_id) {
+if (!$product_id || $product_id <= 0) {
     $_SESSION['message'] = "Invalid product ID.";
     header("Location: products.php");
     exit();
 }
 
+// Fetch existing product
 try {
     $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
     $stmt->execute([':id' => $product_id]);
+
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
@@ -29,64 +35,120 @@ try {
         header("Location: products.php");
         exit();
     }
+
 } catch (PDOException $e) {
     error_log("Fetch product error: " . $e->getMessage());
     die("Database error occurred.");
 }
 
-// Kapag pinindot ang Update button
-if (isset($_POST['update'])) {
-    $product_name = trim($_POST['product_name']);
-    $cost_price = $_POST['cost_price'];
-    $price = $_POST['price'];
-    $category = $_POST['category'];
-    $stock = $_POST['stock'];
-    $product_description = trim($_POST['product_description']);
-    $image_path = $row['image']; // Default sa lumang image
+// ==========================================
+// UPDATE PRODUCT AND UPLOAD IMAGE TO GOOGLE DRIVE
+// ==========================================
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update'])) {
+
+    $product_name = trim($_POST['product_name'] ?? '');
+    $cost_price = $_POST['cost_price'] ?? 0;
+    $price = $_POST['price'] ?? 0;
+    $category = $_POST['category'] ?? '';
+    $stock = $_POST['stock'] ?? 0;
+    $product_description = trim($_POST['product_description'] ?? '');
+
+    // Keep the existing image unless a new one is uploaded
+    $image_path = $row['image'] ?? '';
     $image_changed = false;
-}
-    // I-check kung may in-upload na bagong image
-    if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-        $tmp = $_FILES['image']['tmp_name'];
-        if (!empty($tmp) && file_exists($tmp)) {
-            $check_image = getimagesize($tmp);
-            if ($check_image !== false) {
-                $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
-                $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
-
-                if (in_array($ext, $allowed_extensions)) {
-                   $new_image_name = uniqid("prod_", true) . '.' . $ext;
-
-$uploadDir = dirname(__DIR__) . '/uploads/';
-
-if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
-}
-
-if (is_writable($uploadDir)) {
-    $folder = $uploadDir . $new_image_name;
-
-                    if (move_uploaded_file($tmp, $folder)) {
-                        $image_path = "uploads/" . $new_image_name;
-                        $image_changed = true;
-                    }
-                }
-            }
-        }
-    }
 
     try {
-        // 1. I-update ang produkto sa database
+
+        // ==========================================
+        // GOOGLE DRIVE IMAGE UPLOAD
+        // ==========================================
+
+        if (isset($_FILES['image']) &&
+            $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+
+            if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+                throw new Exception("Image upload failed. Please try again.");
+            }
+
+            $tmp = $_FILES['image']['tmp_name'];
+
+            if (!is_uploaded_file($tmp)) {
+                throw new Exception("Invalid uploaded image.");
+            }
+
+            $image_info = getimagesize($tmp);
+
+            if ($image_info === false) {
+                throw new Exception("The uploaded file is not a valid image.");
+            }
+
+            $allowed_mimes = [
+                'image/jpeg',
+                'image/png',
+                'image/webp'
+            ];
+
+            if (!in_array($image_info['mime'], $allowed_mimes, true)) {
+                throw new Exception("Only JPG, PNG, and WEBP images are allowed.");
+            }
+
+            $extension = [
+                'image/jpeg' => 'jpg',
+                'image/png' => 'png',
+                'image/webp' => 'webp'
+            ][$image_info['mime']];
+
+            // Get authenticated Google Drive client
+            $client = getGoogleDriveClient();
+
+            $driveService = new Google\Service\Drive($client);
+
+            // Create Google Drive file metadata
+            $fileMetadata = new Google\Service\Drive\DriveFile([
+                'name' => 'product_' . $product_id . '_' . uniqid() . '.' . $extension
+            ]);
+
+            // Upload to configured Google Drive folder
+            $folderId = getenv('GOOGLE_DRIVE_FOLDER_ID');
+
+            if (!empty($folderId)) {
+                $fileMetadata->setParents([$folderId]);
+            }
+
+            $uploadedFile = $driveService->files->create(
+                $fileMetadata,
+                [
+                    'data' => file_get_contents($tmp),
+                    'mimeType' => $image_info['mime'],
+                    'uploadType' => 'multipart',
+                    'fields' => 'id'
+                ]
+            );
+
+            if (empty($uploadedFile->id)) {
+                throw new Exception("Google Drive did not return a file ID.");
+            }
+
+            // Save Google Drive file ID in the database
+            $image_path = $uploadedFile->id;
+            $image_changed = true;
+        }
+
+        // ==========================================
+        // UPDATE PRODUCT IN DATABASE
+        // ==========================================
+
         $update_stmt = $pdo->prepare("
-            UPDATE products 
-            SET product_name = :product_name, 
-                cost_price = :cost_price, 
-                price = :price, 
-                category = :category, 
-                stock = :stock, 
-                product_description = :product_description, 
-                image = :image 
+            UPDATE products
+            SET
+                product_name = :product_name,
+                cost_price = :cost_price,
+                price = :price,
+                category = :category,
+                stock = :stock,
+                product_description = :product_description,
+                image = :image
             WHERE id = :id
         ");
 
@@ -101,59 +163,73 @@ if (is_writable($uploadDir)) {
             ':id' => $product_id
         ]);
 
-        // 2. Mag-buo ng detalyadong pagbabago para sa Audit Trail
+        // ==========================================
+        // AUDIT TRAIL
+        // ==========================================
+
         $changes = [];
+
         if ($row['product_name'] !== $product_name) {
-            $changes[] = "Name changed from '{$row['product_name']}' to '{$product_name}'";
+            $changes[] = "Product name updated";
         }
+
         if ((float)$row['cost_price'] !== (float)$cost_price) {
-            $changes[] = "Cost Price changed from {$row['cost_price']} to {$cost_price}";
+            $changes[] = "Cost price updated";
         }
+
         if ((float)$row['price'] !== (float)$price) {
-            $changes[] = "Selling Price changed from {$row['price']} to {$price}";
+            $changes[] = "Selling price updated";
         }
+
         if ((int)$row['stock'] !== (int)$stock) {
-            $changes[] = "Stock changed from {$row['stock']} to {$stock}";
+            $changes[] = "Stock updated";
         }
+
         if ($row['category'] !== $category) {
-            $changes[] = "Category changed from '{$row['category']}' to '{$category}'";
+            $changes[] = "Category updated";
         }
+
         if ($row['product_description'] !== $product_description) {
             $changes[] = "Description updated";
         }
+
         if ($image_changed) {
-            $changes[] = "Product photo updated";
+            $changes[] = "Product image uploaded to Google Drive";
         }
 
         $details_text = "Updated product: " . $product_name;
+
         if (!empty($changes)) {
             $details_text .= " (" . implode(", ", $changes) . ")";
         }
 
-        // 3. I-save sa audit_log table (kasama ang user_id para hindi mag-error)
-        $username = $_SESSION['username'] ?? 'Admin';
-        $role = $_SESSION['role'] ?? 'admin';
-        $user_id = $_SESSION['user_id'] ?? null; 
-
         $log_stmt = $pdo->prepare("
-            INSERT INTO audit_log (user_id, username, role, action, details, timestamp) 
-            VALUES (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
+            INSERT INTO audit_log
+                (user_id, username, role, action, details, timestamp)
+            VALUES
+                (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)
         ");
+
         $log_stmt->execute([
-            ':user_id' => $user_id,
-            ':username' => $username,
-            ':role' => $role,
+            ':user_id' => $_SESSION['user_id'] ?? null,
+            ':username' => $_SESSION['username'] ?? 'Admin',
+            ':role' => $_SESSION['role'] ?? 'admin',
             ':action' => 'Edit Product',
             ':details' => $details_text
         ]);
 
         $_SESSION['message'] = "Product updated successfully!";
+
         header("Location: products.php");
         exit();
 
-    } catch (PDOException $e) {
-        error_log("Update product error: " . $e->getMessage());
-        $message = '<div class="alert alert-danger">Error updating product!</div>';
+    } catch (Throwable $e) {
+
+        error_log("Update product / Google Drive error: " . $e->getMessage());
+
+        $message = '<div class="alert alert-danger">' .
+            htmlspecialchars($e->getMessage(), ENT_QUOTES, 'UTF-8') .
+            '</div>';
     }
 }
 ?>
