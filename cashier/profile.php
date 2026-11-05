@@ -123,68 +123,15 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
             overflow-x: hidden;
         }
 
-        /* SIDEBAR */
-        .sidebar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 260px;
-            height: 100vh;
-            background: #001f4d;
-            padding: 20px;
-            overflow-y: auto;
-            z-index: 1040;
-            display: flex;
-            flex-direction: column;
-            transition: transform 0.3s ease;
-        }
-
-        .sidebar h2 {
-            color: white;
-            text-align: center;
-            font-weight: bold;
-            margin-bottom: 40px;
-            line-height: 1.3;
-            font-size: 1.5rem;
-        }
-
-        .sidebar a {
-            color: white;
-            text-decoration: none;
-            padding: 12px 14px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            transition: 0.3s;
-            font-size: 15px;
-            display: block;
-            font-weight: 500;
-        }
-
-        .sidebar a i {
-            margin-right: 8px;
-        }
-
-        .sidebar a:hover {
-            background: #0d6efd;
-            padding-left: 20px;
-        }
-
-        .sidebar .active {
-            background: #0d6efd;
-        }
-
-        .logout-section {
-            margin-top: auto;
-            padding-top: 15px;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
         /* MAIN CONTENT */
         .main-content {
-            margin-left: 260px;
             padding: 25px;
             min-height: 100vh;
-            transition: margin 0.3s ease;
+        }
+
+        .top-bar {
+            max-width: 1100px;
+            margin: 0 auto 18px;
         }
 
         /* PROFILE CONTAINER */
@@ -246,16 +193,21 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
         }
 
         @media (max-width: 991.98px) {
-            .sidebar {
-                transform: translateX(-100%);
-                width: 260px;
-            }
-            .sidebar.show {
-                transform: translateX(0);
-            }
             .main-content {
-                margin-left: 0;
                 padding: 15px;
+            }
+            .profile-container {
+                padding: 22px;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .profile-container {
+                padding: 18px;
+            }
+            .profile-img-lg {
+                width: 62px;
+                height: 62px;
             }
         }
     </style>
@@ -263,29 +215,14 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
 
 <body>
 
-    <!-- Mobile Navbar -->
-    <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-person-badge me-2"></i>My Profile</span>
-        <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
-            <i class="bi bi-list fs-4"></i>
-        </button>
-    </nav>
-
-    <!-- Sidebar -->
-    <div class="sidebar" id="appSidebar">
-        <h2>Cashier<br>Dashboard</h2>
-        <a href="dashboard.php"><i class="bi bi-grid"></i> POS Dashboard</a>
-        <a href="onlineOrders.php"><i class="bi bi-globe"></i> Online Orders</a>
-        <a href="profile.php" class="active"><i class="bi bi-person-badge"></i> My Profile</a>
-        <div class="logout-section">
-            <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to logout?')">
-                <i class="bi bi-box-arrow-right"></i> Logout
-            </a>
-        </div>
-    </div>
-
     <!-- Main Content Area -->
     <div class="main-content">
+        <div class="top-bar d-flex justify-content-between align-items-center">
+            <h4 class="fw-bold mb-0 text-dark"><i class="bi bi-person-badge me-2"></i>My Profile</h4>
+            <a href="dashboard.php" class="btn btn-primary">
+                <i class="bi bi-arrow-left me-1"></i> Back to POS
+            </a>
+        </div>
         <div class="container-fluid px-0">
 
             <?php if (!empty($message)): ?>
@@ -397,23 +334,7 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
             field.focus();
         }
 
-        document.addEventListener("DOMContentLoaded", function () {
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const appSidebar = document.getElementById('appSidebar');
-            if (sidebarToggle && appSidebar) {
-                sidebarToggle.addEventListener('click', function () {
-                    appSidebar.classList.toggle('show');
-                });
 
-                document.addEventListener('click', function (event) {
-                    if (window.innerWidth < 992) {
-                        if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
-                            appSidebar.classList.remove('show');
-                        }
-                    }
-                });
-            }
-        });
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
