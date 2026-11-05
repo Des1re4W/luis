@@ -1,7 +1,6 @@
-
 FROM php:8.2-apache
 
-# Install dependencies and PHP extensions
+# Install PHP dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     unzip \
@@ -12,20 +11,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-ENV APACHE_DOCUMENT_ROOT=/var/www/html
-
+# Application directory
 WORKDIR /var/www/html
 
 # Install Google API PHP Client
 COPY composer.json ./
 RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
 
-# Copy project files
+# Copy application files
 COPY . /var/www/html/
 
-# Apache configuration
+# Configure Apache
 RUN printf '%s\n' \
-    '<WORKDIR /var/www/html/hardwareSystem>' \
+    '<Directory /var/www/html>' \
     '    DirectoryIndex login.php index.php index.html' \
     '    AllowOverride All' \
     '    Require all granted' \
