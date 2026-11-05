@@ -263,16 +263,19 @@ if (isset($_POST['update'])) {
                         required><?php echo htmlspecialchars($row['product_description'] ?? ''); ?></textarea>
 
                     <label class="form-label fw-bold d-block">Current Image</label>
+
                     <?php if (!empty($row['image'])): ?>
-                        <img src="<?php echo htmlspecialchars(
-                            getProductImageSrc($row['image'] ?? ''),
-                            ENT_QUOTES,
-                            'UTF-8'
-                        ); ?>" width="120" height="120" class="mb-3 border rounded shadow-sm" style="object-fit: cover;"
-                            alt="Current Product Image"
+                        <?php $img_src = getProductImageSrc($row['image']); ?>
+
+                        <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>" width="120" height="120"
+                            class="mb-3 border rounded shadow-sm" style="object-fit: cover;" alt="Current Product Image"
                             onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+
                     <?php else: ?>
-                        <img src="../assets/no-image.jpg" width="120" class="mb-3 border rounded shadow-sm"><br>
+
+                        <img src="../assets/images/no-image.png" width="120" height="120"
+                            class="mb-3 border rounded shadow-sm" alt="No Product Image">
+
                     <?php endif; ?>
 
                     <label class="form-label fw-bold">Change Image (Optional)</label>
