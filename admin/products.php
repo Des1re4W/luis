@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
 
 // Check admin access
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
