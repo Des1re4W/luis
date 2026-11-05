@@ -1,15 +1,29 @@
+
 FROM php:8.2-apache
 
+# Install dependencies and PHP extensions
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
+    unzip \
     && docker-php-ext-install mysqli pdo_mysql pdo_pgsql \
     && a2enmod rewrite \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 ENV APACHE_DOCUMENT_ROOT=/var/www/html
 
+WORKDIR /var/www/html
+
+# Install Google API PHP Client
+COPY composer.json ./
+RUN composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+
+# Copy project files
 COPY . /var/www/html/
 
+# Apache configuration
 RUN printf '%s\n' \
     '<Directory /var/www/html>' \
     '    DirectoryIndex login.php index.php index.html' \
