@@ -470,7 +470,7 @@ async function processReceiptOCR(fileInput) {
         } else {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Receipt successfully scanned, but please make sure the Reference Number is clearly visible.';
+            statusText.innerHTML = '⚠️  Unable to read the text in the image. Please ensure that the receipt is clear and readable.';
         }
 
     } catch (error) {
