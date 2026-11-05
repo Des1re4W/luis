@@ -289,11 +289,55 @@ try {
                     if ($row['variant_count'] > 0 && $row['min_price'] != $row['max_price']) {
                         $price_display .= " - ₱" . number_format($row['max_price'], 2);
                     }
+
+                    // Dynamic Google Drive Image Resolver (Kaparehas ng sa products.php)
+                    $p_image = $row['image'] ?? '';
+                    $img_src = '../assets/images/no-image.png';
+
+                    if (!empty($p_image)) {
+                        $image_value = trim($p_image);
+
+                        if (stripos($image_value, 'data:image/') === 0) {
+                            $img_src = $image_value;
+                        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+                            $parsed_url = parse_url($image_value);
+                            $host = strtolower($parsed_url['host'] ?? '');
+
+                            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                                parse_str($parsed_url['query'] ?? '', $query_params);
+                                $file_id = '';
+
+                                if (!empty($query_params['id'])) {
+                                    $file_id = $query_params['id'];
+                                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                                    $file_id = $matches[1];
+                                }
+
+                                if ($file_id !== '') {
+                                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                                }
+                            } else {
+                                $img_src = $image_value;
+                            }
+                        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
+                            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+                        } else {
+                            $clean_path = ltrim($image_value, '/');
+                            if (str_starts_with($clean_path, '../')) {
+                                $img_src = $clean_path;
+                            } else {
+                                $img_src = '../' . $clean_path;
+                            }
+                        }
+                    }
                     ?>
                     <div class="col">
                         <div class="card product-card shadow-sm h-100">
-                            <img src="../<?php echo !empty($row['image']) ? $row['image'] : 'assets/no-image.jpg'; ?>"
-                                class="card-img-top product-img">
+                            <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                class="card-img-top product-img"
+                                alt="<?php echo htmlspecialchars($row['product_name']); ?>"
+                                onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                loading="lazy">
                             <div class="card-body d-flex flex-column text-center">
                                 <h6 class="card-title fw-bold text-dark mb-1">
                                     <?php echo htmlspecialchars($row['product_name']); ?></h6>
@@ -337,7 +381,8 @@ try {
                                 style="height: 330px;">
                                 <img id="modalMainImage" src="" class="img-fluid"
                                     style="max-height: 100%; object-fit: contain; cursor: pointer;"
-                                    onclick="openModalImageZoom()">
+                                    onclick="openModalImageZoom()"
+                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
                             </div>
                         </div>
 
@@ -396,6 +441,40 @@ try {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // JS Image Resolver para sa Google Drive at Local Paths
+        function resolveImagePath(rawImage) {
+            if (!rawImage || rawImage.trim() === '') {
+                return '../assets/images/no-image.png';
+            }
+            var val = rawImage.trim();
+
+            if (val.startsWith('data:image/') || val.startsWith('http://') || val.startsWith('https://')) {
+                if (val.includes('drive.google.com') || val.includes('docs.google.com')) {
+                    var fileId = '';
+                    var match = val.match(/[\?&]id=([^&]+)/);
+                    if (match) {
+                        fileId = match[1];
+                    } else {
+                        var matchPath = val.match(/\/file\/d\/([A-Za-z0-9_-]+)/);
+                        if (matchPath) fileId = matchPath[1];
+                    }
+                    if (fileId) {
+                        return '../drive-image.php?id=' + encodeURIComponent(fileId);
+                    }
+                }
+                return val;
+            }
+
+            if (/^[A-Za-z0-9_-]{20,}$/.test(val) && !val.includes('/')) {
+                return '../drive-image.php?id=' + encodeURIComponent(val);
+            }
+
+            if (val.startsWith('../')) {
+                return val;
+            }
+            return '../' + val.replace(/^\/+/, '');
+        }
+
         // LIVE SEARCH ENGINE
         function liveSearch() {
             let searchValue = document.getElementById("searchInput").value;
@@ -432,7 +511,7 @@ try {
                     document.getElementById('modalProductName').innerText = data.product.product_name;
                     document.getElementById('modalCategory').innerText = data.product.category;
 
-                    var mainProductImgPath = data.product.image ? '../' + data.product.image : '../assets/no-image.jpg';
+                    var mainProductImgPath = resolveImagePath(data.product.image);
                     document.getElementById('modalMainImage').src = mainProductImgPath;
 
                     select.innerHTML = "";
@@ -480,7 +559,7 @@ try {
                             var vDesc = (v.variant_description && v.variant_description.trim() !== "") ? v.variant_description : data.product.product_description;
                             opt.setAttribute('data-desc', vDesc ? vDesc : "No description available.");
 
-                            var vImg = v.variant_image ? '../' + v.variant_image : mainProductImgPath;
+                            var vImg = v.variant_image ? resolveImagePath(v.variant_image) : mainProductImgPath;
                             opt.setAttribute('data-image', vImg);
 
                             select.appendChild(opt);
