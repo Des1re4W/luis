@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/vendor/autoload.php';
 
@@ -41,10 +40,13 @@ try {
         exit('File is not an image.');
     }
 
-    header('Content-Type: ' . $mimeType);
-    header('Cache-Control: private, max-age=3600');
+    if (!headers_sent()) {
+        header('Content-Type: ' . $mimeType);
+        header('Cache-Control: private, max-age=3600');
+    }
 
     echo $imageData;
+    exit;
 
 } catch (Exception $e) {
     error_log('Google Drive image error: ' . $e->getMessage());
