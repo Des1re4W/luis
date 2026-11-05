@@ -28,7 +28,6 @@ try {
 
     $service = new Google\Service\Drive($client);
 
-    // Retrieve image metadata first
     $file = $service->files->get($fileId, [
         'fields' => 'id,name,mimeType'
     ]);
@@ -44,7 +43,6 @@ try {
         throw new RuntimeException('Unsupported image type.');
     }
 
-    // Download image content
     $response = $service->files->get($fileId, [
         'alt' => 'media'
     ]);
@@ -55,7 +53,6 @@ try {
         throw new RuntimeException('Downloaded image is empty.');
     }
 
-    // Clear all buffered output before sending image
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
