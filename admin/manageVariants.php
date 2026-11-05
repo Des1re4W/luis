@@ -361,7 +361,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div>
                 <h4 class="mb-0 fw-bold fs-5 fs-md-4">Variants for: <span
                         class="text-primary"><?php echo htmlspecialchars($product['product_name']); ?></span></h4>
-                <small class="text-muted">Main Product Category: <?php echo $product['category']; ?></small>
+                <small class="text-muted">Main Product Category: <?php echo htmlspecialchars($product['category']); ?></small>
             </div>
             <a href="products.php" class="btn btn-secondary btn-sm align-self-start align-self-md-auto"><i class="bi bi-arrow-left"></i> Back to Inventory</a>
         </div>
@@ -438,18 +438,55 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <tbody>
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
+                                        <?php
+                                        // Determine raw image string (Variant image -> Main product image fallback)
+                                        $v_img_raw = !empty($v['variant_image']) ? $v['variant_image'] : ($product['image'] ?? '');
+                                        $img_src = '../assets/images/no-image.png';
+
+                                        if (!empty($v_img_raw)) {
+                                            $image_value = trim($v_img_raw);
+                                            $file_id = '';
+
+                                            if (stripos($image_value, 'data:image/') === 0) {
+                                                $img_src = $image_value;
+                                            } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+                                                $parsed_url = parse_url($image_value);
+                                                $host = strtolower($parsed_url['host'] ?? '');
+
+                                                if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                                                    parse_str($parsed_url['query'] ?? '', $query_params);
+
+                                                    if (!empty($query_params['id'])) {
+                                                        $file_id = $query_params['id'];
+                                                    } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                                                        $file_id = $matches[1];
+                                                    }
+
+                                                    if ($file_id !== '') {
+                                                        $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                                                    }
+                                                } else {
+                                                    $img_src = $image_value;
+                                                }
+                                            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
+                                                $img_src = '../drive-image.php?id=' . urlencode($image_value);
+                                            } else {
+                                                $image_path = ltrim($image_value, '/');
+                                                $file_path = __DIR__ . '/../' . $image_path;
+
+                                                if (file_exists($file_path)) {
+                                                    $img_src = '../' . htmlspecialchars($image_path, ENT_QUOTES, 'UTF-8');
+                                                }
+                                            }
+                                        }
+                                        ?>
                                         <tr>
                                             <td class="text-center">
-                                                <?php if (!empty($v['variant_image'])): ?>
-                                                    <img src="../<?php echo htmlspecialchars($v['variant_image']); ?>"
-                                                        class="rounded"
-                                                        style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;">
-                                                <?php else: ?>
-                                                    <img src="../<?php echo htmlspecialchars($product['image'] ?? ''); ?>"
-                                                        class="rounded"
-                                                        style="width:40px; height:40px; object-fit:cover; opacity: 0.5;"
-                                                        title="Using product default image">
-                                                <?php endif; ?>
+                                                <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                                    alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
+                                                    class="rounded"
+                                                    style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
+                                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
                                             </td>
 
                                             <td class="fw-bold text-dark">
