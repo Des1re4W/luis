@@ -952,6 +952,8 @@ function viewCustomer(data) {
             <div class="alert alert-secondary py-1 px-2 mb-2 text-start small">
                 <b>Mode of Payment:</b> <span class="badge bg-primary">${currentMOP}</span><br>
                 <b>Reference No:</b> <span class="text-danger fw-bold">${referenceNumber}</span><br>
+                <b>Amount Sent:</b> <span class="text-danger fw-bold">${paid_amount}</span><br>
+                <b>Date and Time:</b> <span class="text-danger fw-bold">${receiptdt}</span><br>
                 <b>Payment Type:</b> <span class="text-danger fw-bold">${paymentScheme}</span>
             </div>
         `;
