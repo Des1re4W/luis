@@ -130,8 +130,9 @@ $display_name = !empty($user['fullname']) ? $user['fullname'] : $user['username'
         }
 
         .top-bar {
-            max-width: 1100px;
-            margin: 0 auto 18px;
+            width: 100%;
+            max-width: none;
+            margin: 0 0 18px;
         }
 
         /* PROFILE CONTAINER */
