@@ -298,7 +298,7 @@ if (isset($_POST['place_order'])) {
 
                             <!-- OCR Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
-                                <span id="ocr_status_text">Binabasa ang receipt...</span>
+                                <span id="ocr_status_text">Reading receipt...</span>
                             </div>
 
                             <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
@@ -453,7 +453,12 @@ async function processReceiptOCR(fileInput) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-success');
             
-            let message = `<strong>✓ Receipt scanned successfully!</strong><br>`;
+           let message = `
+    <strong>✓ Receipt scanned successfully!</strong><br>
+    <small class="text-warning">
+        Reminder: Please ensure that the payment amount exactly matches the total amount to avoid Order rejection.
+    </small>
+`;
             message += `Ref No: <b>${detectedRef}</b>`;
             if (detectedAmount !== '') {
                 message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
@@ -465,14 +470,14 @@ async function processReceiptOCR(fileInput) {
         } else {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Nabasang resibo ngunit pakitiyak na malinaw ang Reference Number.';
+            statusText.innerHTML = '⚠️ Receipt successfully scanned, but please make sure the Reference Number is clearly visible.';
         }
 
     } catch (error) {
         console.error("OCR Reading Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Hindi mabasa ang text sa image. Pakitiyak na malinaw ang resibo.';
+        statusText.innerHTML = '❌ Unable to read the text in the image. Please ensure that the receipt is clear and readable.';
     }
 }
 
