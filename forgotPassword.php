@@ -50,13 +50,6 @@ $mail->Debugoutput = function ($str, $level) {
         // Timeout and SSL options to bypass local certificate verification issues
         $mail->Timeout       = 15;
         $mail->SMTPKeepAlive = false;
-        $mail->SMTPOptions   = [
-            'ssl' => [
-                'verify_peer'       => false,
-                'verify_peer_name'  => false,
-                'allow_self_signed' => true
-            ]
-        ];
 
         $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
         $mail->addAddress($email);
@@ -75,10 +68,11 @@ $mail->Debugoutput = function ($str, $level) {
 
         $mail->send();
         return true;
-    } catch (Exception $e) {
-        error_log("Password reset email error: " . $mail->ErrorInfo);
-        return false;
-    }
+ } catch (\Throwable $e) {
+    error_log("OTP EMAIL ERROR: " . $e->getMessage());
+    error_log("OTP SMTP ERROR: " . ($mail->ErrorInfo ?? 'No SMTP error details'));
+    return false;
+}
 }
 
 function clearResetSession(): void
