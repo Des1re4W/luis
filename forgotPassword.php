@@ -7,7 +7,7 @@ date_default_timezone_set('Asia/Manila');
 // Auto-create local .env file if it doesn't exist (Local Dev Helper)
 $envFilePath = __DIR__ . '/.env';
 if (!file_exists($envFilePath)) {
-    @file_put_contents($envFilePath, "RESEND_API_KEY=re_MYakuPM1_KexHehmSz5GrqiGJa9iKq4G7\n");
+    @file_put_contents($envFilePath, "RESEND_API_KEY=re_NPzh3jdP_PP7EUp56ToAcChtfivRpEPe6\n");
 }
 
 // 1. Automatically load a local .env file if running in local development
