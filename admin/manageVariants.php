@@ -49,7 +49,7 @@ function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $
     ]);
 }
 
-// Helper function para sa pag-upload ng Image sa Google Drive
+// Robust Helper function para sa pag-upload ng Image sa Google Drive
 function handleGoogleDriveVariantUpload($fileArray)
 {
     if (!isset($fileArray['tmp_name']) || $fileArray['error'] !== UPLOAD_ERR_OK) {
@@ -64,20 +64,26 @@ function handleGoogleDriveVariantUpload($fileArray)
         return false; // Invalid file type
     }
 
-    // Subukang i-upload direct sa Google Drive kung available ang helper function
+    $drive_file_id = null;
+
+    // Subukang gamitin ang lahat ng kilalang Google Drive upload helper function names
     if (function_exists('uploadToGoogleDrive')) {
         $drive_file_id = uploadToGoogleDrive($tmp, $fileArray['name'], $file_mime_check);
-        if ($drive_file_id) {
-            return $drive_file_id;
-        }
     } elseif (function_exists('uploadToDrive')) {
         $drive_file_id = uploadToDrive($tmp, $fileArray['name'], $file_mime_check);
-        if ($drive_file_id) {
-            return $drive_file_id;
-        }
+    } elseif (function_exists('uploadFileToDrive')) {
+        $drive_file_id = uploadFileToDrive($tmp, $fileArray['name'], $file_mime_check);
+    } elseif (function_exists('uploadImageToDrive')) {
+        $drive_file_id = uploadImageToDrive($tmp, $fileArray['name'], $file_mime_check);
     }
 
-    // Fallback kung hindi gumana ang Google Drive helper: I-save muna locally sa uploads/
+    // Kung matagumpay ang pag-upload sa Google Drive at nagbalik ng File ID
+    if (!empty($drive_file_id) && is_string($drive_file_id)) {
+        return $drive_file_id;
+    }
+
+    // Fallback kung hindi gumana ang Google Drive API: I-save muna locally sa uploads/
+    error_log("Google Drive Upload failed or helper function not found. Falling back to local upload.");
     $target_dir = __DIR__ . '/../uploads/';
     if (!is_dir($target_dir)) {
         mkdir($target_dir, 0755, true);
@@ -454,7 +460,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product
+                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product[cite: 7]
                                         $v_image_val = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
                                         $img_src = '../assets/images/no-image.png';
 
