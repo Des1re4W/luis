@@ -3,7 +3,6 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/image.php';
 
-// Siguraduhing na-require ang Google Drive configuration / uploader helpers
 if (file_exists(__DIR__ . '/../config/gdrive.php')) {
     require_once __DIR__ . '/../config/gdrive.php';
 }
@@ -20,7 +19,7 @@ $ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
 
 $product_id = filter_input(INPUT_GET, 'product_id', FILTER_VALIDATE_INT) ?: 0;
 
-// Get main product (Using $pdo)
+// Get main product
 $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
 $stmt->execute(['id' => $product_id]);
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -30,7 +29,6 @@ if (!$product) {
     exit();
 }
 
-// Helper function for audit logging
 function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $ip_address)
 {
     $sql = "INSERT INTO audit_log
@@ -49,7 +47,7 @@ function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $
     ]);
 }
 
-// Robust Helper function para sa pag-upload ng Image sa Google Drive
+// DEFINITIVE GOOGLE DRIVE UPLOAD HANDLER FOR VARIANTS
 function handleGoogleDriveVariantUpload($fileArray)
 {
     if (!isset($fileArray['tmp_name']) || $fileArray['error'] !== UPLOAD_ERR_OK) {
@@ -61,29 +59,32 @@ function handleGoogleDriveVariantUpload($fileArray)
     $file_mime_check = mime_content_type($tmp);
 
     if (!in_array($file_mime_check, $allowed_types)) {
-        return false; // Invalid file type
+        return false;
     }
 
-    $drive_file_id = null;
+    $drive_result = null;
 
-    // Subukang gamitin ang lahat ng kilalang Google Drive upload helper function names
-    if (function_exists('uploadToGoogleDrive')) {
-        $drive_file_id = uploadToGoogleDrive($tmp, $fileArray['name'], $file_mime_check);
-    } elseif (function_exists('uploadToDrive')) {
-        $drive_file_id = uploadToDrive($tmp, $fileArray['name'], $file_mime_check);
-    } elseif (function_exists('uploadFileToDrive')) {
-        $drive_file_id = uploadFileToDrive($tmp, $fileArray['name'], $file_mime_check);
+    // Subukang gamitin ang ginagamit sa addProduct.php / products.php
+    if (function_exists('uploadToDrive')) {
+        $drive_result = uploadToDrive($tmp, $fileArray['name'], $file_mime_check);
+    } elseif (function_exists('uploadToGoogleDrive')) {
+        $drive_result = uploadToGoogleDrive($tmp, $fileArray['name'], $file_mime_check);
     } elseif (function_exists('uploadImageToDrive')) {
-        $drive_file_id = uploadImageToDrive($tmp, $fileArray['name'], $file_mime_check);
+        $drive_result = uploadImageToDrive($tmp, $fileArray['name'], $file_mime_check);
+    } elseif (function_exists('uploadImage')) {
+        $drive_result = uploadImage($fileArray);
     }
 
-    // Kung matagumpay ang pag-upload sa Google Drive at nagbalik ng File ID
-    if (!empty($drive_file_id) && is_string($drive_file_id)) {
-        return $drive_file_id;
+    // Kung nagbalik ng Google Drive URL o File ID
+    if (!empty($drive_result) && is_string($drive_result)) {
+        // Kung File ID lang ang binigay, i-format tulad ng sa Products
+        if (preg_match('/^[A-Za-z0-9_-]{20,}$/', $drive_result) && !str_contains($drive_result, 'http')) {
+            return "https://drive.google.com/uc?export=view&id=" . $drive_result;
+        }
+        return $drive_result;
     }
 
-    // Fallback kung hindi gumana ang Google Drive API: I-save muna locally sa uploads/
-    error_log("Google Drive Upload failed or helper function not found. Falling back to local upload.");
+    // FALLBACK: Kung talagang hindi available ang Drive Function
     $target_dir = __DIR__ . '/../uploads/';
     if (!is_dir($target_dir)) {
         mkdir($target_dir, 0755, true);
@@ -123,13 +124,11 @@ if (isset($_POST['add_variant'])) {
     }
 
     if ($cost_price > $price) {
-        $_SESSION['error_message'] =
-            "Error: Cost price cannot be higher than the selling price!";
+        $_SESSION['error_message'] = "Error: Cost price cannot be higher than the selling price!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // Check duplicate variant names (case-insensitive)
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -142,13 +141,11 @@ if (isset($_POST['add_variant'])) {
     ]);
 
     if ($stmt->fetch(PDO::FETCH_ASSOC)) {
-        $_SESSION['error_message'] =
-            "Error: The variant name '$variant_name' already exists!";
+        $_SESSION['error_message'] = "Error: The variant name '$variant_name' already exists!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // Handle variant image upload with Google Drive Upload Logic
     if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] === UPLOAD_ERR_OK) {
         $upload_result = handleGoogleDriveVariantUpload($_FILES['variant_image']);
 
@@ -161,7 +158,6 @@ if (isset($_POST['add_variant'])) {
         }
     }
 
-    // Insert variant
     $insert_sql = "
         INSERT INTO product_variants
         (product_id, variant_name, variant_description,
@@ -222,13 +218,11 @@ if (isset($_POST['update_variant'])) {
     }
 
     if ($v_cost > $v_price) {
-        $_SESSION['error_message'] =
-            "Error: Cost price cannot be higher than the selling price!";
+        $_SESSION['error_message'] = "Error: Cost price cannot be higher than the selling price!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
 
-    // Check duplicate names, excluding the current variant
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -243,8 +237,7 @@ if (isset($_POST['update_variant'])) {
     ]);
 
     if ($stmt->fetch(PDO::FETCH_ASSOC)) {
-        $_SESSION['error_message'] =
-            "Error: The variant name '$v_name' already exists!";
+        $_SESSION['error_message'] = "Error: The variant name '$v_name' already exists!";
         header("Location: manageVariants.php?product_id=$product_id");
         exit();
     }
@@ -268,7 +261,6 @@ if (isset($_POST['update_variant'])) {
         'product_id' => $product_id
     ];
 
-    // Replace image only if a new one is uploaded with Google Drive Integration
     if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK) {
         $upload_result = handleGoogleDriveVariantUpload($_FILES['edit_variant_image']);
 
@@ -353,7 +345,6 @@ if (isset($_GET['delete_id'])) {
     exit();
 }
 
-// Get all variants for this product
 $stmt = $pdo->prepare("
     SELECT *
     FROM product_variants
@@ -460,7 +451,6 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product[cite: 7]
                                         $v_image_val = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
                                         $img_src = '../assets/images/no-image.png';
 
@@ -484,6 +474,8 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                                                     if ($file_id !== '') {
                                                         $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                                                    } else {
+                                                        $img_src = $v_image_val;
                                                     }
                                                 } else {
                                                     $img_src = $v_image_val;
