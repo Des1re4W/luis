@@ -532,11 +532,11 @@ function printReceipt(transactionId){
 
         cartHTML += `
         <tr>
-            <td colspan="2" class="item-name">${escapeHtml(item.name)}</td>
+            <td colspan="2" style="font-weight:bold; padding-top:4px; word-break:break-word;">${escapeHtml(item.name)}</td>
         </tr>
         <tr>
-            <td class="item-qty">${item.qty} x Php ${item.price.toFixed(2)}</td>
-            <td class="item-price">Php ${subtotal.toFixed(2)}</td>
+            <td style="width:50%; padding-bottom:4px; text-align:left;">${item.qty} x Php ${item.price.toFixed(2)}</td>
+            <td style="width:50%; padding-bottom:4px; text-align:right; font-weight:bold;">Php ${subtotal.toFixed(2)}</td>
         </tr>`;
     });
 
@@ -579,75 +579,61 @@ function printReceipt(transactionId){
 <style>
 @page {
     size: 58mm auto;
-    margin: 0;
+    margin: 0mm;
 }
 * {
     box-sizing: border-box;
+    -webkit-print-color-adjust: exact;
 }
 html, body {
     margin: 0;
     padding: 0;
-    width: 48mm;
+    width: 100%;
     background: #fff;
     color: #000;
 }
 body {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 10px;
+    font-size: 9px;
     line-height: 1.2;
-    padding: 2mm 1mm;
+    padding: 1mm 2mm;
 }
 .center {
     text-align: center;
 }
 .shop-name {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: bold;
     margin-bottom: 2px;
 }
 .shop-info {
     font-size: 8px;
     line-height: 1.2;
-    margin-bottom: 4px;
+    margin-bottom: 3px;
 }
 .title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
-    margin: 4px 0;
+    margin: 3px 0;
 }
 .dashed-line {
     border-bottom: 1px dashed #000;
-    margin: 6px 0;
+    margin: 4px 0;
     width: 100%;
 }
 table.receipt-table {
     width: 100%;
-    table-layout: fixed;
     border-collapse: collapse;
-    font-size: 10px;
+    font-size: 9px;
+    table-layout: fixed;
 }
 table.receipt-table td {
     vertical-align: top;
     word-wrap: break-word;
-    overflow-wrap: break-word;
-}
-.item-name {
-    font-weight: bold;
-    padding-top: 4px;
-    width: 100%;
-}
-.item-qty {
-    width: 55%;
-    padding-bottom: 4px;
-}
-.item-price {
-    width: 45%;
-    text-align: right;
-    font-weight: bold;
-    padding-bottom: 4px;
 }
 .lbl-col {
     width: 45%;
+    text-align: left;
 }
 .val-col {
     width: 55%;
@@ -655,13 +641,13 @@ table.receipt-table td {
 }
 .thank-you {
     text-align: center;
-    font-size: 9px;
-    margin-top: 8px;
-    padding-bottom: 10px;
+    font-size: 8px;
+    margin-top: 6px;
+    padding-bottom: 8px;
 }
 @media print {
     html, body {
-        width: 48mm;
+        width: 100%;
         height: auto;
     }
 }
@@ -710,7 +696,7 @@ table.receipt-table td {
 <div class="dashed-line"></div>
 
 <table class="receipt-table">
-    <tr style="font-size: 11px; font-weight: bold;">
+    <tr style="font-size: 10px; font-weight: bold;">
         <td class="lbl-col">TOTAL AMOUNT</td>
         <td class="val-col">Php ${total.toFixed(2)}</td>
     </tr>
