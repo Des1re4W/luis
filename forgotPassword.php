@@ -37,9 +37,8 @@ if (empty($resend_key) && isset($_SERVER['RESEND_API_KEY'])) {
     $resend_key = $_SERVER['RESEND_API_KEY'];
 }
 
-// OPTIONAL HARDCODED FALLBACK:
-// If your server provider completely wipes env variables, paste your Resend API key below:
-// if (empty($resend_key)) { $resend_key = 're_YOUR_ACTUAL_API_KEY_HERE'; }
+
+ if (empty($resend_key)) { $resend_key = 're_MUwXREuS_KXz8KrLsEPZuK9m5BMACeYNh'; }
 
 define('RESEND_API_KEY', trim((string)$resend_key));
 const EMAIL_FROM = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
