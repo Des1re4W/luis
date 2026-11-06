@@ -9,10 +9,25 @@ $message_type = "";
 // API ENDPOINT: LIVE FETCH OF ITEMS & ORDER INFO
 // ========================================================
 if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
-    header('Content-Type: application/json');
+    // Prevent any PHP warnings or notices from leaking into JSON response
+    error_reporting(0);
+    ini_set('display_errors', 0);
+    
+    // Clear any previous buffered output (whitespace, notices, included HTML)
+    if (ob_get_length()) {
+        ob_clean();
+    }
+    
+    header('Content-Type: application/json; charset=utf-8');
+
     $order_id = mysqli_real_escape_string($conn, trim($_GET['order_id'] ?? ''));
     $email = mysqli_real_escape_string($conn, trim($_GET['email'] ?? ''));
     
+    if (empty($order_id) || empty($email)) {
+        echo json_encode(['success' => false, 'message' => 'Please provide both Order ID and Email.']);
+        exit;
+    }
+
     $check = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
     
     if ($check && mysqli_num_rows($check) > 0) {
@@ -35,7 +50,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
         $check_cancel = mysqli_query($conn, "SELECT status FROM customer_requests WHERE order_number = '$order_id' AND request_type = 'cancel' ORDER BY id DESC LIMIT 1");
         $is_cancel_completed = false;
         if ($check_cancel && $cancel_row = mysqli_fetch_assoc($check_cancel)) {
-            if (strtolower(trim($cancel_row['status'])) === 'completed') {
+            if (strtolower(trim($cancel_row['status'] ?? '')) === 'completed') {
                 $is_cancel_completed = true;
             }
         }
