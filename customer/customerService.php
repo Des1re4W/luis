@@ -1,16 +1,16 @@
 <?php
 session_start();
 
-// Enable error reporting to catch hidden fatal errors during execution
+// Enable error handling, standard JSON output
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // Keep display off so errors don't corrupt JSON output
+ini_set('display_errors', 0);
 
-// Safe include database config
+// Safe include database config ($pdo)
 if (file_exists(__DIR__ . '/../config/db.php')) {
     require_once __DIR__ . '/../config/db.php';
 } else {
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['success' => false, 'message' => 'Database configuration file missing.']);
+    echo json_encode(['success' => false, 'message' => 'Config db.php file missing.']);
     exit;
 }
 
@@ -18,40 +18,38 @@ $message = "";
 $message_type = "";
 
 // ========================================================
-// API ENDPOINT: LIVE FETCH OF ITEMS & ORDER INFO
+// API ENDPOINT: LIVE FETCH OF ITEMS & ORDER INFO (PDO)
 // ========================================================
 if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
-    // Clear any previous output buffer (whitespace/warnings)
     if (ob_get_length()) {
         ob_clean();
     }
     
     header('Content-Type: application/json; charset=utf-8');
 
-    // Check DB Connection
-    if (!isset($conn) || !$conn) {
-        echo json_encode(['success' => false, 'message' => 'Database connection error: ' . mysqli_connect_error()]);
+    if (!isset($pdo) || !$pdo) {
+        echo json_encode(['success' => false, 'message' => 'Database PDO connection failed.']);
         exit;
     }
 
     try {
-        $order_id = mysqli_real_escape_string($conn, trim($_GET['order_id'] ?? ''));
-        $email = mysqli_real_escape_string($conn, trim($_GET['email'] ?? ''));
+        $order_id = trim($_GET['order_id'] ?? '');
+        $email = trim($_GET['email'] ?? '');
 
         if (empty($order_id) || empty($email)) {
-            echo json_encode(['success' => false, 'message' => 'Please fill in both Order ID and Email.']);
+            echo json_encode(['success' => false, 'message' => 'Please enter both Order ID and Email.']);
             exit;
         }
 
-        $check = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM orders WHERE id = :order_id AND email = :email LIMIT 1");
+        $stmt->execute([
+            ':order_id' => $order_id,
+            ':email' => $email
+        ]);
         
-        if (!$check) {
-            throw new Exception("Database query failed: " . mysqli_error($conn));
-        }
+        $order_data = $stmt->fetch();
 
-        if (mysqli_num_rows($check) > 0) {
-            $order_data = mysqli_fetch_assoc($check);
-
+        if ($order_data) {
             $cust_name = $order_data['fullname'] ?? ($order_data['customer_name'] ?? ($order_data['name'] ?? 'N/A'));
             $cust_surname = $order_data['surname'] ?? '';
             $ord_date = $order_data['order_date'] ?? ($order_data['created_at'] ?? 'N/A');
@@ -65,20 +63,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
             $ref_no = $order_data['ref_no'] ?? '';
             $paid_amount = $order_data['paid_amount'] ?? 0;
 
-            // Check cancellation status
+            // Check cancellation request status
             $is_cancel_completed = false;
-            $check_cancel = mysqli_query($conn, "SELECT status FROM customer_requests WHERE order_number = '$order_id' AND request_type = 'cancel' ORDER BY id DESC LIMIT 1");
-            if ($check_cancel && $cancel_row = mysqli_fetch_assoc($check_cancel)) {
-                if (strtolower(trim($cancel_row['status'] ?? '')) === 'completed') {
-                    $is_cancel_completed = true;
-                }
+            $stmt_cancel = $pdo->prepare("SELECT status FROM customer_requests WHERE order_number = :order_id AND request_type = 'cancel' ORDER BY id DESC LIMIT 1");
+            $stmt_cancel->execute([':order_id' => $order_id]);
+            $cancel_row = $stmt_cancel->fetch();
+
+            if ($cancel_row && strtolower(trim($cancel_row['status'] ?? '')) === 'completed') {
+                $is_cancel_completed = true;
             }
 
             // Parse cart items safely
             $items = [];
             $cart_raw = $order_data['cart'] ?? '';
             $cart_obj = is_string($cart_raw) ? json_decode($cart_raw, true) : $cart_raw;
-            
+
             if (is_array($cart_obj)) {
                 foreach ($cart_obj as $cart_item) {
                     $p_name = $cart_item['name'] ?? ($cart_item['product_name'] ?? 'Item');
@@ -115,42 +114,38 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
             ]);
             exit;
         } else {
-            echo json_encode(['success' => false, 'message' => 'Order not found matching this Order ID and Email.']);
+            echo json_encode(['success' => false, 'message' => 'Order not found with matching email.']);
             exit;
         }
-    } catch (Throwable $t) {
-        // Return 500 PHP errors as clean JSON so frontend alerts the actual issue
-        echo json_encode([
-            'success' => false, 
-            'message' => 'Server Error: ' . $t->getMessage() . ' in ' . basename($t->getFile()) . ' on line ' . $t->getLine()
-        ]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Database Error: ' . $e->getMessage()]);
         exit;
     }
 }
 
 // ========================================================
-// POST HANDLER: SUBMISSION OF REQUESTS (CANCELLATION & EXCHANGE)
+// POST HANDLER: SUBMISSION OF REQUESTS (PDO Version)
 // ========================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
-    $order_id = mysqli_real_escape_string($conn, trim($_POST['order_id']));
-    $email = mysqli_real_escape_string($conn, trim($_POST['email']));
-    $request_type = mysqli_real_escape_string($conn, $_POST['request_type']);
-    $reason = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
-    
+    $order_id = trim($_POST['order_id'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $request_type = trim($_POST['request_type'] ?? '');
+    $reason = trim($_POST['reason'] ?? '');
     $user_comments = trim($_POST['details'] ?? '');
 
-    $ver_query = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
-    
-    if ($ver_query && mysqli_num_rows($ver_query) > 0) {
-        $v_data = mysqli_fetch_assoc($ver_query);
+    $stmt_ver = $pdo->prepare("SELECT * FROM orders WHERE id = :order_id AND email = :email LIMIT 1");
+    $stmt_ver->execute([':order_id' => $order_id, ':email' => $email]);
+    $v_data = $stmt_ver->fetch();
+
+    if ($v_data) {
         $v_status = strtolower(trim($v_data['status'] ?? ''));
+        $v_ord_date_str = $v_data['order_date'] ?? ($v_data['created_at'] ?? 'now');
+        
+        // Backend 1-Day (24 Hours) Exchange Limit Validation
+        $order_timestamp = strtotime($v_ord_date_str);
+        $time_passed = time() - $order_timestamp;
+        $is_exceeded_1day = ($time_passed > 86400); // 86400 seconds = 24 hours
 
-        $v_cust_name = $v_data['fullname'] ?? ($v_data['customer_name'] ?? 'N/A');
-        $v_ord_date = $v_data['order_date'] ?? ($v_data['created_at'] ?? 'N/A');
-        $v_pay_method = strtoupper($v_data['payment_method'] ?? 'COD');
-        $v_total_amount = $v_data['total_amount'] ?? 0;
-
-        // Unified Backend Validations
         if ($v_status === 'cancelled' || $v_status === 'declined') {
             $message = "❌ Cannot submit request. This order has already been " . $v_status . ".";
             $message_type = "danger";
@@ -158,7 +153,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
         elseif ($request_type === 'exchange' && $v_status !== 'completed') {
             $message = "❌ Cannot request exchange. Item Exchange is only allowed for COMPLETED orders.";
             $message_type = "danger";
-        } 
+        }
+        elseif ($request_type === 'exchange' && $is_exceeded_1day) {
+            $message = "❌ Item Exchange requests are only allowed within 24 hours (1 day) after the order completion/date.";
+            $message_type = "danger";
+        }
         elseif ($request_type === 'cancel' && in_array($v_status, ['out for delivery', 'out_for_delivery', 'completed', 'delivered'])) {
             $message = "❌ Cannot request cancellation. Order status is " . strtoupper($v_data['status']) . ".";
             $message_type = "danger";
@@ -167,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
             $message = "❌ Cannot submit request. Submitting requests for this order status is locked.";
             $message_type = "danger";
         } else {
-            $filename = "";
+            $filename = null;
             if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === 0) {
                 $ext = pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION);
                 $filename = "REQ_" . time() . "_" . rand(1000, 9999) . "." . $ext;
@@ -185,15 +184,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                         $total_ordered_qty_map[$p_name] = $p_qty;
                     }
                 }
-            } catch (Exception $e) {
-                // Ignore parse exception on map generation
-            }
+            } catch (Exception $e) {}
 
             if ($request_type === 'exchange') {
                 $exchange_items = $_POST['exchange_items'] ?? [];
                 $exchange_qtys = $_POST['exchange_qtys'] ?? [];
                 $is_valid_qty = true;
                 $submitted_counts = [];
+
                 for ($i = 0; $i < count($exchange_items); $i++) {
                     $item_name = $exchange_items[$i];
                     $item_qty = intval($exchange_qtys[$i] ?? 1);
@@ -221,13 +219,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                         $readable_items_list .= "• {$item_name} (Qty: {$item_qty}x)\n";
                     }
                     
-                    $final_details_escaped = mysqli_real_escape_string($conn, $user_comments);
-                    $item_to_replace_escaped = mysqli_real_escape_string($conn, trim($readable_items_list));
-
-                    $ins = mysqli_query($conn, "INSERT INTO customer_requests 
+                    $stmt_ins = $pdo->prepare("INSERT INTO customer_requests 
                     (order_number, account, request_type, reason, details, item_to_replace, product_image, status) 
                     VALUES 
-                    ('$order_id', '$email', '$request_type', '$reason', '$final_details_escaped', '$item_to_replace_escaped', " . ($filename ? "'$filename'" : "NULL") . ", 'Pending')");
+                    (:order_id, :email, :request_type, :reason, :details, :item_to_replace, :product_image, 'Pending')");
+                    
+                    $ins = $stmt_ins->execute([
+                        ':order_id' => $order_id,
+                        ':email' => $email,
+                        ':request_type' => $request_type,
+                        ':reason' => $reason,
+                        ':details' => $user_comments,
+                        ':item_to_replace' => trim($readable_items_list),
+                        ':product_image' => $filename
+                    ]);
                     
                     if ($ins) {
                         $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
@@ -238,12 +243,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                     }
                 }
             } else {
-                $final_details_escaped = mysqli_real_escape_string($conn, $user_comments);
-
-                $ins = mysqli_query($conn, "INSERT INTO customer_requests
+                $stmt_ins = $pdo->prepare("INSERT INTO customer_requests
                 (order_number, account, request_type, reason, details, item_to_replace, product_image, status)
                 VALUES
-                ('$order_id', '$email', '$request_type', '$reason', '$final_details_escaped', NULL, " . ($filename ? "'$filename'" : "NULL") . ", 'Pending')");
+                (:order_id, :email, :request_type, :reason, :details, NULL, :product_image, 'Pending')");
+
+                $ins = $stmt_ins->execute([
+                    ':order_id' => $order_id,
+                    ':email' => $email,
+                    ':request_type' => $request_type,
+                    ':reason' => $reason,
+                    ':details' => $user_comments,
+                    ':product_image' => $filename
+                ]);
 
                 if ($ins) {
                     $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
@@ -588,6 +600,17 @@ function handleFormTypeSetup(status) {
     errorWrapper.classList.add('d-none');
     errorWrapper.innerHTML = '';
     
+    // Check if order date exceeds 24 hours (1 day)
+    let isExceeded1Day = false;
+    if (currentOrderInfo.order_date) {
+        const orderTimestamp = new Date(currentOrderInfo.order_date).getTime();
+        const nowTimestamp = new Date().getTime();
+        const hoursPassed = (nowTimestamp - orderTimestamp) / (1000 * 60 * 60);
+        if (hoursPassed > 24) {
+            isExceeded1Day = true;
+        }
+    }
+
     // Default reset states
     btnSubmitForm.disabled = false;
     btnSubmitForm.classList.remove('d-none');
@@ -595,7 +618,7 @@ function handleFormTypeSetup(status) {
     lblCancel.classList.remove('disabled', 'btn-outline-secondary');
     lblCancel.classList.add('btn-outline-dark');
 
-    // 1. If the order is already cancelled, declined, or has a completed cancellation request
+    // 1. If order is already cancelled/declined
     if (currentStatus === 'cancelled' || currentStatus === 'declined' || currentOrderInfo.is_cancel_completed) {
         reqCancel.disabled = true;
         lblCancel.classList.add('disabled', 'btn-outline-secondary');
@@ -606,7 +629,7 @@ function handleFormTypeSetup(status) {
         errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> This order has already been <strong>${currentStatus.toUpperCase()}</strong> or has a completed cancellation request. Submitting a new ticket is disabled.`;
     }
 
-    // 2. Kapag OUT FOR DELIVERY, DELIVERED, o COMPLETED - BAWAL NA MAG-CANCEL
+    // 2. Lock Cancellation for Delivery/Delivered/Completed states
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered' || currentStatus === 'completed') {
         reqCancel.disabled = true;
         lblCancel.classList.add('disabled', 'btn-outline-secondary');
@@ -614,7 +637,7 @@ function handleFormTypeSetup(status) {
         
         if (reqCancel.checked) {
             reqCancel.checked = false;
-            if (currentStatus === 'completed') {
+            if (currentStatus === 'completed' && !isExceeded1Day) {
                 reqExchange.checked = true;
             }
         }
@@ -625,7 +648,7 @@ function handleFormTypeSetup(status) {
         }
     }
 
-    // 3. Fully lock/disable submitting any requests if status is 'out for delivery' or 'delivered'
+    // 3. Lock whole form if status is Out for Delivery or Delivered
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered') {
         btnSubmitForm.disabled = true;
         reqExchange.disabled = true;
@@ -635,12 +658,24 @@ function handleFormTypeSetup(status) {
         errorWrapper.classList.remove('d-none');
         errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> Order status is <strong>${status.toUpperCase()}</strong>. Ticket submission is currently locked for this status.`;
     }
-    // Exchange button logic specifically for completed orders
+    // 4. Exchange Policy (Completed Status + 1-Day Limit Validation)
     else if (currentStatus === 'completed' && !currentOrderInfo.is_cancel_completed && currentStatus !== 'cancelled' && currentStatus !== 'declined') {
-        reqExchange.disabled = false;
-        lblExchange.classList.remove('disabled', 'btn-outline-secondary');
-        lblExchange.classList.add('btn-outline-primary');
-        reqExchange.checked = true; 
+        if (isExceeded1Day) {
+            // EXCEEDED 1 DAY: Disable exchange and form submission with English note
+            reqExchange.disabled = true;
+            lblExchange.classList.add('disabled', 'btn-outline-secondary');
+            lblExchange.classList.remove('btn-outline-primary');
+            reqExchange.checked = false;
+            btnSubmitForm.disabled = true;
+
+            errorWrapper.classList.remove('d-none');
+            errorWrapper.innerHTML = `⚠️ <strong>Notice:</strong> Item exchange requests are strictly allowed within <strong>1 day (24 hours)</strong> after order completion. Since 24 hours have already passed, submitting an exchange ticket is now disabled.`;
+        } else {
+            reqExchange.disabled = false;
+            lblExchange.classList.remove('disabled', 'btn-outline-secondary');
+            lblExchange.classList.add('btn-outline-primary');
+            reqExchange.checked = true;
+        }
     } else {
         reqExchange.disabled = true;
         lblExchange.classList.add('disabled', 'btn-outline-secondary');
