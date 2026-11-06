@@ -31,7 +31,7 @@ $default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/sv
 // Binasa mula sa Environment Variables (getenv, $_ENV, o $_SERVER)
 $resend_key = getenv('RESEND_API_KEY') 
     ?: ($_ENV['RESEND_API_KEY'] 
-    ?: ($_SERVER['RESEND_API_KEY'] ?? ''));
+    ?? ($_SERVER['RESEND_API_KEY'] ?? ''));
 
 define('RESEND_API_KEY', trim($resend_key));
 const EMAIL_FROM = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
