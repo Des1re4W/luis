@@ -21,7 +21,7 @@ $default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/sv
 // ================= SMTP SETTINGS =================
 const SMTP_HOST = 'smtp.gmail.com';
 const SMTP_USERNAME = 'rtaipancss@gmail.com';
-const SMTP_PASSWORD = 'chcbrtktgudysiue'; 
+const SMTP_PASSWORD = 'chcbrtktgudysiue'; // Siguraduhing 16-character App Password ito (walang spaces)
 const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
 function h($value)
@@ -29,25 +29,29 @@ function h($value)
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
-function sendResetOtp(string $email, string $otp): bool
+/**
+ * Sends Reset OTP via PHPMailer
+ * Returns array: ['success' => bool, 'error' => string]
+ */
+function sendResetOtp(string $email, string $otp): array
 {
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
         $mail->SMTPDebug = SMTP::DEBUG_OFF;
 
-        $mail->Host       = 'smtp.gmail.com';
+        $mail->Host       = SMTP_HOST;
         $mail->SMTPAuth   = true;
         $mail->Username   = SMTP_USERNAME;
         $mail->Password   = SMTP_PASSWORD;
         
-        // Gamitin ang ENCRYPTION_SMTPS at Port 465 (SSL)
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
-        $mail->Port       = 465;
+        // GUMAMIT NG STARTTLS AT PORT 587
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
         $mail->CharSet    = 'UTF-8';
-        $mail->Timeout    = 30;
+        $mail->Timeout    = 25;
 
-        // Bypass SSL Check para sa local environment
+        // Bypass SSL Certificate Verification para sa Local/Proxy Environments
         $mail->SMTPOptions = array(
             'ssl' => array(
                 'verify_peer'       => false,
@@ -72,10 +76,14 @@ function sendResetOtp(string $email, string $otp): bool
         $mail->AltBody = "Your R. Taipan Hardware password reset OTP is: {$otp}. It expires in 5 minutes. Do not share it.";
 
         $mail->send();
-        return true;
+        return ['success' => true, 'error' => ''];
+    } catch (Exception $e) {
+        $errorMsg = $mail->ErrorInfo ?: $e->getMessage();
+        error_log("OTP EMAIL ERROR: " . $errorMsg);
+        return ['success' => false, 'error' => $errorMsg];
     } catch (\Throwable $e) {
-        error_log("OTP EMAIL ERROR: " . $e->getMessage());
-        return false;
+        error_log("OTP EMAIL SYSTEM ERROR: " . $e->getMessage());
+        return ['success' => false, 'error' => $e->getMessage()];
     }
 }
 
@@ -154,7 +162,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = $_SESSION['pw_reset_account']['email'];
             $otp = (string) random_int(100000, 999999);
 
-            if (sendResetOtp($email, $otp)) {
+            $sendResult = sendResetOtp($email, $otp);
+
+            if ($sendResult['success']) {
                 $_SESSION['pw_reset_email']     = $email;
                 $_SESSION['pw_reset_otp_hash']  = password_hash($otp, PASSWORD_DEFAULT);
                 $_SESSION['pw_reset_expires']   = time() + 300;
@@ -164,7 +174,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "An OTP code has been sent to your email.";
                 $messageType = "success";
             } else {
-                $message = "Unable to send the OTP email. Please try again.";
+                // Ipapakita ang eksaktong mailer error kung mag-fail
+                $message = "Unable to send the OTP email: " . h($sendResult['error']);
                 $messageType = "danger";
             }
         }
@@ -435,7 +446,6 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         <!-- STEP 2: Show Found Account & Confirmation -->
         <?php elseif ($showAccountFound): ?>
             <div class="text-center p-3 mb-3 border rounded bg-light">
-                <!-- IPAPAKITA ANG PROFILE IMAGE O DEFAULT AVATAR (KAPAG WALANG PROFILE PIC O PAG BROKEN PATH) -->
                 <img src="<?= h($_SESSION['pw_reset_account']['profile_image']) ?>" 
                      alt="Profile Picture" 
                      class="user-profile-img"
