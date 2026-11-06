@@ -533,10 +533,11 @@ function printReceipt(transactionId){
         let qtyPrice = `${item.qty} x Php ${item.price.toFixed(2)}`;
         let subStr = `Php ${subtotal.toFixed(2)}`;
         
+        // Exact 32-character ASCII width alignment
         let spacesNeeded = Math.max(1, 32 - (qtyPrice.length + subStr.length));
         let spaceStr = " ".repeat(spacesNeeded);
 
-        cartHTML += `<strong style="font-weight:900;">${name}</strong>\n${qtyPrice}${spaceStr}<strong style="font-weight:900;">${subStr}</strong>\n`;
+        cartHTML += `<b>${name}</b>\n${qtyPrice}${spaceStr}<b>${subStr}</b>\n`;
     });
 
     let today = new Date();
@@ -557,7 +558,7 @@ function printReceipt(transactionId){
         let r = String(right);
         let spaceCount = Math.max(1, 32 - (l.length + r.length));
         let line = l + " ".repeat(spaceCount) + r;
-        return isBold ? `<strong style="font-weight:900;">${line}</strong>` : line;
+        return isBold ? `<b>${line}</b>` : line;
     }
 
     let oldFrame = document.getElementById("receipt-print-frame");
@@ -605,16 +606,25 @@ pre.receipt {
     white-space: pre-wrap;
     word-break: break-all;
     margin: 0;
-    padding: 2mm 1mm;
+    padding: 2mm 1mm 15mm 1mm; /* Naglagay ng 15mm bottom padding para ma-push lumampas sa cutter */
 }
 .center {
     text-align: center;
     display: block;
 }
-.bold-header {
-    font-weight: 900;
-    font-size: 13px;
-    letter-spacing: 1px;
+h2.shop-title {
+    font-size: 14px;
+    font-weight: bold;
+    margin: 0;
+    padding: 0;
+    display: inline;
+}
+h3.receipt-title {
+    font-size: 12px;
+    font-weight: bold;
+    margin: 0;
+    padding: 0;
+    display: inline;
 }
 @media print {
     html, body {
@@ -627,14 +637,14 @@ pre.receipt {
 <body>
 
 <pre class="receipt">
-<span class="center"><strong class="bold-header">R. TAIPAN HARDWARE</strong>
+<span class="center"><h2 class="shop-title">R. TAIPAN HARDWARE</h2>
 R. Taipan Construction Supply
 and Services, OPC
 190 Cabrera Rd. Sitio Burol
 Brgy. San Juan, Taytay, Rizal
 Contact: 0907 456 5632
 
-<strong style="font-weight:900;">*** OFFICIAL RECEIPT ***</strong></span>
+<h3 class="receipt-title">*** OFFICIAL RECEIPT ***</h3></span>
 --------------------------------
 ${formatLine("Transaction No:", transactionId)}
 ${formatLine("Date:", formattedDate)}
@@ -646,10 +656,13 @@ ${formatLine("TOTAL AMOUNT:", "Php " + total.toFixed(2), true)}
 ${formatLine("Amount Paid:", "Php " + paid.toFixed(2))}
 ${formatLine("CHANGE:", "Php " + change.toFixed(2), true)}
 --------------------------------
-<span class="center"><strong style="font-weight:900;">Thank you for your purchase!
-Please come again.</strong></span>
+<span class="center"><b>Thank you for your purchase!
+Please come again.</b></span>
 
 
+&nbsp;
+&nbsp;
+&nbsp;
 </pre>
 
 </body>
