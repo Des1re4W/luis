@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/google_drive.php';
+require_once __DIR__ . '/../config/image.php';
 
 // --- 1. PHPMAILER START ---
 use PHPMailer\PHPMailer\PHPMailer;
@@ -54,9 +56,7 @@ if (isset($_POST['send_email_update'])) {
         $mail->isHTML(true);
         $mail->Subject = "Order Status Update: #$order_id";
 
-        // =========================
         // APPROVED
-        // =========================
         if ($current_status == 'approved') {
 
             $stmt_items = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
@@ -238,19 +238,19 @@ if (isset($_POST['send_email_update'])) {
                 </div>
             ";
 
-        // =========================
-        // DECLINED / CANCELLED
-        // =========================
+        // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
         } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
             $decline_reason_text = !empty($order['decline_reason']) ? nl2br(htmlspecialchars($order['decline_reason'])) : 'No specific reason provided.';
             $pay_method_email = strtoupper(trim($order['payment_method'] ?? 'COD'));
             
             $refundEmailSection = "";
             if ($current_status == 'declined' && ($pay_method_email === 'GCASH' || $pay_method_email === 'MAYA') && !empty($order['refund_receipt'])) {
-                $mail->addEmbeddedImage("../uploads/" . $order['refund_receipt'], 'order_refund_cid');
                 $totalAmtEmail = (float)$order['total_amount'];
                 $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
                 $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
+
+                // Handle Google Drive Refund Proof URL or Local
+                $refundImgSrc = getProductImageSrc($order['refund_receipt']);
 
                 $refundEmailSection = "
                     <div style='background:#f8f9fa; padding:15px; border-radius:5px; margin:15px 0;'>
@@ -259,7 +259,9 @@ if (isset($_POST['send_email_update'])) {
                         <p style='margin:3px 0;'><strong>Reference Number:</strong> " . htmlspecialchars($order['refund_reference']) . "</p>
                         <br>
                         <p style='margin:0 0 5px 0;'><strong>Refund Proof:</strong></p>
-                        <img src='cid:order_refund_cid' style='max-width:250px; border:1px solid #ddd; border-radius:4px;'>
+                        <a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'>
+                            <img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:250px; border:1px solid #ddd; border-radius:4px;'>
+                        </a>
                     </div>
                 ";
             }
@@ -278,9 +280,7 @@ if (isset($_POST['send_email_update'])) {
                 <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
             ";
 
-        // =========================
         // OUT FOR DELIVERY
-        // =========================
         } elseif ($current_status == 'out_for_delivery') {
 
             $total = (float)$order['total_amount'];
@@ -351,9 +351,7 @@ if (isset($_POST['send_email_update'])) {
                 </div>
             ";
 
-        // =========================
         // COMPLETED
-        // =========================
         } elseif ($current_status == 'completed') {
 
             $mail->Body = "
@@ -367,9 +365,6 @@ if (isset($_POST['send_email_update'])) {
                 <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
             ";
 
-        // =========================
-        // OTHER STATUS
-        // =========================
         } else {
 
             $mail->Body = "
@@ -382,7 +377,6 @@ if (isset($_POST['send_email_update'])) {
 
         $mail->send();
 
-        // Update email status using PDO Prepared Statement
         $stmt_up = $pdo->prepare("UPDATE orders SET email_status = ? WHERE id = ?");
         $stmt_up->execute([$current_status, $order_id]);
 
@@ -401,9 +395,7 @@ if (isset($_POST['send_email_update'])) {
     }
 }
 
-// =========================
-// STATUS UPDATE
-// =========================
+// STATUS UPDATE (WITH GOOGLE DRIVE UPLOAD FOR ADMIN REFUND RECEIPT)
 if (isset($_POST['update_status'])) {
     $order_id = (int) $_POST['order_id'];
     $new_status = $_POST['status'];
@@ -418,8 +410,9 @@ if (isset($_POST['update_status'])) {
     $pm = strtoupper(trim($order['payment_method'] ?? 'COD'));
 
     $ref_no = $_POST['refund_reference'] ?? '';
-    $proof_filename = "";
+    $proof_path = "";
 
+    // UPLOAD REFUND RECEIPT TO GOOGLE DRIVE IF DECLINED
     if ($new_status == 'declined') {
         if (($pm === 'GCASH' || $pm === 'MAYA') && isset($_FILES['refund_receipt']) && $_FILES['refund_receipt']['error'] === UPLOAD_ERR_OK) {
             $file_tmp = $_FILES['refund_receipt']['tmp_name'];
@@ -428,8 +421,27 @@ if (isset($_POST['update_status'])) {
             
             $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
             if (in_array($file_ext, $allowed_exts)) {
-                $proof_filename = "order_refund_" . $order_id . "_" . time() . "." . $file_ext;
-                move_uploaded_file($file_tmp, "../uploads/" . $proof_filename);
+                $new_filename = "refund_" . $order_id . "_" . time() . "." . $file_ext;
+                
+                try {
+                    if (function_exists('uploadProductImageToDrive')) {
+                        $file_id = uploadProductImageToDrive($file_tmp, $new_filename);
+                        if (!empty($file_id)) {
+                            $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                        }
+                    }
+                } catch (Throwable $e) {
+                    error_log("ADMIN REFUND GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
+                }
+
+                // Fallback to local if Drive fails
+                if (empty($proof_path)) {
+                    $target_dir = "../uploads/";
+                    if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                    if (move_uploaded_file($file_tmp, $target_dir . $new_filename)) {
+                        $proof_path = "uploads/" . $new_filename;
+                    }
+                }
             }
         }
     }
@@ -438,9 +450,9 @@ if (isset($_POST['update_status'])) {
         $stmt = $pdo->prepare("UPDATE orders SET status = ?, approved_by = ? WHERE id = ?");
         $stmt->execute([$new_status, $admin_id, $order_id]);
     } elseif ($new_status == 'declined' && $old_status != 'declined') {
-        if (!empty($proof_filename)) {
+        if (!empty($proof_path)) {
             $stmt = $pdo->prepare("UPDATE orders SET status = ?, declined_by = ?, decline_reason = ?, refund_receipt = ?, refund_reference = ? WHERE id = ?");
-            $stmt->execute([$new_status, $admin_id, $decline_reason, $proof_filename, $ref_no, $order_id]);
+            $stmt->execute([$new_status, $admin_id, $decline_reason, $proof_path, $ref_no, $order_id]);
         } else {
             $stmt = $pdo->prepare("UPDATE orders SET status = ?, declined_by = ?, decline_reason = ? WHERE id = ?");
             $stmt->execute([$new_status, $admin_id, $decline_reason, $order_id]);
@@ -450,7 +462,7 @@ if (isset($_POST['update_status'])) {
         $stmt->execute([$new_status, $order_id]);
     }
 
-    // Ibalik ang stock kapag naging declined o cancelled
+    // Restore stock if declined or cancelled
     if (($new_status == 'declined' || $new_status == 'cancelled') && $old_status != 'declined' && $old_status != 'cancelled') {
         $cart_items = json_decode($order['cart'], true);
         if (!empty($cart_items)) {
@@ -474,9 +486,7 @@ if (isset($_POST['update_status'])) {
     exit();
 }
 
-// =========================
 // SEND TO CASHIER LOGIC
-// =========================
 if (isset($_POST['send_to_cashier'])) {
     $order_id = filter_var($_POST['order_id'] ?? 0, FILTER_VALIDATE_INT);
     
@@ -520,7 +530,6 @@ body{
     overflow-x:hidden;
 }
 
-/* SIDEBAR */
 .sidebar{
     position:fixed;
     top:0;
@@ -570,14 +579,12 @@ body{
     background:#0d6efd;
 }
 
-/* LOGOUT SA BABA */
 .logout-section{
     margin-top:auto;
     padding-top:15px;
     border-top:1px solid rgba(255,255,255,0.2);
 }
 
-/* MAIN CONTENT */
 .main-content{
     margin-left:260px;
     padding:25px;
@@ -585,12 +592,10 @@ body{
     transition: margin 0.3s ease;
 }
 
-/* TABLE */
 .table-responsive{
     border-radius:12px;
 }
 
-/* RECEIPT */
 .thermal-preview{
     width:80mm;
     margin:auto;
@@ -606,7 +611,6 @@ body{
     margin:10px 0;
 }
 
-/* SCROLLBAR */
 .sidebar::-webkit-scrollbar{
     width:5px;
 }
@@ -616,7 +620,6 @@ body{
     border-radius:10px;
 }
 
-/* MOBILE RESPONSIVENESS */
 @media (max-width: 991.98px) {
     .sidebar {
         transform: translateX(-100%);
@@ -635,7 +638,6 @@ body{
 
 <body>
 
-<!-- Mobile Header Toggle Bar -->
 <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
     <span class="navbar-brand fw-bold fs-6"><i class="bi bi-receipt"></i> Orders Management</span>
     <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
@@ -643,7 +645,6 @@ body{
     </button>
 </nav>
 
-<!-- SIDEBAR -->
 <div class="sidebar" id="appSidebar">
     <h2>
         Admin<br>
@@ -675,14 +676,12 @@ body{
     </div>
 </div>
 
-<!-- MAIN CONTENT -->
 <div class="main-content">
 
     <div class="d-flex justify-content-between mb-3 shadow-sm p-3 bg-white rounded align-items-center">
         <h4 class="mb-0 fs-5 fw-bold text-dark">📦 Orders Management</h4>
     </div>
 
-    <!-- TABLE -->
     <div class="table-responsive bg-white p-3 rounded shadow-sm">
         <table class="table table-hover align-middle">
             <thead class="table-light">
@@ -755,7 +754,10 @@ body{
                                     $isEwallet = ($pm === 'GCASH' || $pm === 'MAYA');
                                     ?>
                                     <?php if($isEwallet && !empty($row['refund_receipt'])): ?>
-                                        <br><a href="../uploads/<?php echo $row['refund_receipt']; ?>" target="_blank" class="small text-success fw-bold">
+                                        <?php 
+                                        $refundSrc = getProductImageSrc($row['refund_receipt']);
+                                        ?>
+                                        <br><a href="<?php echo htmlspecialchars($refundSrc); ?>" target="_blank" class="small text-success fw-bold">
                                             <i class="bi bi-image"></i> View Refund Proof
                                         </a>
                                     <?php endif; ?>
@@ -834,7 +836,6 @@ body{
                         <textarea name="decline_reason" class="form-control" rows="3" placeholder="Please provide the reason for declining the order." required></textarea>
                     </div>
 
-                    <!-- E-WALLET REFUND FIELDS-->
                     <div id="ewalletRefundFields" style="display: none;" class="border-top pt-3 mt-3">
                         <div class="alert alert-warning py-2 small mb-3">
                             <i class="bi bi-info-circle-fill"></i> The mode of payment is <strong id="paymentMethodLabel"></strong>. Please provide the refund details.
@@ -967,7 +968,6 @@ function viewCustomer(data) {
         let proofPath = data.proof_of_payment.trim();
         let finalSrc = "";
 
-        // SMART GOOGLE DRIVE & LOCAL PATH RESOLUTION FOR PROOF OF PAYMENT
         if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
             finalSrc = proofPath;
         } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
@@ -1144,7 +1144,6 @@ function viewReceipt(data) {
     document.activeElement.blur();
 }
 
-// Mobile Sidebar Toggle Script
 document.addEventListener("DOMContentLoaded", function() {
     const sidebarToggle = document.getElementById('sidebarToggle');
     const appSidebar = document.getElementById('appSidebar');
