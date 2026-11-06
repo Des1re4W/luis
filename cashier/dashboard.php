@@ -48,7 +48,7 @@ $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Helper function para mag-resolve ng Image Src tulad sa Admin & Customer Dashboard
 function resolveProductImage($raw_image) {
-    $img_src = '../assets/images/no-image.png';
+    $img_src = '../assets/no-image.jpg';
     if (!empty($raw_image)) {
         $image_value = trim($raw_image);
         
@@ -223,7 +223,7 @@ max-height:45vh
 <nav class="navbar navbar-dark navbar-custom">
 <div class="container-fluid">
 <h2 class="text-white fw-bold navbar-title d-flex align-items-center gap-2 m-0">
-<img src="../assets/logo.jpg" style="width:36px;height:36px;border-radius:50%;border:2px solid white;" alt="Logo" onerror="this.src='../assets/images/no-image.png';">
+<img src="../assets/logo.jpg" style="width:36px;height:36px;border-radius:50%;border:2px solid white;" alt="Logo" onerror="this.src='../assets/no-image.jpg';">
 <span>R. Taipan Hardware - Cashier Dashboard</span>
 </h2>
 <div class="navbar-tools">
@@ -271,7 +271,7 @@ $productId = ($row['type'] == "variant" ? "v_" : "m_") . $row['id'];
 src="<?php echo htmlspecialchars($imagePath, ENT_QUOTES, 'UTF-8'); ?>"
 class="prod-img mb-3"
 alt="<?php echo $productName; ?>"
-onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+onerror="this.onerror=null; this.src='../assets/no-image.jpg';">
 
 <h6
 class="fw-bold text-truncate product-name"
