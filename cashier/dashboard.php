@@ -15,6 +15,9 @@ $notif_query = $pdo->query("
 $notif_data = $notif_query->fetch(PDO::FETCH_ASSOC);
 $order_count = $notif_data['total'] ?? 0;
 
+// ========================================================
+// PRODUCTS QUERY (Filtered: Non-Archived Active Products)
+// ========================================================
 $products_stmt = $pdo->query("
     SELECT
         p.id,
@@ -24,19 +27,62 @@ $products_stmt = $pdo->query("
         p.image,
         'main' AS type
     FROM products p
+    WHERE p.is_archived = 0
+    
     UNION ALL
+    
     SELECT
         v.id,
-        v.variant_name AS product_name,
+        CONCAT(p.product_name, ' (', v.variant_name, ')') AS product_name,
         v.price,
         v.stock,
         COALESCE(NULLIF(v.variant_image, ''), p.image) AS image,
         'variant' AS type
     FROM product_variants v
-    LEFT JOIN products p ON v.product_id = p.id
+    JOIN products p ON v.product_id = p.id
+    WHERE p.is_archived = 0
+    
     ORDER BY product_name ASC
 ");
 $products = $products_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Helper function para mag-resolve ng Image Src tulad sa Admin & Customer Dashboard
+function resolveProductImage($raw_image) {
+    $img_src = '../assets/images/no-image.png';
+    if (!empty($raw_image)) {
+        $image_value = trim($raw_image);
+        
+        if (stripos($image_value, 'data:image/') === 0) {
+            $img_src = $image_value;
+        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+            $parsed_url = parse_url($image_value);
+            $host = strtolower($parsed_url['host'] ?? '');
+            
+            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                parse_str($parsed_url['query'] ?? '', $query_params);
+                $file_id = '';
+                if (!empty($query_params['id'])) {
+                    $file_id = $query_params['id'];
+                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                    $file_id = $matches[1];
+                }
+                if ($file_id !== '') {
+                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                }
+            } else {
+                $img_src = $image_value;
+            }
+        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value)) {
+            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+        } else {
+            $image_path = ltrim($image_value, '/');
+            if (file_exists(__DIR__ . '/../' . $image_path)) {
+                $img_src = '../' . htmlspecialchars($image_path, ENT_QUOTES, 'UTF-8');
+            }
+        }
+    }
+    return $img_src;
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -177,7 +223,7 @@ max-height:45vh
 <nav class="navbar navbar-dark navbar-custom">
 <div class="container-fluid">
 <h2 class="text-white fw-bold navbar-title d-flex align-items-center gap-2 m-0">
-<img src="../assets/logo.jpg" style="width:36px;height:36px;border-radius:50%;border:2px solid white;" alt="Logo">
+<img src="../assets/logo.jpg" style="width:36px;height:36px;border-radius:50%;border:2px solid white;" alt="Logo" onerror="this.src='../assets/images/no-image.png';">
 <span>R. Taipan Hardware - Cashier Dashboard</span>
 </h2>
 <div class="navbar-tools">
@@ -211,10 +257,10 @@ max-height:45vh
 <?php foreach($products as $row): ?>
 
 <?php
-$imagePath=!empty($row['image'])?"../".$row['image']:"../assets/no-image.jpg";
-$productName=htmlspecialchars($row['product_name'],ENT_QUOTES,'UTF-8');
-$jsName=json_encode($row['product_name']);
-$productId=($row['type']=="variant"?"v_":"m_").$row['id'];
+$imagePath = resolveProductImage($row['image']);
+$productName = htmlspecialchars($row['product_name'], ENT_QUOTES, 'UTF-8');
+$jsName = json_encode($row['product_name']);
+$productId = ($row['type'] == "variant" ? "v_" : "m_") . $row['id'];
 ?>
 
 <div class="col-6 col-sm-4 col-md-4 col-lg-3 product-item" data-name="<?php echo strtolower($row['product_name']); ?>">
@@ -222,10 +268,10 @@ $productId=($row['type']=="variant"?"v_":"m_").$row['id'];
 <div class="card product-card shadow-sm p-3">
 
 <img
-src="<?php echo htmlspecialchars($imagePath); ?>"
+src="<?php echo htmlspecialchars($imagePath, ENT_QUOTES, 'UTF-8'); ?>"
 class="prod-img mb-3"
-alt="Product"
-onerror="this.src='../assets/no-image.jpg';">
+alt="<?php echo $productName; ?>"
+onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
 
 <h6
 class="fw-bold text-truncate product-name"
@@ -234,7 +280,7 @@ title="<?php echo $productName; ?>">
 </h6>
 
 <p class="text-primary fw-bold product-price mb-1">
-₱<?php echo number_format((float)$row['price'],2); ?>
+₱<?php echo number_format((float)$row['price'], 2); ?>
 </p>
 
 <small class="text-muted product-stock">
