@@ -112,19 +112,17 @@ body{
 }
 
 .receipt-body {
+    width: 100%;
+    max-width: 380px;
+    margin: auto;
+    padding: 15px;
     background: #fff;
-    padding: 20px;
-    font-family: monospace;
+    font-family: 'Courier New', Courier, monospace;
     border: 1px solid #ddd;
+    color: #000;
+    border-radius: 8px;
 }
-.receipt-header {
-    text-align: center;
-    margin-bottom: 15px;
-}
-.receipt-logo {
-    font-size: 18px;
-    font-weight: bold;
-}
+
 .receipt-line {
     border-top: 1px dashed #000;
     margin: 10px 0;
@@ -186,17 +184,6 @@ body{
             </div>
         </div>
 
-        <div class="modal fade" id="receiptModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-sm"> 
-                <div class="modal-content">
-                    <div class="modal-body" id="receiptContent"></div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div class="card p-3 mb-4 shadow-sm border-0">
             <form method="GET" class="row g-2 align-items-end">
                 <div class="col-12 col-md-4">
@@ -248,8 +235,8 @@ body{
                                     <td><?php echo htmlspecialchars($row['fullname'] . " " . $row['surname']); ?></td>
                                     <td class="fw-bold text-success">₱<?php echo number_format($row['total_amount'], 2); ?></td>
                                     <td class="text-end pe-4">
-                                        <button class="btn btn-sm btn-outline-primary" onclick="viewOnlineItems(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['fullname'] . ' ' . $row['surname']); ?>', <?php echo $row['total_amount']; ?>, '<?php echo htmlspecialchars($row['status']); ?>')">
-                                            <i class="bi bi-eye"></i> View
+                                        <button class="btn btn-sm btn-outline-primary" onclick='viewOnlineItems(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>)'>
+                                            <i class="bi bi-receipt"></i> View Receipt
                                         </button>
                                     </td>
                                 </tr>
@@ -283,8 +270,8 @@ body{
                                     <td><i class="bi bi-person me-1 text-muted"></i> <?php echo htmlspecialchars($row['cashier_name']); ?></td>
                                     <td class="fw-bold text-success">₱<?php echo number_format($row['total_amount'], 2); ?></td>
                                     <td class="text-end pe-4">
-                                        <button class="btn btn-sm btn-outline-success" onclick="viewPOSitems(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['cashier_name']); ?>', <?php echo $row['total_amount']; ?>)">
-                                            <i class="bi bi-eye"></i> View
+                                        <button class="btn btn-sm btn-outline-success" onclick='viewPOSitems(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES, "UTF-8"); ?>)'>
+                                            <i class="bi bi-receipt"></i> View Receipt
                                         </button>
                                     </td>
                                 </tr>
@@ -302,37 +289,16 @@ body{
     </div>
 </div>
 
+<!-- OFFICIAL RECEIPT MODAL -->
 <div class="modal fade" id="itemsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title fw-bold"><i class="bi bi-receipt"></i> Official Invoice</h5>
+                <button type="button" class="btn-close" onclick="closeModal()"></button>
             </div>
-            <div class="modal-body bg-light">
-                <div class="receipt-body shadow-sm" id="receiptContainer">
-                    <div class="receipt-header">
-                        <div class="receipt-logo" style="letter-spacing: 1px;">R. Taipan Hardware</div>
-                        <small class="text-muted">Transaction Statement</small>
-                    </div>
-                    
-                    <div class="receipt-line"></div>
-                    <div id="receiptHeaderInfo" class="small fw-semibold" style="line-height: 1.6;"></div>
-                    <div class="receipt-line"></div>
-                    
-                    <table class="w-100 small">
-                        <thead>
-                            <tr class="fw-bold">
-                                <td style="width: 55%;">Item Description</td>
-                                <td style="width: 15%; text-align: center;">Qty</td>
-                                <td style="width: 30%; text-align: right;">Amount</td>
-                            </tr>
-                        </thead>
-                        <tbody id="itemsTableBody"></tbody>
-                    </table>
-                    
-                    <div class="receipt-line"></div>
-                    <div id="receiptFooterInfo"></div>
-                </div>
+            <div class="modal-body bg-dark py-4">
+                <div class="receipt-body shadow-sm" id="receiptContainer"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="closeModal()">Close</button>
@@ -341,6 +307,7 @@ body{
     </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 let invoiceModal;
 document.addEventListener("DOMContentLoaded", function() {
@@ -362,96 +329,211 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
-function viewOnlineItems(id, customer, total, status) {
-    const headerInfo = document.getElementById('receiptHeaderInfo');
-    const itemsTable = document.getElementById('itemsTableBody');
-    const footerInfo = document.getElementById('receiptFooterInfo');
-
-    itemsTable.innerHTML = "<tr><td colspan='3' class='text-center py-3 text-muted'>Loading items...</td></tr>";
-    headerInfo.innerHTML = "<em>Loading receipt details...</em>";
+// View Receipt Online Order
+function viewOnlineItems(data) {
+    const container = document.getElementById('receiptContainer');
+    container.innerHTML = "<div class='text-center py-3'>Loading receipt items...</div>";
     invoiceModal.show();
 
-    fetch(`getOnlineItems.php?id=${id}`)
-    .then(res => { if (!res.ok) throw new Error("Network response was not ok"); return res.json(); })
+    fetch(`getOnlineItems.php?id=${data.id}`)
+    .then(res => { if (!res.ok) throw new Error("Network response error"); return res.json(); })
     .then(items => {
-        itemsTable.innerHTML = "";
-        if(items.length === 0) {
-            headerInfo.innerHTML = `ORDER TYPE : ONLINE ORDER<br>ORDER NO   : ${id}<br>CUSTOMER   : ${customer.toUpperCase()}<br>STATUS     : ${status.toUpperCase()}<br>DATE       : N/A`;
-            itemsTable.innerHTML = "<tr><td colspan='3' class='text-center py-2 text-danger'>No items found.</td></tr>";
-            return;
-        }
-        let dbDate = items[0].order_date; 
-        headerInfo.innerHTML = `
-            ORDER TYPE : ONLINE ORDER<br>
-            ORDER NO   : ${id}<br>
-            CUSTOMER   : ${customer.toUpperCase()}<br>
-            STATUS     : ${status.toUpperCase()}<br>
-            DATE       : ${dbDate}
-        `;
+        let itemsHtml = '';
         items.forEach(item => {
-            let tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.product_name || "Unknown Item"}</td>
-                <td class="text-center">x${item.qty || 1}</td>
-                <td class="text-end">₱${parseFloat(item.subtotal || 0).toFixed(2)}</td>
+            let price = parseFloat(item.price || 0);
+            let qty = parseInt(item.qty || 1);
+            let subtotal = parseFloat(item.subtotal || (price * qty));
+
+            itemsHtml += `
+                <tr>
+                    <td>${item.product_name || item.name || 'Item'} (x${qty})</td>
+                    <td align="right">₱${subtotal.toFixed(2)}</td>
+                </tr>
             `;
-            itemsTable.appendChild(tr);
         });
-        footerInfo.innerHTML = `
-            <div class="d-flex justify-content-between fw-bold fs-6 mt-2 pt-2 border-top border-secondary">
-                <span>TOTAL AMOUNT:</span>
-                <span class="text-success">₱${parseFloat(total).toFixed(2)}</span>
+
+        let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
+        let paymentScheme = (data.payment_scheme || '').toLowerCase();
+        let totalAmt = parseFloat(data.total_amount || 0);
+        let orderStatus = (data.status || 'pending').toUpperCase();
+
+        let paymentBreakdownHtml = '';
+
+        if (paymentMethodName === 'COD') {
+            paymentBreakdownHtml = `
+                <div class="d-flex justify-content-between small fw-bold mb-2">
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱${totalAmt.toFixed(2)}</span>
+                </div>
+                <div class="text-muted small">
+                    Cash on Delivery (Pay upon delivery)
+                </div>
+            `;
+        }
+        else if (totalAmt >= 5000 && (paymentScheme.includes('50') || paymentScheme.includes('down'))) {
+            let downpayment = parseFloat(data.paid_amount || (totalAmt * 0.5));
+            let balance = totalAmt - downpayment;
+
+            paymentBreakdownHtml = `
+                <div class="d-flex justify-content-between small fw-bold mb-1">
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱${totalAmt.toFixed(2)}</span>
+                </div>
+                <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                    <span>PAID VIA ${paymentMethodName}:</span>
+                    <span>₱${downpayment.toFixed(2)}</span>
+                </div>
+                <div class="receipt-line"></div>
+                <div class="d-flex justify-content-between small fw-bold text-danger">
+                    <span>PAY UPON DELIVERY:</span>
+                    <span>₱${balance.toFixed(2)}</span>
+                </div>
+            `;
+        }
+        else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
+            let paidAmount = parseFloat(data.paid_amount || totalAmt);
+            let refNoField = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : '');
+
+            paymentBreakdownHtml = `
+                <div class="d-flex justify-content-between small fw-bold mb-1">
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱${totalAmt.toFixed(2)}</span>
+                </div>
+                <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                    <span>PAID VIA ${paymentMethodName}:</span>
+                    <span>₱${paidAmount.toFixed(2)}</span>
+                </div>
+            `;
+
+            if (refNoField) {
+                paymentBreakdownHtml += `
+                    <div class="small text-muted">
+                        Reference No: ${refNoField}
+                    </div>
+                `;
+            }
+        }
+        else {
+            paymentBreakdownHtml = `
+                <div class="d-flex justify-content-between small fw-bold">
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱${totalAmt.toFixed(2)}</span>
+                </div>
+            `;
+        }
+
+        let fullReceiptHtml = `
+            <div class="text-center mb-2">
+                <h5 class="fw-bold my-0 text-uppercase">R. Taipan Hardware</h5>
+                <small>190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</small><br>
+                <small>Contact: 0907 456 5632</small>
+                <div class="receipt-line"></div>
+                <small><b>OFFICIAL RECEIPT (ONLINE ORDER)</b></small>
+                <div class="receipt-line"></div>
+            </div>
+
+            <p class="small mb-1"><b>Order ID:</b> #${data.id}</p>
+            <p class="small mb-1"><b>Date:</b> ${data.order_date || 'N/A'}</p>
+            <p class="small mb-1"><b>Customer:</b> ${data.fullname || ''} ${data.surname || ''}</p>
+            <p class="small mb-1"><b>Contact:</b> ${data.contact_number || 'N/A'}</p>
+            <p class="small mb-1"><b>Address:</b> ${data.full_address || 'N/A'}</p>
+            <p class="small mb-2"><b>Landmark:</b> ${data.landmark || 'N/A'}</p>
+
+            <div class="receipt-line"></div>
+
+            <table width="100%" class="small mb-2">
+                ${itemsHtml}
+            </table>
+
+            <div class="receipt-line"></div>
+
+            ${paymentBreakdownHtml}
+
+            <div class="receipt-line mt-2"></div>
+
+            <div class="text-start small">
+                <b>Mode of Payment:</b> ${paymentMethodName}
+            </div>
+
+            <div class="text-center mt-2">
+                <small class="fw-bold">STATUS: ${orderStatus}</small>
             </div>
         `;
+
+        container.innerHTML = fullReceiptHtml;
     })
     .catch(err => {
-        itemsTable.innerHTML = `<tr><td colspan='3' class='text-center py-2 text-danger'>Error loading items.</td></tr>`;
+        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
     });
 }
 
-function viewPOSitems(id, cashier, total) {
-    const headerInfo = document.getElementById('receiptHeaderInfo');
-    const itemsTable = document.getElementById('itemsTableBody');
-    const footerInfo = document.getElementById('receiptFooterInfo');
-
-    itemsTable.innerHTML = "<tr><td colspan='3' class='text-center py-3 text-muted'>Loading items...</td></tr>";
-    headerInfo.innerHTML = "<em>Loading receipt details...</em>";
+// View Receipt Walk-in (POS)
+function viewPOSitems(data) {
+    const container = document.getElementById('receiptContainer');
+    container.innerHTML = "<div class='text-center py-3'>Loading receipt items...</div>";
     invoiceModal.show();
 
-    fetch(`getPOSitems.php?id=${id}`)
-    .then(res => { if (!res.ok) throw new Error("Network response was not ok"); return res.json(); })
+    fetch(`getPOSitems.php?id=${data.id}`)
+    .then(res => { if (!res.ok) throw new Error("Network response error"); return res.json(); })
     .then(items => {
-        itemsTable.innerHTML = "";
-        if(items.length === 0) {
-            headerInfo.innerHTML = `ORDER TYPE : WALK-IN (POS)<br>T NO : #POS-${id}<br>CASHIER    : ${cashier.toUpperCase()}<br>DATE       : N/A`;
-            itemsTable.innerHTML = "<tr><td colspan='3' class='text-center py-2 text-danger'>No items found.</td></tr>";
-            return;
-        }
-        let dbDate = items[0].transaction_date;
-        headerInfo.innerHTML = `
-            ORDER TYPE : WALK-IN (POS)<br>
-            ORDER NO : ${id}<br>
-            CASHIER    : ${cashier.toUpperCase()}<br>
-            DATE       : ${dbDate}
-        `;
+        let itemsHtml = '';
         items.forEach(item => {
-            let tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.product_name || "Unknown Item"}</td>
-                <td class="text-center">x${item.qty || 1}</td>
-                <td class="text-end">₱${parseFloat(item.subtotal || 0).toFixed(2)}</td>
+            let price = parseFloat(item.price || 0);
+            let qty = parseInt(item.qty || 1);
+            let subtotal = parseFloat(item.subtotal || (price * qty));
+
+            itemsHtml += `
+                <tr>
+                    <td>${item.product_name || item.name || 'Item'} (x${qty})</td>
+                    <td align="right">₱${subtotal.toFixed(2)}</td>
+                </tr>
             `;
-            itemsTable.appendChild(tr);
         });
-        footerInfo.innerHTML = `
-            <div class="d-flex justify-content-between fw-bold fs-6 mt-2 pt-2 border-top border-secondary">
+
+        let totalAmt = parseFloat(data.total_amount || 0);
+
+        let fullReceiptHtml = `
+            <div class="text-center mb-2">
+                <h5 class="fw-bold my-0 text-uppercase">R. Taipan Hardware</h5>
+                <small>190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</small><br>
+                <small>Contact: 0907 456 5632</small>
+                <div class="receipt-line"></div>
+                <small><b>OFFICIAL RECEIPT (POS WALK-IN)</b></small>
+                <div class="receipt-line"></div>
+            </div>
+
+            <p class="small mb-1"><b>Transaction ID:</b> #POS-${data.id}</p>
+            <p class="small mb-1"><b>Date:</b> ${data.transaction_date || 'N/A'}</p>
+            <p class="small mb-2"><b>Cashier:</b> ${data.cashier_name || 'Counter'}</p>
+
+            <div class="receipt-line"></div>
+
+            <table width="100%" class="small mb-2">
+                ${itemsHtml}
+            </table>
+
+            <div class="receipt-line"></div>
+
+            <div class="d-flex justify-content-between small fw-bold mb-1">
                 <span>TOTAL AMOUNT:</span>
-                <span class="text-success">₱${parseFloat(total).toFixed(2)}</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+
+            <div class="receipt-line mt-2"></div>
+
+            <div class="text-start small">
+                <b>Mode of Payment:</b> CASH
+            </div>
+
+            <div class="text-center mt-2">
+                <small class="fw-bold">STATUS: COMPLETED</small>
             </div>
         `;
+
+        container.innerHTML = fullReceiptHtml;
     })
     .catch(err => {
-        itemsTable.innerHTML = `<tr><td colspan='3' class='text-center py-2 text-danger'>Error loading items.</td></tr>`;
+        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
     });
 }
 
@@ -459,7 +541,5 @@ function closeModal() {
     if(invoiceModal) { invoiceModal.hide(); }
 }
 </script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
