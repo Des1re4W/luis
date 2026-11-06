@@ -371,8 +371,9 @@ if (isset($_POST['submit_refund'])) {
     exit();
 }
 
-$cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
-$exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
+// UPDATE QUERIES: Isinama ang o.paid_amount at o.refund_reference
+$cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.paid_amount, o.refund_reference, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
+$exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.paid_amount, o.refund_reference, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -389,7 +390,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
             overflow-x: hidden;
         }
 
-        /* SIDEBAR (Katulad ng sa Dashboard) */
+        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -445,7 +446,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
             border-top: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        /* MAIN CONTENT (Katulad ng sa Dashboard) */
+        /* MAIN CONTENT */
         .main {
             margin-left: 260px;
             padding: 25px;
@@ -689,7 +690,9 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                 'payment_method' => $row['payment_method'],
                                                 'payment_scheme' => $row['payment_scheme'],
                                                 'total_amount' => $row['total_amount'],
+                                                'paid_amount' => $row['paid_amount'] ?? 0,
                                                 'ref_no' => $row['ref_no'] ?? '',
+                                                'refund_reference' => $row['refund_reference'] ?? '',
                                                 'status' => $row['order_status']
                                             ]), ENT_QUOTES, 'UTF-8'); ?>)'>
                                                 <i class="bi bi-receipt"></i> View Receipt
@@ -850,7 +853,9 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                 'payment_method' => $row['payment_method'],
                                                 'payment_scheme' => $row['payment_scheme'],
                                                 'total_amount' => $row['total_amount'],
+                                                'paid_amount' => $row['paid_amount'] ?? 0,
                                                 'ref_no' => $row['ref_no'] ?? '',
+                                                'refund_reference' => $row['refund_reference'] ?? '',
                                                 'status' => $row['order_status']
                                             ]), ENT_QUOTES, 'UTF-8'); ?>)'>
                                                 <i class="bi bi-receipt"></i> View Receipt
@@ -1035,14 +1040,20 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
+// View Receipt Function — Identical logic to orders.php
 function viewReceipt(data) {
     const orderStatus = (data.status || 'pending').toUpperCase();
 
     let items = [];
     try {
         let cartObj = (typeof data.cart === "string") ? JSON.parse(data.cart) : data.cart;
-        items = Object.values(cartObj || {});
+        if (Array.isArray(cartObj)) {
+            items = cartObj;
+        } else if (cartObj && typeof cartObj === 'object') {
+            items = Object.values(cartObj);
+        }
     } catch (e) {
+        console.error("Cart parsing error:", e);
         items = [];
     }
 
@@ -1051,22 +1062,81 @@ function viewReceipt(data) {
         let price = parseFloat(item.price || 0);
         let qty = parseInt(item.qty || 0);
         let subtotal = price * qty;
-        itemsHtml += `<tr><td>${item.name} (x${qty})</td><td align="right">₱${subtotal.toFixed(2)}</td></tr>`;
+        itemsHtml += `
+            <tr>
+                <td>${item.name || item.product_name || 'Item'} (x${qty})</td>
+                <td align="right">₱${subtotal.toFixed(2)}</td>
+            </tr>
+        `;
     });
 
     let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
     let paymentScheme = (data.payment_scheme || '').toLowerCase();
     let totalAmt = parseFloat(data.total_amount || 0);
+
     let paymentBreakdownHtml = '';
 
     if (paymentMethodName === 'COD') {
-        paymentBreakdownHtml = `<div class="d-flex justify-content-between small fw-bold mb-2"><span>TOTAL AMOUNT:</span><span>₱${totalAmt.toFixed(2)}</span></div><div class="text-muted small">Cash on Delivery</div>`;
-    } else if (totalAmt >= 5000 && paymentScheme.includes('50')) {
-        let downpayment = totalAmt * 0.5;
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-2">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+            <div class="text-muted small">
+                Cash on Delivery (Pay upon delivery)
+            </div>
+        `;
+    }
+    else if (totalAmt >= 5000 && (paymentScheme.includes('50') || paymentScheme.includes('down'))) {
+        let downpayment = parseFloat(data.paid_amount || (totalAmt * 0.5));
         let balance = totalAmt - downpayment;
-        paymentBreakdownHtml = `<div class="d-flex justify-content-between small fw-bold mb-1"><span>TOTAL AMOUNT:</span><span>₱${totalAmt.toFixed(2)}</span></div><div class="d-flex justify-content-between small text-success fw-bold mb-1"><span>PAID (50%):</span><span>₱${downpayment.toFixed(2)}</span></div><div class="line"></div><div class="d-flex justify-content-between small fw-bold text-danger"><span>BALANCE:</span><span>₱${balance.toFixed(2)}</span></div>`;
-    } else {
-        paymentBreakdownHtml = `<div class="d-flex justify-content-between small fw-bold mb-1"><span>TOTAL AMOUNT:</span><span>₱${totalAmt.toFixed(2)}</span></div><div class="d-flex justify-content-between small text-success fw-bold mb-1"><span>PAID VIA ${paymentMethodName}:</span><span>₱${totalAmt.toFixed(2)}</span></div>`;
+
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-1">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+            <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                <span>PAID VIA ${paymentMethodName}:</span>
+                <span>₱${downpayment.toFixed(2)}</span>
+            </div>
+            <div class="line"></div>
+            <div class="d-flex justify-content-between small fw-bold text-danger">
+                <span>PAY UPON DELIVERY:</span>
+                <span>₱${balance.toFixed(2)}</span>
+            </div>
+        `;
+    }
+    else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
+        let paidAmount = parseFloat(data.paid_amount || totalAmt);
+        let refNoField = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : '');
+
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold mb-1">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+            <div class="d-flex justify-content-between small text-success fw-bold mb-1">
+                <span>PAID VIA ${paymentMethodName}:</span>
+                <span>₱${paidAmount.toFixed(2)}</span>
+            </div>
+        `;
+
+        if (refNoField) {
+            paymentBreakdownHtml += `
+                <div class="small text-muted">
+                    Reference No: ${refNoField}
+                </div>
+            `;
+        }
+    }
+    else {
+        paymentBreakdownHtml = `
+            <div class="d-flex justify-content-between small fw-bold">
+                <span>TOTAL AMOUNT:</span>
+                <span>₱${totalAmt.toFixed(2)}</span>
+            </div>
+        `;
     }
 
     let fullReceiptHtml = `
@@ -1078,19 +1148,33 @@ function viewReceipt(data) {
             <small><b>OFFICIAL RECEIPT (ONLINE ORDER)</b></small>
             <div class="line"></div>
         </div>
+
         <p class="small mb-1"><b>Order ID:</b> #${data.id}</p>
         <p class="small mb-1"><b>Date:</b> ${data.order_date}</p>
         <p class="small mb-1"><b>Customer:</b> ${data.fullname} ${data.surname}</p>
         <p class="small mb-1"><b>Contact:</b> ${data.contact_number}</p>
         <p class="small mb-1"><b>Address:</b> ${data.full_address}</p>
         <p class="small mb-2"><b>Landmark:</b> ${data.landmark || 'N/A'}</p>
+
         <div class="line"></div>
-        <table width="100%" class="small mb-2">${itemsHtml}</table>
+
+        <table width="100%" class="small mb-2">
+            ${itemsHtml}
+        </table>
+
         <div class="line"></div>
+
         ${paymentBreakdownHtml}
+
         <div class="line mt-2"></div>
-        <div class="text-start small"><b>Mode of Payment:</b> ${paymentMethodName}</div>
-        <div class="text-center mt-2"><small class="fw-bold">STATUS: ${orderStatus}</small></div>
+
+        <div class="text-start small">
+            <b>Mode of Payment:</b> ${paymentMethodName}
+        </div>
+
+        <div class="text-center mt-2">
+            <small class="fw-bold">STATUS: ${orderStatus}</small>
+        </div>
     `;
 
     document.getElementById('receiptContent').innerHTML = fullReceiptHtml;
