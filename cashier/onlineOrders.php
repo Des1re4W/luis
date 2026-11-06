@@ -198,7 +198,7 @@ function viewReceipt(data) {
 
     let receiptContent = `
 <pre style="font-family:'Courier New', Courier, monospace; font-size:10px; line-height:1.3; margin:0;">
-<span style="text-align:center; display:block;"><h4 class="receipt-title">*** R. TAIPAN HARDWARE ***</h4>
+<span style="text-align:center; display:block;"><h3 class="receipt-title">*** R. TAIPAN HARDWARE ***</h3>
 R. Taipan Construction Supply
 and Services, OPC
 190 Cabrera Rd. Sitio Burol
