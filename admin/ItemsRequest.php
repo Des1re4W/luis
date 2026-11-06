@@ -1,6 +1,8 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/google_drive.php';
+require_once __DIR__ . '/../config/image.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -280,12 +282,12 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
     exit();
 }
 
-// --- 3. REFUND SUBMISSION LOGIC ---
+// --- 3. REFUND SUBMISSION LOGIC WITH GOOGLE DRIVE REFUND RECEIPT UPLOAD ---
 if (isset($_POST['submit_refund'])) {
     $req_id = (int)$_POST['ticket_id'];
     $ref_no = trim($_POST['refund_reference']);
     
-    $proof_filename = "";
+    $proof_path = "";
     if (isset($_FILES['refund_receipt']) && $_FILES['refund_receipt']['error'] === UPLOAD_ERR_OK) {
         $file_tmp = $_FILES['refund_receipt']['tmp_name'];
         $file_name = $_FILES['refund_receipt']['name'];
@@ -293,14 +295,36 @@ if (isset($_POST['submit_refund'])) {
         
         $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
         if (in_array($file_ext, $allowed_exts)) {
-            $proof_filename = "refund_" . $req_id . "_" . time() . "." . $file_ext;
-            move_uploaded_file($file_tmp, "../uploads/" . $proof_filename);
+            $proof_filename = "refund_req_" . $req_id . "_" . time() . "." . $file_ext;
+
+            // Dedicated Refund Receipt Google Drive Folder ID
+            $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
+
+            try {
+                if (function_exists('uploadProductImageToDrive')) {
+                    $file_id = uploadProductImageToDrive($file_tmp, $proof_filename, $REFUND_RECEIPTS_FOLDER_ID);
+                    if (!empty($file_id)) {
+                        $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log("ADMIN REFUND REQUEST GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
+            }
+
+            // Local fallback kung mag-fail ang Drive upload
+            if (empty($proof_path)) {
+                $target_dir = "../uploads/";
+                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                if (move_uploaded_file($file_tmp, $target_dir . $proof_filename)) {
+                    $proof_path = "uploads/" . $proof_filename;
+                }
+            }
         }
     }
 
-    if (!empty($proof_filename)) {
+    if (!empty($proof_path)) {
         $up_ref = $pdo->prepare("UPDATE customer_requests SET status = 'Completed', refund_status = 'Refunded', refund_receipt = ?, refund_reference = ?, email_status = 'Completed' WHERE id = ?");
-        $up_ref->execute([$proof_filename, $ref_no, $req_id]);
+        $up_ref->execute([$proof_path, $ref_no, $req_id]);
 
         $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme 
                                    FROM customer_requests cr 
@@ -337,11 +361,8 @@ if (isset($_POST['submit_refund'])) {
                 $mail->isHTML(true);
                 $mail->Subject = "Refund Update: Order #$order_number has been refunded";
 
-                $proofImgTag = "";
-                if (!empty($proof_filename)) {
-                    $mail->addEmbeddedImage("../uploads/$proof_filename", 'refund_receipt_cid');
-                    $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><img src='cid:refund_receipt_cid' style='max-width:300px; border:1px solid #ddd; border-radius:6px;'></p>";
-                }
+                $refundImgSrc = getProductImageSrc($proof_path);
+                $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;'></a></p>";
 
                 $mail->Body = "
                     <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
@@ -678,7 +699,14 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                 <small class="text-danger" style="white-space: normal;"><strong>Decline Reason:</strong> <?php echo htmlspecialchars($row['admin_notes']); ?></small>
                                             <?php endif; ?>
 
-                                            <a href="javascript:void(0)" class="small text-primary text-decoration-none" onclick='viewReceipt(<?php echo htmlspecialchars(json_encode([
+                                            <?php if($row['status'] == 'Completed' && !empty($row['refund_receipt'])): ?>
+                                                <?php $refImgSrc = getProductImageSrc($row['refund_receipt']); ?>
+                                                <a href="<?php echo htmlspecialchars($refImgSrc); ?>" target="_blank" class="small text-success fw-bold mt-1">
+                                                    <i class="bi bi-image"></i> View Refund Proof
+                                                </a>
+                                            <?php endif; ?>
+
+                                            <a href="javascript:void(0)" class="small text-primary text-decoration-none mt-1" onclick='viewReceipt(<?php echo htmlspecialchars(json_encode([
                                                 'id' => $row['order_number'],
                                                 'order_date' => $row['order_date'],
                                                 'fullname' => $row['fullname'],
@@ -789,7 +817,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                     </div>
                                                     <div class="mb-3">
                                                         <label class="form-label fw-bold small">Upload Refund Receipt / Proof</label>
-                                                        <input type="file" name="refund_receipt" class="form-control" accept="image/*" required>
+                                                        <input type="file" name="refund_receipt" class="form-control" accept=".jpg,.jpeg,.png,.webp" required>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer">
@@ -866,8 +894,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                         <?php 
                                         $img_path = "";
                                         if(!empty($row['product_image'])) {
-                                            if(file_exists("../uploads/" . $row['product_image'])) { $img_path = "../uploads/" . $row['product_image']; }
-                                            elseif(file_exists("uploads/" . $row['product_image'])) { $img_path = "uploads/" . $row['product_image']; }
+                                            $img_path = getProductImageSrc($row['product_image']);
                                         }
                                         if(!empty($img_path)): 
                                         ?>

@@ -2,6 +2,14 @@
 session_start();
 require_once __DIR__ . "/config/db.php";
 
+require_once __DIR__ . "/libs/src/Exception.php";
+require_once __DIR__ . "/libs/src/PHPMailer.php";
+require_once __DIR__ . "/libs/src/SMTP.php";
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+use PHPMailer\PHPMailer\SMTP;
+
 date_default_timezone_set('Asia/Manila');
 
 $message = "";
@@ -10,68 +18,64 @@ $messageType = "info";
 // Built-in Default Avatar (SVG Data URI - pareho sa dashboard.php)
 $default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
-// ================= API MAIL SETTINGS (BYPASSES SMTP BLOCKING) =================
-const RESEND_API_KEY = 're_MUwXREuS_KXz8KrLsEPZuK9m5BMACeYNh'; // Ang iyong Resend API Key
-const EMAIL_FROM     = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
+// ================= SMTP SETTINGS =================
+const SMTP_HOST = 'smtp.gmail.com';
+const SMTP_USERNAME = 'rtaipancss@gmail.com';
+const SMTP_PASSWORD = 'chcbrtktgudysiue'; 
+const SMTP_FROM_NAME = 'R. Taipan Hardware';
 
 function h($value)
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
-/**
- * Sends Reset OTP via Resend HTTPS API (Port 443 - Cannot be blocked by Render/ISP)
- * Returns array: ['success' => bool, 'error' => string]
- */
-function sendResetOtp(string $email, string $otp): array
+function sendResetOtp(string $email, string $otp): bool
 {
-    $url = 'https://api.resend.com/emails';
+    $mail = new PHPMailer(true);
+    try {
+        $mail->isSMTP();
+        $mail->SMTPDebug = SMTP::DEBUG_OFF;
 
-    $htmlBody = "
-        <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
-            <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
-            <p>We received a request to reset your R. Taipan Hardware account password.</p>
-            <p>Your one-time password (OTP) is:</p>
-            <div style='font-size:30px;font-weight:bold;letter-spacing:8px;background:#f3f6fb;padding:18px;text-align:center;border-radius:8px;color:#001f4d;'>" . h($otp) . "</div>
-            <p>This OTP expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
-            <p>If you did not request a password reset, you can ignore this email.</p>
-        </div>";
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = SMTP_USERNAME;
+        $mail->Password   = SMTP_PASSWORD;
+        
+        // Gamitin ang ENCRYPTION_SMTPS at Port 465 (SSL)
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+        $mail->Port       = 465;
+        $mail->CharSet    = 'UTF-8';
+        $mail->Timeout    = 30;
 
-    $payload = [
-        'from'    => EMAIL_FROM,
-        'to'      => [$email],
-        'subject' => 'Password Reset OTP - R. Taipan Hardware',
-        'html'    => $htmlBody,
-    ];
+        // Bypass SSL Check para sa local environment
+        $mail->SMTPOptions = array(
+            'ssl' => array(
+                'verify_peer'       => false,
+                'verify_peer_name'  => false,
+                'allow_self_signed' => true
+            )
+        );
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . RESEND_API_KEY,
-        'Content-Type: application/json'
-    ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        $mail->setFrom(SMTP_USERNAME, SMTP_FROM_NAME);
+        $mail->addAddress($email);
+        $mail->isHTML(true);
+        $mail->Subject = 'Password Reset OTP - R. Taipan Hardware';
+        $mail->Body    = "
+            <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
+                <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
+                <p>We received a request to reset your R. Taipan Hardware account password.</p>
+                <p>Your one-time password (OTP) is:</p>
+                <div style='font-size:30px;font-weight:bold;letter-spacing:8px;background:#f3f6fb;padding:18px;text-align:center;border-radius:8px;color:#001f4d;'>" . h($otp) . "</div>
+                <p>This OTP expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+                <p>If you did not request a password reset, you can ignore this email.</p>
+            </div>";
+        $mail->AltBody = "Your R. Taipan Hardware password reset OTP is: {$otp}. It expires in 5 minutes. Do not share it.";
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-
-    if ($curlError) {
-        error_log("OTP EMAIL API ERROR: " . $curlError);
-        return ['success' => false, 'error' => 'cURL Error: ' . $curlError];
-    }
-
-    $resData = json_decode($response, true);
-
-    if ($httpCode >= 200 && $httpCode < 300) {
-        return ['success' => true, 'error' => ''];
-    } else {
-        $errorDetails = $resData['message'] ?? $response;
-        error_log("OTP EMAIL API REJECTED: " . $errorDetails);
-        return ['success' => false, 'error' => $errorDetails];
+        $mail->send();
+        return true;
+    } catch (\Throwable $e) {
+        error_log("OTP EMAIL ERROR: " . $e->getMessage());
+        return false;
     }
 }
 
@@ -150,9 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $email = $_SESSION['pw_reset_account']['email'];
             $otp = (string) random_int(100000, 999999);
 
-            $sendResult = sendResetOtp($email, $otp);
-
-            if ($sendResult['success']) {
+            if (sendResetOtp($email, $otp)) {
                 $_SESSION['pw_reset_email']     = $email;
                 $_SESSION['pw_reset_otp_hash']  = password_hash($otp, PASSWORD_DEFAULT);
                 $_SESSION['pw_reset_expires']   = time() + 300;
@@ -162,7 +164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $message = "An OTP code has been sent to your email.";
                 $messageType = "success";
             } else {
-                $message = "Unable to send the OTP email: " . h($sendResult['error']);
+                $message = "Unable to send the OTP email. Please try again.";
                 $messageType = "danger";
             }
         }
@@ -433,6 +435,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         <!-- STEP 2: Show Found Account & Confirmation -->
         <?php elseif ($showAccountFound): ?>
             <div class="text-center p-3 mb-3 border rounded bg-light">
+                <!-- IPAPAKITA ANG PROFILE IMAGE O DEFAULT AVATAR (KAPAG WALANG PROFILE PIC O PAG BROKEN PATH) -->
                 <img src="<?= h($_SESSION['pw_reset_account']['profile_image']) ?>" 
                      alt="Profile Picture" 
                      class="user-profile-img"
