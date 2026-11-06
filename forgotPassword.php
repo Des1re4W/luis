@@ -4,6 +4,23 @@ require_once __DIR__ . "/config/db.php";
 
 date_default_timezone_set('Asia/Manila');
 
+// Optional: Automatically load a local .env file if running in local development
+if (file_exists(__DIR__ . '/.env')) {
+    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if (strpos($line, '#') === 0 || empty($line)) continue;
+        if (strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value, " \t\n\r\0\x0B\"'");
+            putenv("{$name}={$value}");
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+    }
+}
+
 $message = "";
 $messageType = "info";
 
@@ -11,9 +28,12 @@ $messageType = "info";
 $default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
 // ================= API MAIL SETTINGS (BYPASSES SMTP BLOCKING) =================
-// Binasa mula sa Environment Variable upang madaanan ang GitHub Push Protection
-$resend_key = getenv('RESEND_API_KEY') ?: ($_ENV['RESEND_API_KEY'] ?? '');
-define('RESEND_API_KEY', $resend_key);
+// Binasa mula sa Environment Variables (getenv, $_ENV, o $_SERVER)
+$resend_key = getenv('RESEND_API_KEY') 
+    ?: ($_ENV['RESEND_API_KEY'] 
+    ?: ($_SERVER['RESEND_API_KEY'] ?? ''));
+
+define('RESEND_API_KEY', trim($resend_key));
 const EMAIL_FROM = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
 
 function h($value)
