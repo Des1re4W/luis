@@ -17,7 +17,7 @@ function getGoogleDriveClient(): Google\Client
     return $client;
 }
 
-function uploadProductImageToDrive(string $filePath, string $fileName): string
+function uploadProductImageToDrive(string $filePath, string $fileName, ?string $targetFolderId = null): string
 {
     $refreshToken = getenv('GOOGLE_REFRESH_TOKEN');
 
@@ -47,8 +47,9 @@ function uploadProductImageToDrive(string $filePath, string $fileName): string
         'name' => $fileName
     ]);
 
-    // Optional: upload into a specific Drive folder.
-    $folderId = getenv('GOOGLE_DRIVE_FOLDER_ID');
+    // Priority Check: Kung may ipinasang partikular na targetFolderId, iyon ang gagamitin.
+    // Kung wala, gagamitin ang default GOOGLE_DRIVE_FOLDER_ID mula sa environment variables.
+    $folderId = $targetFolderId ?: getenv('GOOGLE_DRIVE_FOLDER_ID');
 
     if ($folderId) {
         $metadata->setParents([$folderId]);
@@ -67,7 +68,7 @@ function uploadProductImageToDrive(string $filePath, string $fileName): string
         throw new Exception('Google Drive did not return a file ID.');
     }
 
-    // Allow the website to display the product image publicly.
+    // Allow the website to display the product/receipt image publicly.
     $permission = new Google\Service\Drive\Permission([
         'type' => 'anyone',
         'role' => 'reader'
