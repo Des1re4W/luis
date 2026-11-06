@@ -1,6 +1,12 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
+
+// Siguraduhing na-require ang Google Drive configuration / uploader helpers
+if (file_exists(__DIR__ . '/../config/gdrive.php')) {
+    require_once __DIR__ . '/../config/gdrive.php';
+}
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
@@ -41,6 +47,52 @@ function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $
         'details' => $details,
         'ip_address' => $ip_address
     ]);
+}
+
+// Helper function para sa pag-upload ng Image sa Google Drive
+function handleGoogleDriveVariantUpload($fileArray)
+{
+    if (!isset($fileArray['tmp_name']) || $fileArray['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+
+    $tmp = $fileArray['tmp_name'];
+    $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
+    $file_mime_check = mime_content_type($tmp);
+
+    if (!in_array($file_mime_check, $allowed_types)) {
+        return false; // Invalid file type
+    }
+
+    // Subukang i-upload direct sa Google Drive kung available ang helper function
+    if (function_exists('uploadToGoogleDrive')) {
+        $drive_file_id = uploadToGoogleDrive($tmp, $fileArray['name'], $file_mime_check);
+        if ($drive_file_id) {
+            return $drive_file_id;
+        }
+    } elseif (function_exists('uploadToDrive')) {
+        $drive_file_id = uploadToDrive($tmp, $fileArray['name'], $file_mime_check);
+        if ($drive_file_id) {
+            return $drive_file_id;
+        }
+    }
+
+    // Fallback kung hindi gumana ang Google Drive helper: I-save muna locally sa uploads/
+    $target_dir = __DIR__ . '/../uploads/';
+    if (!is_dir($target_dir)) {
+        mkdir($target_dir, 0755, true);
+    }
+
+    $original_name = basename($fileArray['name']);
+    $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
+    $filename = uniqid('var_', true) . '_' . $safe_name;
+    $target_file = $target_dir . $filename;
+
+    if (move_uploaded_file($tmp, $target_file)) {
+        return 'uploads/' . $filename;
+    }
+
+    return null;
 }
 
 // ADD NEW VARIANT
@@ -90,34 +142,16 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
-    // Handle variant image upload with Photo-Only Validation
-    if (
-        isset($_FILES['variant_image']) &&
-        $_FILES['variant_image']['error'] === UPLOAD_ERR_OK
-    ) {
-        $tmp = $_FILES['variant_image']['tmp_name'];
-        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-        $file_mime_check = mime_content_type($tmp);
+    // Handle variant image upload with Google Drive Upload Logic
+    if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] === UPLOAD_ERR_OK) {
+        $upload_result = handleGoogleDriveVariantUpload($_FILES['variant_image']);
 
-        if (!in_array($file_mime_check, $allowed_types)) {
-            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed (GIFs, videos, and audio files are not permitted).";
+        if ($upload_result === false) {
+            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
             header("Location: manageVariants.php?product_id=$product_id");
             exit();
-        }
-
-        $target_dir = __DIR__ . '/../uploads/';
-
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0755, true);
-        }
-
-        $original_name = basename($_FILES['variant_image']['name']);
-        $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
-        $filename = uniqid('var_', true) . '_' . $safe_name;
-        $target_file = $target_dir . $filename;
-
-        if (move_uploaded_file($tmp, $target_file)) {
-            $variant_image_path = 'uploads/' . $filename;
+        } elseif ($upload_result !== null) {
+            $variant_image_path = $upload_result;
         }
     }
 
@@ -228,36 +262,17 @@ if (isset($_POST['update_variant'])) {
         'product_id' => $product_id
     ];
 
-    // Replace image only if a new one is uploaded with Photo-Only Validation
-    if (
-        isset($_FILES['edit_variant_image']) &&
-        $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK
-    ) {
-        $tmp = $_FILES['edit_variant_image']['tmp_name'];
-        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-        $file_mime_check = mime_content_type($tmp);
+    // Replace image only if a new one is uploaded with Google Drive Integration
+    if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK) {
+        $upload_result = handleGoogleDriveVariantUpload($_FILES['edit_variant_image']);
 
-        if (!in_array($file_mime_check, $allowed_types)) {
+        if ($upload_result === false) {
             $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
             header("Location: manageVariants.php?product_id=$product_id");
             exit();
-        }
-
-        $target_dir = __DIR__ . '/../uploads/';
-
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0755, true);
-        }
-
-        $original_name = basename($_FILES['edit_variant_image']['name']);
-        $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
-        $filename = uniqid('var_', true) . '_' . $safe_name;
-        $target_file = $target_dir . $filename;
-
-        if (move_uploaded_file($tmp, $target_file)) {
-            $img_path = 'uploads/' . $filename;
+        } elseif ($upload_result !== null) {
             $update_sql .= ", variant_image = :variant_image";
-            $params['variant_image'] = $img_path;
+            $params['variant_image'] = $upload_result;
         }
     }
 
@@ -439,9 +454,9 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <?php if (!empty($variants_res)): ?>
                                     <?php foreach ($variants_res as $v): ?>
                                         <?php
-                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product[cite: 2]
+                                        // Kunin ang image ng variant; kung wala, gamitin ang sa main product
                                         $v_image_val = !empty($v['variant_image']) ? trim($v['variant_image']) : trim($product['image'] ?? '');
-                                        $img_src = '';
+                                        $img_src = '../assets/images/no-image.png';
 
                                         if (!empty($v_image_val)) {
                                             $file_id = '';
@@ -470,7 +485,6 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $v_image_val) && !str_contains($v_image_val, '/')) {
                                                 $img_src = '../drive-image.php?id=' . urlencode($v_image_val);
                                             } else {
-                                                // Siguraduhing tama ang relative path depende sa uploaded filename[cite: 2]
                                                 $clean_path = ltrim($v_image_val, '/');
                                                 if (str_starts_with($clean_path, '../')) {
                                                     $img_src = $clean_path;
@@ -482,15 +496,12 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         ?>
                                         <tr>
                                             <td class="text-center">
-                                                <?php if (!empty($img_src)): ?>
-                                                    <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
-                                                        alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
-                                                        class="rounded"
-                                                        style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
-                                                        loading="lazy">
-                                                <?php else: ?>
-                                                    <span class="badge bg-secondary">No Pic</span>
-                                                <?php endif; ?>
+                                                <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
+                                                    alt="<?php echo htmlspecialchars($v['variant_name'] ?? 'Variant Image', ENT_QUOTES, 'UTF-8'); ?>"
+                                                    class="rounded"
+                                                    style="width:40px; height:40px; object-fit:cover; border:1px solid #ddd;"
+                                                    onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                                    loading="lazy">
                                             </td>
 
                                             <td class="fw-bold text-dark">
