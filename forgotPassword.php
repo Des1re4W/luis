@@ -4,9 +4,15 @@ require_once __DIR__ . "/config/db.php";
 
 date_default_timezone_set('Asia/Manila');
 
+// Auto-create local .env file if it doesn't exist (Local Dev Helper)
+$envFilePath = __DIR__ . '/.env';
+if (!file_exists($envFilePath)) {
+    @file_put_contents($envFilePath, "RESEND_API_KEY=re_MYakuPM1_KexHehmSz5GrqiGJa9iKq4G7\n");
+}
+
 // 1. Automatically load a local .env file if running in local development
-if (file_exists(__DIR__ . '/.env')) {
-    $lines = file(__DIR__ . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+if (file_exists($envFilePath)) {
+    $lines = file($envFilePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($lines as $line) {
         $line = trim($line);
         if (strpos($line, '#') === 0 || empty($line)) continue;
@@ -25,7 +31,7 @@ $message = "";
 $messageType = "info";
 
 // Built-in Default Avatar (SVG Data URI - pareho sa dashboard.php)
-$default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
+$default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 interim0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
 // ================= API MAIL SETTINGS (BYPASSES SMTP BLOCKING) =================
 // Safely check getenv, $_ENV, and $_SERVER without throwing Undefined Array Key warnings
@@ -36,9 +42,6 @@ if (empty($resend_key) && isset($_ENV['RESEND_API_KEY'])) {
 if (empty($resend_key) && isset($_SERVER['RESEND_API_KEY'])) {
     $resend_key = $_SERVER['RESEND_API_KEY'];
 }
-
-
- if (empty($resend_key)) { $resend_key = 're_MUwXREuS_KXz8KrLsEPZuK9m5BMACeYNh'; }
 
 define('RESEND_API_KEY', trim((string)$resend_key));
 const EMAIL_FROM = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
