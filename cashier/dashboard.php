@@ -14,9 +14,8 @@ $notif_query = $pdo->query("
 ");
 $notif_data = $notif_query->fetch(PDO::FETCH_ASSOC);
 $order_count = $notif_data['total'] ?? 0;
-
 // ========================================================
-// PRODUCTS QUERY (Filtered: Non-Archived Active Products)
+// PRODUCTS QUERY (Fixed Variant Name Concatenation)
 // ========================================================
 $products_stmt = $pdo->query("
     SELECT
@@ -33,7 +32,7 @@ $products_stmt = $pdo->query("
     
     SELECT
         v.id,
-        CONCAT(p.product_name, ' (', v.variant_name, ')') AS product_name,
+        v.variant_name AS product_name,
         v.price,
         v.stock,
         COALESCE(NULLIF(v.variant_image, ''), p.image) AS image,
