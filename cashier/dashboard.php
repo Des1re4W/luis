@@ -531,13 +531,13 @@ function printReceipt(transactionId){
         let subtotal = item.price * item.qty;
 
         cartHTML += `
-        <tr>
-            <td colspan="2" style="font-weight:bold; padding-top:4px; word-break:break-word;">${escapeHtml(item.name)}</td>
-        </tr>
-        <tr>
-            <td style="width:50%; padding-bottom:4px; text-align:left;">${item.qty} x Php ${item.price.toFixed(2)}</td>
-            <td style="width:50%; padding-bottom:4px; text-align:right; font-weight:bold;">Php ${subtotal.toFixed(2)}</td>
-        </tr>`;
+        <div style="font-weight:bold; padding-top:4px; word-break:break-word;">
+            ${escapeHtml(item.name)}
+        </div>
+        <div style="display:flex; justify-content:space-between; width:100%; padding-bottom:4px;">
+            <span>${item.qty} x Php ${item.price.toFixed(2)}</span>
+            <span style="font-weight:bold;">Php ${subtotal.toFixed(2)}</span>
+        </div>`;
     });
 
     let today = new Date();
@@ -588,21 +588,21 @@ function printReceipt(transactionId){
 html, body {
     margin: 0;
     padding: 0;
-    width: 100%;
+    width: 48mm;
     background: #fff;
     color: #000;
 }
 body {
     font-family: 'Courier New', Courier, monospace;
-    font-size: 9px;
-    line-height: 1.2;
-    padding: 1mm 2mm;
+    font-size: 10px;
+    line-height: 1.3;
+    padding: 2mm;
 }
 .center {
     text-align: center;
 }
 .shop-name {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: bold;
     margin-bottom: 2px;
 }
@@ -612,42 +612,30 @@ body {
     margin-bottom: 3px;
 }
 .title {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: bold;
-    margin: 3px 0;
+    margin: 4px 0;
 }
 .dashed-line {
     border-bottom: 1px dashed #000;
-    margin: 4px 0;
+    margin: 5px 0;
     width: 100%;
 }
-table.receipt-table {
+.row-item {
+    display: flex;
+    justify-content: space-between;
     width: 100%;
-    border-collapse: collapse;
-    font-size: 9px;
-    table-layout: fixed;
-}
-table.receipt-table td {
-    vertical-align: top;
-    word-wrap: break-word;
-}
-.lbl-col {
-    width: 45%;
-    text-align: left;
-}
-.val-col {
-    width: 55%;
-    text-align: right;
+    margin-bottom: 2px;
 }
 .thank-you {
     text-align: center;
-    font-size: 8px;
+    font-size: 9px;
     margin-top: 6px;
     padding-bottom: 8px;
 }
 @media print {
     html, body {
-        width: 100%;
+        width: 48mm;
         height: auto;
     }
 }
@@ -668,52 +656,46 @@ table.receipt-table td {
 
 <div class="dashed-line"></div>
 
-<table class="receipt-table">
-    <tr>
-        <td class="lbl-col">Transaction No:</td>
-        <td class="val-col">${escapeHtml(String(transactionId))}</td>
-    </tr>
-    <tr>
-        <td class="lbl-col">Date:</td>
-        <td class="val-col">${escapeHtml(formattedDate)}</td>
-    </tr>
-    <tr>
-        <td class="lbl-col">Cashier:</td>
-        <td class="val-col">${escapeHtml(String(cashierName))}</td>
-    </tr>
-    <tr>
-        <td class="lbl-col">Sold To:</td>
-        <td class="val-col">${escapeHtml(String(soldTo))}</td>
-    </tr>
-</table>
+<div class="row-item">
+    <span>Transaction No:</span>
+    <span>${escapeHtml(String(transactionId))}</span>
+</div>
+<div class="row-item">
+    <span>Date:</span>
+    <span>${escapeHtml(formattedDate)}</span>
+</div>
+<div class="row-item">
+    <span>Cashier:</span>
+    <span>${escapeHtml(String(cashierName))}</span>
+</div>
+<div class="row-item">
+    <span>Sold To:</span>
+    <span>${escapeHtml(String(soldTo))}</span>
+</div>
 
 <div class="dashed-line"></div>
 
-<table class="receipt-table">
-    ${cartHTML}
-</table>
+${cartHTML}
 
 <div class="dashed-line"></div>
 
-<table class="receipt-table">
-    <tr style="font-size: 10px; font-weight: bold;">
-        <td class="lbl-col">TOTAL AMOUNT:</td>
-        <td class="val-col">Php ${total.toFixed(2)}</td>
-    </tr>
-    <tr>
-        <td class="lbl-col">Amount Paid:</td>
-        <td class="val-col">Php ${paid.toFixed(2)}</td>
-    </tr>
-    <tr>
-        <td class="lbl-col">CHANGE:</td>
-        <td class="val-col">Php ${change.toFixed(2)}</td>
-    </tr>
-</table>
+<div class="row-item" style="font-weight:bold; font-size:11px;">
+    <span>TOTAL AMOUNT:</span>
+    <span>Php ${total.toFixed(2)}</span>
+</div>
+<div class="row-item">
+    <span>Amount Paid:</span>
+    <span>Php ${paid.toFixed(2)}</span>
+</div>
+<div class="row-item">
+    <span>CHANGE:</span>
+    <span>Php ${change.toFixed(2)}</span>
+</div>
 
 <div class="dashed-line"></div>
 
 <div class="thank-you">
-    Thank you for your purchase! Please come again.
+    Thank you for your purchase!<br>Please come again.
 </div>
 
 </body>
