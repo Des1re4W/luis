@@ -527,20 +527,18 @@ change.toFixed(2);
 
 function printReceipt(transactionId){
     let cartHTML = "";
-    let totalQty = 0;
 
     cart.forEach(item => {
         let subtotal = item.price * item.qty;
-        totalQty += item.qty;
 
         cartHTML += `
-        <div class="item">
-            <div class="item-name">${escapeHtml(item.name)}</div>
-            <div class="item-row">
-                <span>${item.qty} x Php ${item.price.toFixed(2)}</span>
-                <span>Php ${subtotal.toFixed(2)}</span>
-            </div>
-        </div>`;
+        <tr>
+            <td colspan="2" style="font-weight:bold; padding-top:4px;">${escapeHtml(item.name)}</td>
+        </tr>
+        <tr>
+            <td style="padding-bottom:4px;">${item.qty} x Php ${item.price.toFixed(2)}</td>
+            <td align="right" style="padding-bottom:4px; font-weight:bold;">Php ${subtotal.toFixed(2)}</td>
+        </tr>`;
     });
 
     let today = new Date();
@@ -590,91 +588,56 @@ function printReceipt(transactionId){
 html, body {
     margin: 0;
     padding: 0;
-    width: 58mm;
+    width: 48mm; /* Standard printable printable printable area ng 58mm roll */
     background: #fff;
     color: #000;
 }
 body {
-    font-family: "Courier New", Courier, monospace;
-    font-size: 11px;
-    padding: 2mm 3mm;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 10px;
+    line-height: 1.2;
+    padding: 2mm 0;
 }
 .center {
     text-align: center;
 }
 .shop-name {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: bold;
     margin-bottom: 2px;
 }
 .shop-info {
-    font-size: 9px;
+    font-size: 8px;
     line-height: 1.2;
 }
 .title {
-    font-size: 12px;
+    font-size: 11px;
     font-weight: bold;
     margin: 4px 0;
 }
-.line {
-    border-top: 1px dashed #000;
+.dashed-line {
+    border-bottom: 1px dashed #000;
     margin: 5px 0;
+    width: 100%;
 }
-.info-table {
+table.receipt-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 10px;
 }
-.info-table td {
-    padding: 1px 0;
+table.receipt-table td {
     vertical-align: top;
-}
-.info-table td:last-child {
-    text-align: right;
     word-break: break-word;
-}
-.item {
-    margin-bottom: 4px;
-}
-.item-name {
-    font-weight: bold;
-    word-break: break-word;
-    font-size: 10px;
-    line-height: 1.2;
-}
-.item-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 10px;
-}
-.total-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 10px;
-}
-.total-table td {
-    padding: 1px 0;
-}
-.total-table td:last-child {
-    text-align: right;
-}
-.grand-total {
-    font-size: 12px;
-    font-weight: bold;
 }
 .thank-you {
     text-align: center;
     font-size: 9px;
-    line-height: 1.3;
-    margin-top: 4px;
+    margin-top: 6px;
 }
 @media print {
     html, body {
-        width: 58mm;
+        width: 48mm;
         height: auto;
-    }
-    body {
-        padding: 2mm 2mm;
     }
 }
 </style>
@@ -692,37 +655,51 @@ body {
     <div class="title">OFFICIAL RECEIPT</div>
 </div>
 
-<div class="line"></div>
+<div class="dashed-line"></div>
 
-<table class="info-table">
-    <tr><td>Transaction No.:</td><td>${escapeHtml(String(transactionId))}</td></tr>
-    <tr><td>Date:</td><td>${escapeHtml(formattedDate)}</td></tr>
-    <tr><td>Cashier:</td><td>${escapeHtml(String(cashierName))}</td></tr>
-    <tr><td>Sold To:</td><td>${escapeHtml(String(soldTo))}</td></tr>
+<table class="receipt-table">
+    <tr>
+        <td style="width: 45%;">Transaction No:</td>
+        <td align="right">${escapeHtml(String(transactionId))}</td>
+    </tr>
+    <tr>
+        <td>Date:</td>
+        <td align="right">${escapeHtml(formattedDate)}</td>
+    </tr>
+    <tr>
+        <td>Cashier:</td>
+        <td align="right">${escapeHtml(String(cashierName))}</td>
+    </tr>
+    <tr>
+        <td>Sold To:</td>
+        <td align="right">${escapeHtml(String(soldTo))}</td>
+    </tr>
 </table>
 
-<div class="line"></div>
+<div class="dashed-line"></div>
 
-${cartHTML}
+<table class="receipt-table">
+    ${cartHTML}
+</table>
 
-<div class="line"></div>
+<div class="dashed-line"></div>
 
-<table class="total-table">
-    <tr>
-        <td class="grand-total">TOTAL AMOUNT</td>
-        <td class="grand-total">Php ${total.toFixed(2)}</td>
+<table class="receipt-table">
+    <tr style="font-size: 11px; font-weight: bold;">
+        <td>TOTAL AMOUNT</td>
+        <td align="right">Php ${total.toFixed(2)}</td>
     </tr>
     <tr>
         <td>Amount Paid</td>
-        <td>Php ${paid.toFixed(2)}</td>
+        <td align="right">Php ${paid.toFixed(2)}</td>
     </tr>
     <tr>
         <td>CHANGE</td>
-        <td>Php ${change.toFixed(2)}</td>
+        <td align="right">Php ${change.toFixed(2)}</td>
     </tr>
 </table>
 
-<div class="line"></div>
+<div class="dashed-line"></div>
 
 <div class="thank-you">
     Thank you for your purchase!<br>
