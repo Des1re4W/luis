@@ -3,6 +3,11 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/image.php';
 
+// Siguraduhing kasama ang Google Drive helper
+if (file_exists(__DIR__ . '/../config/gdrive.php')) {
+    require_once __DIR__ . '/../config/gdrive.php';
+}
+
 // Helper function para sa Google Drive at Image resolution
 function getCheckoutItemImageSrc($image_value) {
     $img_src = '../assets/images/no-image.png';
@@ -95,10 +100,10 @@ if (isset($_POST['place_order'])) {
         }
         $paid_amount = $detected_paid_amount;
     } else {
-        // COD logic
         $paid_amount = 0;
     }
 
+    // GOOGLE DRIVE PROOF OF PAYMENT UPLOAD INTEGRATION
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
             $tmp = $_FILES['proof_of_payment']['tmp_name'];
@@ -108,14 +113,27 @@ if (isset($_POST['place_order'])) {
                 $file_mime_check = mime_content_type($tmp);
 
                 if (in_array($file_mime_check, $allowed_types)) {
-                    $target_dir = "../uploads/proofs/";
-                    if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                    $drive_file_id = null;
                     
-                    $ext = pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
-                    $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
-                    
-                    if (move_uploaded_file($tmp, $target_dir . $new_filename)) {
-                        $proof_of_payment = "uploads/proofs/" . $new_filename;
+                    if (function_exists('uploadToGoogleDrive')) {
+                        $drive_file_id = uploadToGoogleDrive($tmp, $_FILES['proof_of_payment']['name'], $file_mime_check);
+                    } elseif (function_exists('uploadToDrive')) {
+                        $drive_file_id = uploadToDrive($tmp, $_FILES['proof_of_payment']['name'], $file_mime_check);
+                    }
+
+                    if ($drive_file_id) {
+                        $proof_of_payment = $drive_file_id;
+                    } else {
+                        // Fallback sa local uploads kung sakaling offline/failed ang Drive API
+                        $target_dir = "../uploads/proofs/";
+                        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                        
+                        $ext = pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
+                        $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+                        
+                        if (move_uploaded_file($tmp, $target_dir . $new_filename)) {
+                            $proof_of_payment = "uploads/proofs/" . $new_filename;
+                        }
                     }
                 }
             }
