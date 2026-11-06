@@ -412,7 +412,7 @@ if (isset($_POST['update_status'])) {
     $ref_no = $_POST['refund_reference'] ?? '';
     $proof_path = "";
 
-    // UPLOAD REFUND RECEIPT TO GOOGLE DRIVE IF DECLINED
+    // UPLOAD REFUND RECEIPT DIRECTLY TO GOOGLE DRIVE "Refund Receipt" FOLDER IF DECLINED
     if ($new_status == 'declined') {
         if (($pm === 'GCASH' || $pm === 'MAYA') && isset($_FILES['refund_receipt']) && $_FILES['refund_receipt']['error'] === UPLOAD_ERR_OK) {
             $file_tmp = $_FILES['refund_receipt']['tmp_name'];
@@ -423,9 +423,13 @@ if (isset($_POST['update_status'])) {
             if (in_array($file_ext, $allowed_exts)) {
                 $new_filename = "refund_" . $order_id . "_" . time() . "." . $file_ext;
                 
+                // Dedicated Google Drive Refund Receipt Folder ID
+                $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
+
                 try {
                     if (function_exists('uploadProductImageToDrive')) {
-                        $file_id = uploadProductImageToDrive($file_tmp, $new_filename);
+                        // Ipinasa ang $REFUND_RECEIPTS_FOLDER_ID bilang 3rd parameter
+                        $file_id = uploadProductImageToDrive($file_tmp, $new_filename, $REFUND_RECEIPTS_FOLDER_ID);
                         if (!empty($file_id)) {
                             $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
                         }
@@ -861,12 +865,13 @@ body{
     </div>
 </div>
 
-<!-- CUSTOMER MODAL -->
+<!-- CUSTOMER MODAL (VIEW DETAILS) -->
 <div class="modal fade" id="customerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">Customer Information</h5>
+                <h5 class="modal-title">Customer Information & Payment Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body p-4">
                 <div class="row mb-3">
@@ -901,10 +906,18 @@ body{
                         <p id="c-landmark" class="mb-0"></p>
                     </div>
                 </div>
-                <div class="bg-light p-3 border-start border-warning border-4 rounded text-center">
-                    <label class="text-muted small fw-bold text-uppercase d-block text-start mb-2">Proof of Payment / Downpayment</label>
+                
+                <!-- CUSTOMER PROOF OF PAYMENT & ADMIN REFUND SECTION -->
+                <div class="bg-light p-3 border-start border-primary border-4 rounded mb-3 text-start">
+                    <label class="text-muted small fw-bold text-uppercase d-block mb-2">Customer Proof of Payment</label>
                     <div id="proof-container"></div>
                 </div>
+
+                <div id="refund-proof-section" class="bg-light p-3 border-start border-danger border-4 rounded text-start d-none">
+                    <label class="text-muted small fw-bold text-uppercase d-block mb-2">Admin Refund Proof</label>
+                    <div id="refund-proof-container"></div>
+                </div>
+
             </div>
             <div class="modal-footer bg-light">
                 <button type="button" class="btn btn-secondary w-100" data-bs-dismiss="modal">Close</button>
@@ -934,6 +947,21 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
+// Helper to format image URLs
+function resolveImageSrc(path) {
+    if (!path) return '';
+    let proofPath = path.trim();
+    if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
+        return proofPath;
+    } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
+        return '../drive-image.php?id=' + encodeURIComponent(proofPath);
+    } else if (proofPath.startsWith('../')) {
+        return proofPath;
+    } else {
+        return '../' + proofPath.replace(/^\/+/, '');
+    }
+}
+
 function viewCustomer(data) {
     document.getElementById('c-name').innerText = data.fullname;
     document.getElementById('c-surname').innerText = data.surname;
@@ -943,53 +971,70 @@ function viewCustomer(data) {
     document.getElementById('c-landmark').innerText = data.landmark ? data.landmark : "No specific landmark provided.";
     
     const proofContainer = document.getElementById('proof-container');
+    const refundContainer = document.getElementById('refund-proof-container');
+    const refundSection = document.getElementById('refund-proof-section');
+
     let currentMOP = data.payment_method ? data.payment_method.toUpperCase() : "COD";
     
+    // 1. Customer Payment Details & Receipt Photo
     let htmlContent = "";
     if (currentMOP === "GCASH" || currentMOP === "MAYA") {
-        let referenceNumber = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : "Not Provided");
+        let referenceNumber = data.ref_no ? data.ref_no : "Not Provided";
         let paymentScheme = data.payment_scheme ? data.payment_scheme : 'full_payment';
-        
         let amountSent = data.paid_amount ? '₱' + parseFloat(data.paid_amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "Not Provided";
         let receiptDateTime = data.receiptdt ? data.receiptdt : "Not Provided";
 
         htmlContent += `
-            <div class="alert alert-secondary py-1 px-2 mb-2 text-start small">
+            <div class="alert alert-secondary py-2 px-3 mb-2 text-start small">
                 <b>Mode of Payment:</b> <span class="badge bg-primary">${currentMOP}</span><br>
                 <b>Reference No:</b> <span class="text-danger fw-bold">${referenceNumber}</span><br>
                 <b>Amount Sent:</b> <span class="text-danger fw-bold">${amountSent}</span><br>
-                <b>Date and Time:</b> <span class="text-danger fw-bold">${receiptDateTime}</span><br>
-                <b>Payment Type:</b> <span class="text-danger fw-bold">${paymentScheme}</span>
+                <b>Date & Time:</b> <span class="text-dark fw-bold">${receiptDateTime}</span><br>
+                <b>Payment Type:</b> <span class="text-dark fw-bold">${paymentScheme}</span>
             </div>
         `;
     }
 
     if (data.proof_of_payment && data.proof_of_payment.trim() !== "" && currentMOP !== "COD") {
-        let proofPath = data.proof_of_payment.trim();
-        let finalSrc = "";
-
-        if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
-            finalSrc = proofPath;
-        } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
-            finalSrc = '../drive-image.php?id=' + encodeURIComponent(proofPath);
-        } else if (proofPath.startsWith('../')) {
-            finalSrc = proofPath;
-        } else {
-            finalSrc = '../' + proofPath.replace(/^\/+/, '');
-        }
+        let finalSrc = resolveImageSrc(data.proof_of_payment);
 
         htmlContent += `
-            <a href="${finalSrc}" target="_blank" title="Click to view full image">
-                <img src="${finalSrc}" class="img-thumbnail mt-1" style="max-height: 200px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #ffc107;" onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
-            </a>
-            <small class="text-muted d-block mt-1"><i class="bi bi-zoom-in"></i> Click the image to view full size</small>
+            <div class="text-center">
+                <a href="${finalSrc}" target="_blank" title="Click to view full image">
+                    <img src="${finalSrc}" class="img-thumbnail mt-1" style="max-height: 220px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #0d6efd;" onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+                </a>
+                <small class="text-muted d-block mt-1"><i class="bi bi-zoom-in"></i> Click image to open full resolution</small>
+            </div>
         `;
     } else {
-        htmlContent += `<span class="text-muted italic small">No downpayment required (COD or Amount below ₱5,000)</span>`;
+        htmlContent += `<span class="text-muted italic small">No online receipt attached (Cash on Delivery or no proof attached).</span>`;
+    }
+    proofContainer.innerHTML = htmlContent;
+
+    // 2. Admin Refund Proof (if order was declined with e-wallet refund)
+    if (data.status === 'declined' && data.refund_receipt && data.refund_receipt.trim() !== '') {
+        let refundSrc = resolveImageSrc(data.refund_receipt);
+        let refundRef = data.refund_reference ? data.refund_reference : 'N/A';
+        
+        let refundHtml = `
+            <div class="alert alert-warning py-2 px-3 mb-2 text-start small">
+                <b>Refund Reference No:</b> <span class="text-danger fw-bold">${refundRef}</span><br>
+                <b>Decline Reason:</b> ${data.decline_reason ? data.decline_reason : 'None provided'}
+            </div>
+            <div class="text-center">
+                <a href="${refundSrc}" target="_blank" title="Click to view full refund proof">
+                    <img src="${refundSrc}" class="img-thumbnail mt-1" style="max-height: 220px; width: auto; object-fit: contain; cursor: pointer; border: 2px solid #dc3545;" onerror="this.onerror=null; this.src='../assets/images/no-image.png';">
+                </a>
+                <small class="text-muted d-block mt-1"><i class="bi bi-zoom-in"></i> Click image to open full resolution</small>
+            </div>
+        `;
+        refundContainer.innerHTML = refundHtml;
+        refundSection.classList.remove('d-none');
+    } else {
+        refundSection.classList.add('d-none');
+        refundContainer.innerHTML = '';
     }
 
-    proofContainer.innerHTML = htmlContent;
-    
     var myModal = new bootstrap.Modal(document.getElementById('customerModal'));
     myModal.show();
 }
