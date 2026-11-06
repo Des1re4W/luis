@@ -2,15 +2,18 @@
 session_start();
 require_once __DIR__ . "/config/db.php";
 
-date_default_timezone_set('Asia/Manila');
+// Standard PHPMailer Autoload / Imports
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
-// Auto-create local .env file if it doesn't exist (Local Dev Helper)
-$envFilePath = __DIR__ . '/.env';
-if (!file_exists($envFilePath)) {
-    @file_put_contents($envFilePath, "RESEND_API_KEY=re_NPzh3jdP_PP7EUp56ToAcChtfivRpEPe6\n");
+if (file_exists(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
 }
 
+date_default_timezone_set('Asia/Manila');
+
 // 1. Automatically load a local .env file if running in local development
+$envFilePath = __DIR__ . '/.env';
 if (file_exists($envFilePath)) {
     $lines = file($envFilePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
     foreach ($lines as $line) {
@@ -33,82 +36,75 @@ $messageType = "info";
 // Built-in Default Avatar (SVG Data URI - pareho sa dashboard.php)
 $default_avatar = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='%23001f4d'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 interim0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/></svg>";
 
-// ================= API MAIL SETTINGS (BYPASSES SMTP BLOCKING) =================
-// Safely check getenv, $_ENV, and $_SERVER without throwing Undefined Array Key warnings
-$resend_key = getenv('RESEND_API_KEY');
-if (empty($resend_key) && isset($_ENV['RESEND_API_KEY'])) {
-    $resend_key = $_ENV['RESEND_API_KEY'];
-}
-if (empty($resend_key) && isset($_SERVER['RESEND_API_KEY'])) {
-    $resend_key = $_SERVER['RESEND_API_KEY'];
-}
-
-define('RESEND_API_KEY', trim((string)$resend_key));
-const EMAIL_FROM = 'R. Taipan Hardware <onboarding@resend.dev>'; // Default onboarding email ng Resend
-
 function h($value)
 {
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
 /**
- * Sends Reset OTP via Resend HTTPS API (Port 443 - Cannot be blocked by Render/ISP)
+ * Sends Reset OTP via PHPMailer SMTP
  * Returns array: ['success' => bool, 'error' => string]
  */
 function sendResetOtp(string $email, string $otp): array
 {
-    if (empty(RESEND_API_KEY)) {
-        error_log("OTP EMAIL API ERROR: RESEND_API_KEY is missing in environment variables.");
-        return ['success' => false, 'error' => 'API Configuration Error: RESEND_API_KEY not set.'];
+    // Function to safely check env variables
+    $getEnvVar = function($key, $default = '') {
+        $val = getenv($key);
+        if ($val !== false && $val !== '') return $val;
+        if (isset($_ENV[$key]) && $_ENV[$key] !== '') return $_ENV[$key];
+        if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') return $_SERVER[$key];
+        return $default;
+    };
+
+    $smtpHost   = $getEnvVar('SMTP_HOST', 'smtp.gmail.com');
+    $smtpUser   = $getEnvVar('SMTP_USER', '');
+    $smtpPass   = $getEnvVar('SMTP_PASS', '');
+    $smtpPort   = (int) $getEnvVar('SMTP_PORT', 587);
+    $smtpSecure = $getEnvVar('SMTP_SECURE', 'tls'); // 'tls' or 'ssl'
+    $fromEmail  = $getEnvVar('SMTP_FROM_EMAIL', $smtpUser);
+    $fromName   = $getEnvVar('SMTP_FROM_NAME', 'R. Taipan Hardware');
+
+    if (empty($smtpUser) || empty($smtpPass)) {
+        error_log("OTP PHPMailer ERROR: SMTP_USER or SMTP_PASS is not defined.");
+        return ['success' => false, 'error' => 'Mail Configuration Error: SMTP credentials are missing in .env environment variables.'];
     }
 
-    $url = 'https://api.resend.com/emails';
+    $mail = new PHPMailer(true);
 
-    $htmlBody = "
-        <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
-            <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
-            <p>We received a request to reset your R. Taipan Hardware account password.</p>
-            <p>Your one-time password (OTP) is:</p>
-            <div style='font-size:30px;font-weight:bold;letter-spacing:8px;background:#f3f6fb;padding:18px;text-align:center;border-radius:8px;color:#001f4d;'>" . h($otp) . "</div>
-            <p>This OTP expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
-            <p>If you did not request a password reset, you can ignore this email.</p>
-        </div>";
+    try {
+        // Server settings
+        $mail->isSMTP();
+        $mail->Host       = $smtpHost;
+        $mail->SMTPAuth   = true;
+        $mail->Username   = $smtpUser;
+        $mail->Password   = $smtpPass;
+        $mail->SMTPSecure = ($smtpSecure === 'ssl') ? PHPMailer::ENCRYPTION_SMTPS : PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = $smtpPort;
+        $mail->Timeout    = 15;
 
-    $payload = [
-        'from'    => EMAIL_FROM,
-        'to'      => [$email],
-        'subject' => 'Password Reset OTP - R. Taipan Hardware',
-        'html'    => $htmlBody,
-    ];
+        // Recipients
+        $mail->setFrom($fromEmail, $fromName);
+        $mail->addAddress($email);
 
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Authorization: Bearer ' . RESEND_API_KEY,
-        'Content-Type: application/json'
-    ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        // Content
+        $mail->isHTML(true);
+        $mail->Subject = 'Password Reset OTP - R. Taipan Hardware';
+        $mail->Body    = "
+            <div style='font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:24px;border:1px solid #e5e7eb;border-radius:12px;'>
+                <h2 style='color:#001f4d;margin-top:0;'>Password Reset Verification</h2>
+                <p>We received a request to reset your R. Taipan Hardware account password.</p>
+                <p>Your one-time password (OTP) is:</p>
+                <div style='font-size:30px;font-weight:bold;letter-spacing:8px;background:#f3f6fb;padding:18px;text-align:center;border-radius:8px;color:#001f4d;'>" . h($otp) . "</div>
+                <p>This OTP expires in <strong>5 minutes</strong>. Do not share it with anyone.</p>
+                <p>If you did not request a password reset, you can ignore this email.</p>
+            </div>";
+        $mail->AltBody = "Your password reset OTP is: {$otp}. It expires in 5 minutes.";
 
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-
-    if ($curlError) {
-        error_log("OTP EMAIL API ERROR: " . $curlError);
-        return ['success' => false, 'error' => 'cURL Error: ' . $curlError];
-    }
-
-    $resData = json_decode($response, true);
-
-    if ($httpCode >= 200 && $httpCode < 300) {
+        $mail->send();
         return ['success' => true, 'error' => ''];
-    } else {
-        $errorDetails = $resData['message'] ?? $response;
-        error_log("OTP EMAIL API REJECTED: " . $errorDetails);
-        return ['success' => false, 'error' => $errorDetails];
+    } catch (Exception $e) {
+        error_log("OTP PHPMailer Exception: " . $mail->ErrorInfo);
+        return ['success' => false, 'error' => 'Mailer Error: ' . $mail->ErrorInfo];
     }
 }
 
