@@ -526,73 +526,51 @@ change.toFixed(2);
 }
 
 function printReceipt(transactionId){
-    let cartHTML="";
-    let totalQty=0;
+    let cartHTML = "";
+    let totalQty = 0;
 
-    cart.forEach(item=>{
-        let subtotal=item.price*item.qty;
-        totalQty+=item.qty;
+    cart.forEach(item => {
+        let subtotal = item.price * item.qty;
+        totalQty += item.qty;
 
-        cartHTML+=`
+        cartHTML += `
         <div class="item">
             <div class="item-name">${escapeHtml(item.name)}</div>
             <div class="item-row">
-                <span>${item.qty} x ₱${item.price.toFixed(2)}</span>
-                <span>₱${subtotal.toFixed(2)}</span>
+                <span>${item.qty} x Php ${item.price.toFixed(2)}</span>
+                <span>Php ${subtotal.toFixed(2)}</span>
             </div>
         </div>`;
     });
 
-    let today=new Date();
+    let today = new Date();
+    let formattedDate = today.toLocaleDateString("en-PH", {
+        year: "numeric", month: "2-digit", day: "2-digit"
+    }) + " " + today.toLocaleTimeString("en-PH", {
+        hour: "2-digit", minute: "2-digit", second: "2-digit"
+    });
 
-    let formattedDate=
-        today.toLocaleDateString("en-PH",{
-            year:"numeric",
-            month:"2-digit",
-            day:"2-digit"
-        })+" "+
-        today.toLocaleTimeString("en-PH",{
-            hour:"2-digit",
-            minute:"2-digit",
-            second:"2-digit"
-        });
+    let cashierName = <?php echo json_encode($_SESSION['username']); ?>;
+    let soldTo = document.getElementById("customerName").value.trim() || "Walk-in Customer";
+    let total = parseFloat(document.getElementById("total").innerText) || 0;
+    let paid = parseFloat(document.getElementById("amountPaid").value) || 0;
+    let change = paid - total;
 
-    let cashierName=<?php echo json_encode($_SESSION['username']); ?>;
+    let oldFrame = document.getElementById("receipt-print-frame");
+    if (oldFrame) oldFrame.remove();
 
-    let soldTo=
-        document.getElementById("customerName").value.trim()||
-        "Walk-in Customer";
-
-    let total=
-        parseFloat(document.getElementById("total").innerText)||0;
-
-    let paid=
-        parseFloat(document.getElementById("amountPaid").value)||0;
-
-    let change=paid-total;
-
-    let oldFrame=document.getElementById("receipt-print-frame");
-
-    if(oldFrame){
-        oldFrame.remove();
-    }
-
-    let iframe=document.createElement("iframe");
-
-    iframe.id="receipt-print-frame";
-
-    iframe.style.position="fixed";
-    iframe.style.right="0";
-    iframe.style.bottom="0";
-    iframe.style.width="0";
-    iframe.style.height="0";
-    iframe.style.border="0";
-    iframe.style.visibility="hidden";
-
+    let iframe = document.createElement("iframe");
+    iframe.id = "receipt-print-frame";
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    iframe.style.visibility = "hidden";
     document.body.appendChild(iframe);
 
-    let printDocument=iframe.contentWindow.document;
-
+    let printDocument = iframe.contentWindow.document;
     printDocument.open();
 
     printDocument.write(`
@@ -601,174 +579,126 @@ function printReceipt(transactionId){
 <head>
 <meta charset="UTF-8">
 <title>Receipt</title>
-
 <style>
-@page{
-    size:80mm auto;
-    margin:0;
+@page {
+    size: 58mm auto;
+    margin: 0;
 }
-
-*{
-    box-sizing:border-box;
+* {
+    box-sizing: border-box;
 }
-
-html,body{
-    margin:0;
-    padding:0;
-    width:80mm;
-    background:#fff;
-    color:#000;
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 58mm;
+    background: #fff;
+    color: #000;
 }
-
-body{
-    font-family:"Courier New",monospace;
-    font-size:12px;
-    padding:4mm;
+body {
+    font-family: "Courier New", Courier, monospace;
+    font-size: 11px;
+    padding: 2mm 3mm;
 }
-
-.center{
-    text-align:center;
+.center {
+    text-align: center;
 }
-
-.shop-name{
-    font-size:18px;
-    font-weight:bold;
-    margin-bottom:4px;
+.shop-name {
+    font-size: 14px;
+    font-weight: bold;
+    margin-bottom: 2px;
 }
-
-.shop-info{
-    font-size:10px;
-    line-height:1.4;
+.shop-info {
+    font-size: 9px;
+    line-height: 1.2;
 }
-
-.title{
-    font-size:15px;
-    font-weight:bold;
-    margin:5px 0;
+.title {
+    font-size: 12px;
+    font-weight: bold;
+    margin: 4px 0;
 }
-
-.line{
-    border-top:1px dashed #000;
-    margin:7px 0;
+.line {
+    border-top: 1px dashed #000;
+    margin: 5px 0;
 }
-
-.info-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:11px;
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
 }
-
-.info-table td{
-    padding:1px 0;
-    vertical-align:top;
+.info-table td {
+    padding: 1px 0;
+    vertical-align: top;
 }
-
-.info-table td:last-child{
-    text-align:right;
-    word-break:break-word;
+.info-table td:last-child {
+    text-align: right;
+    word-break: break-word;
 }
-
-.item{
-    margin-bottom:6px;
+.item {
+    margin-bottom: 4px;
 }
-
-.item-name{
-    font-weight:bold;
-    word-break:break-word;
-    line-height:1.25;
+.item-name {
+    font-weight: bold;
+    word-break: break-word;
+    font-size: 10px;
+    line-height: 1.2;
 }
-
-.item-row{
-    display:flex;
-    justify-content:space-between;
-    gap:10px;
-    font-size:11px;
+.item-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
 }
-
-.total-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:11px;
+.total-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
 }
-
-.total-table td{
-    padding:2px 0;
+.total-table td {
+    padding: 1px 0;
 }
-
-.total-table td:last-child{
-    text-align:right;
+.total-table td:last-child {
+    text-align: right;
 }
-
-.grand-total{
-    font-size:14px;
-    font-weight:bold;
+.grand-total {
+    font-size: 12px;
+    font-weight: bold;
 }
-
-.thank-you{
-    text-align:center;
-    font-size:10px;
-    line-height:1.5;
-    margin-top:5px;
+.thank-you {
+    text-align: center;
+    font-size: 9px;
+    line-height: 1.3;
+    margin-top: 4px;
 }
-
-@media print{
-    html,body{
-        width:80mm;
-        height:auto;
+@media print {
+    html, body {
+        width: 58mm;
+        height: auto;
     }
-
-    body{
-        padding:4mm;
+    body {
+        padding: 2mm 2mm;
     }
 }
 </style>
 </head>
-
 <body>
 
 <div class="center">
-
-<div class="shop-name">
-R. TAIPAN HARDWARE
-</div>
-
-<div class="shop-info">
-R. Taipan Construction Supply and Services, OPC<br>
-190 Cabrera Rd. Sitio Burol<br>
-Brgy. San Juan, Taytay, Rizal<br>
-Contact: 0907 456 5632
-</div>
-
-<div class="title">
-OFFICIAL RECEIPT
-</div>
-
+    <div class="shop-name">R. TAIPAN HARDWARE</div>
+    <div class="shop-info">
+        R. Taipan Construction Supply and Services, OPC<br>
+        190 Cabrera Rd. Sitio Burol<br>
+        Brgy. San Juan, Taytay, Rizal<br>
+        Contact: 0907 456 5632
+    </div>
+    <div class="title">OFFICIAL RECEIPT</div>
 </div>
 
 <div class="line"></div>
 
 <table class="info-table">
-
-<tr>
-<td>Transaction No.</td>
-<td>${escapeHtml(String(transactionId))}</td>
-</tr>
-
-<tr>
-<td>Date</td>
-<td>${escapeHtml(formattedDate)}</td>
-</tr>
-
-<tr>
-<td>Cashier</td>
-<td>${escapeHtml(String(cashierName))}</td>
-</tr>
-
-<tr>
-<td>Sold To</td>
-<td>${escapeHtml(String(soldTo))}</td>
-</tr>
-
+    <tr><td>Transaction No.</td><td>${escapeHtml(String(transactionId))}</td></tr>
+    <tr><td>Date</td><td>${escapeHtml(formattedDate)}</td></tr>
+    <tr><td>Cashier</td><td>${escapeHtml(String(cashierName))}</td></tr>
+    <tr><td>Sold To</td><td>${escapeHtml(String(soldTo))}</td></tr>
 </table>
 
 <div class="line"></div>
@@ -778,33 +708,25 @@ ${cartHTML}
 <div class="line"></div>
 
 <table class="total-table">
-
-<tr>
-<td class="grand-total">
-TOTAL AMOUNT
-</td>
-<td class="grand-total">
-₱${total.toFixed(2)}
-</td>
-</tr>
-
-<tr>
-<td>Amount Paid</td>
-<td>₱${paid.toFixed(2)}</td>
-</tr>
-
-<tr>
-<td>CHANGE</td>
-<td>₱${change.toFixed(2)}</td>
-</tr>
-
+    <tr>
+        <td class="grand-total">TOTAL AMOUNT</td>
+        <td class="grand-total">Php ${total.toFixed(2)}</td>
+    </tr>
+    <tr>
+        <td>Amount Paid</td>
+        <td>Php ${paid.toFixed(2)}</td>
+    </tr>
+    <tr>
+        <td>CHANGE</td>
+        <td>Php ${change.toFixed(2)}</td>
+    </tr>
 </table>
 
 <div class="line"></div>
 
 <div class="thank-you">
-Thank you for your purchase!<br>
-Please come again.
+    Thank you for your purchase!<br>
+    Please come again.
 </div>
 
 </body>
@@ -813,14 +735,11 @@ Please come again.
 
     printDocument.close();
 
-    setTimeout(()=>{
+    setTimeout(() => {
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
-
-        setTimeout(()=>{
-            iframe.remove();
-        },1000);
-    },300);
+        setTimeout(() => { iframe.remove(); }, 1000);
+    }, 300);
 }
 
 function checkout(){
