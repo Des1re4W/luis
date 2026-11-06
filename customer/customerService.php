@@ -1,6 +1,18 @@
 <?php
 session_start();
-require_once __DIR__ . '/../config/db.php';
+
+// Enable error reporting to catch hidden fatal errors during execution
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Keep display off so errors don't corrupt JSON output
+
+// Safe include database config
+if (file_exists(__DIR__ . '/../config/db.php')) {
+    require_once __DIR__ . '/../config/db.php';
+} else {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode(['success' => false, 'message' => 'Database configuration file missing.']);
+    exit;
+}
 
 $message = "";
 $message_type = "";
@@ -9,56 +21,64 @@ $message_type = "";
 // API ENDPOINT: LIVE FETCH OF ITEMS & ORDER INFO
 // ========================================================
 if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
-    // Prevent any PHP warnings or notices from leaking into JSON response
-    error_reporting(0);
-    ini_set('display_errors', 0);
-    
-    // Clear any previous buffered output (whitespace, notices, included HTML)
+    // Clear any previous output buffer (whitespace/warnings)
     if (ob_get_length()) {
         ob_clean();
     }
     
     header('Content-Type: application/json; charset=utf-8');
 
-    $order_id = mysqli_real_escape_string($conn, trim($_GET['order_id'] ?? ''));
-    $email = mysqli_real_escape_string($conn, trim($_GET['email'] ?? ''));
-    
-    if (empty($order_id) || empty($email)) {
-        echo json_encode(['success' => false, 'message' => 'Please provide both Order ID and Email.']);
+    // Check DB Connection
+    if (!isset($conn) || !$conn) {
+        echo json_encode(['success' => false, 'message' => 'Database connection error: ' . mysqli_connect_error()]);
         exit;
     }
 
-    $check = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
-    
-    if ($check && mysqli_num_rows($check) > 0) {
-        $order_data = mysqli_fetch_assoc($check);
+    try {
+        $order_id = mysqli_real_escape_string($conn, trim($_GET['order_id'] ?? ''));
+        $email = mysqli_real_escape_string($conn, trim($_GET['email'] ?? ''));
 
-        $cust_name = $order_data['fullname'] ?? ($order_data['customer_name'] ?? ($order_data['name'] ?? 'N/A'));
-        $cust_surname = $order_data['surname'] ?? '';
-        $ord_date = $order_data['order_date'] ?? ($order_data['created_at'] ?? 'N/A');
-        $ord_status = $order_data['status'] ?? 'Pending';
-        $pay_method = $order_data['payment_method'] ?? ($order_data['mode_of_payment'] ?? 'COD');
-        $pay_scheme = $order_data['payment_scheme'] ?? 'fullpayment';
-        $total_amount = $order_data['total_amount'] ?? 0;
-        $contact_number = $order_data['contact_number'] ?? 'N/A';
-        $full_address = $order_data['full_address'] ?? 'N/A';
-        $landmark = $order_data['landmark'] ?? 'N/A';
-        $ref_no = $order_data['ref_no'] ?? '';
-        $paid_amount = $order_data['paid_amount'] ?? 0;
-
-        // Check if this order already has a completed cancellation request
-        $check_cancel = mysqli_query($conn, "SELECT status FROM customer_requests WHERE order_number = '$order_id' AND request_type = 'cancel' ORDER BY id DESC LIMIT 1");
-        $is_cancel_completed = false;
-        if ($check_cancel && $cancel_row = mysqli_fetch_assoc($check_cancel)) {
-            if (strtolower(trim($cancel_row['status'] ?? '')) === 'completed') {
-                $is_cancel_completed = true;
-            }
+        if (empty($order_id) || empty($email)) {
+            echo json_encode(['success' => false, 'message' => 'Please fill in both Order ID and Email.']);
+            exit;
         }
 
-        $items = [];
-        try {
+        $check = mysqli_query($conn, "SELECT * FROM orders WHERE id = '$order_id' AND email = '$email' LIMIT 1");
+        
+        if (!$check) {
+            throw new Exception("Database query failed: " . mysqli_error($conn));
+        }
+
+        if (mysqli_num_rows($check) > 0) {
+            $order_data = mysqli_fetch_assoc($check);
+
+            $cust_name = $order_data['fullname'] ?? ($order_data['customer_name'] ?? ($order_data['name'] ?? 'N/A'));
+            $cust_surname = $order_data['surname'] ?? '';
+            $ord_date = $order_data['order_date'] ?? ($order_data['created_at'] ?? 'N/A');
+            $ord_status = $order_data['status'] ?? 'Pending';
+            $pay_method = $order_data['payment_method'] ?? ($order_data['mode_of_payment'] ?? 'COD');
+            $pay_scheme = $order_data['payment_scheme'] ?? 'fullpayment';
+            $total_amount = $order_data['total_amount'] ?? 0;
+            $contact_number = $order_data['contact_number'] ?? 'N/A';
+            $full_address = $order_data['full_address'] ?? 'N/A';
+            $landmark = $order_data['landmark'] ?? 'N/A';
+            $ref_no = $order_data['ref_no'] ?? '';
+            $paid_amount = $order_data['paid_amount'] ?? 0;
+
+            // Check cancellation status
+            $is_cancel_completed = false;
+            $check_cancel = mysqli_query($conn, "SELECT status FROM customer_requests WHERE order_number = '$order_id' AND request_type = 'cancel' ORDER BY id DESC LIMIT 1");
+            if ($check_cancel && $cancel_row = mysqli_fetch_assoc($check_cancel)) {
+                if (strtolower(trim($cancel_row['status'] ?? '')) === 'completed') {
+                    $is_cancel_completed = true;
+                }
+            }
+
+            // Parse cart items safely
+            $items = [];
             $cart_raw = $order_data['cart'] ?? '';
             $cart_obj = is_string($cart_raw) ? json_decode($cart_raw, true) : $cart_raw;
+            
             if (is_array($cart_obj)) {
                 foreach ($cart_obj as $cart_item) {
                     $p_name = $cart_item['name'] ?? ($cart_item['product_name'] ?? 'Item');
@@ -72,33 +92,38 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
                     ];
                 }
             }
-        } catch (Exception $e) {
-            $items = [];
-        }
 
+            echo json_encode([
+                'success' => true, 
+                'order_info' => [
+                    'id' => $order_data['id'],
+                    'customer_name' => $cust_name,
+                    'surname' => $cust_surname,
+                    'order_date' => $ord_date,
+                    'status' => $ord_status,
+                    'payment_method' => $pay_method,
+                    'payment_scheme' => $pay_scheme,
+                    'total_amount' => $total_amount,
+                    'contact_number' => $contact_number,
+                    'full_address' => $full_address,
+                    'landmark' => $landmark,
+                    'ref_no' => $ref_no,
+                    'paid_amount' => $paid_amount,
+                    'is_cancel_completed' => $is_cancel_completed
+                ],
+                'items' => $items
+            ]);
+            exit;
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Order not found matching this Order ID and Email.']);
+            exit;
+        }
+    } catch (Throwable $t) {
+        // Return 500 PHP errors as clean JSON so frontend alerts the actual issue
         echo json_encode([
-            'success' => true, 
-            'order_info' => [
-                'id' => $order_data['id'],
-                'customer_name' => $cust_name,
-                'surname' => $cust_surname,
-                'order_date' => $ord_date,
-                'status' => $ord_status,
-                'payment_method' => $pay_method,
-                'payment_scheme' => $pay_scheme,
-                'total_amount' => $total_amount,
-                'contact_number' => $contact_number,
-                'full_address' => $full_address,
-                'landmark' => $landmark,
-                'ref_no' => $ref_no,
-                'paid_amount' => $paid_amount,
-                'is_cancel_completed' => $is_cancel_completed
-            ],
-            'items' => $items
+            'success' => false, 
+            'message' => 'Server Error: ' . $t->getMessage() . ' in ' . basename($t->getFile()) . ' on line ' . $t->getLine()
         ]);
-        exit;
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Order not found with matching email.']);
         exit;
     }
 }
