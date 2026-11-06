@@ -637,7 +637,7 @@ h3.receipt-title {
 <body>
 
 <pre class="receipt">
-<span class="center"><h2 class="shop-title">R. TAIPAN HARDWARE</h2>
+<span class="center"><h4 class="receipt-title">*** R. TAIPAN HARDWARE ***</h4>
 R. Taipan Construction Supply
 and Services, OPC
 190 Cabrera Rd. Sitio Burol
