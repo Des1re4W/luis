@@ -529,15 +529,15 @@ function printReceipt(transactionId){
 
     cart.forEach(item => {
         let subtotal = item.price * item.qty;
+        let name = escapeHtml(item.name);
+        let qtyPrice = `${item.qty} x Php ${item.price.toFixed(2)}`;
+        let subStr = `Php ${subtotal.toFixed(2)}`;
+        
+        // Manual spacing para maghiwalay sa kanan at kaliwa sa Text Only driver
+        let spacesNeeded = Math.max(1, 32 - (qtyPrice.length + subStr.length));
+        let spaceStr = " ".repeat(spacesNeeded);
 
-        cartHTML += `
-        <div style="font-weight:bold; padding-top:4px; word-break:break-word;">
-            ${escapeHtml(item.name)}
-        </div>
-        <div style="display:flex; justify-content:space-between; width:100%; padding-bottom:4px;">
-            <span>${item.qty} x Php ${item.price.toFixed(2)}</span>
-            <span style="font-weight:bold;">Php ${subtotal.toFixed(2)}</span>
-        </div>`;
+        cartHTML += `<b>${name}</b>\n${qtyPrice}${spaceStr}<b>${subStr}</b>\n`;
     });
 
     let today = new Date();
@@ -552,6 +552,15 @@ function printReceipt(transactionId){
     let total = parseFloat(document.getElementById("total").innerText) || 0;
     let paid = parseFloat(document.getElementById("amountPaid").value) || 0;
     let change = paid - total;
+
+    // Helper function para sa alignment sa kanan at kaliwa gamit ang ASCII spaces
+    function formatLine(left, right, isBold = false) {
+        let l = String(left);
+        let r = String(right);
+        let spaceCount = Math.max(1, 32 - (l.length + r.length));
+        let line = l + " ".repeat(spaceCount) + r;
+        return isBold ? `<b>${line}</b>` : line;
+    }
 
     let oldFrame = document.getElementById("receipt-print-frame");
     if (oldFrame) oldFrame.remove();
@@ -583,59 +592,30 @@ function printReceipt(transactionId){
 }
 * {
     box-sizing: border-box;
-    -webkit-print-color-adjust: exact;
 }
 html, body {
     margin: 0;
     padding: 0;
-    width: 48mm;
+    width: 100%;
     background: #fff;
     color: #000;
 }
-body {
+pre.receipt {
     font-family: 'Courier New', Courier, monospace;
     font-size: 10px;
     line-height: 1.3;
-    padding: 2mm;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin: 0;
+    padding: 2mm 1mm;
 }
 .center {
     text-align: center;
-}
-.shop-name {
-    font-size: 13px;
-    font-weight: bold;
-    margin-bottom: 2px;
-}
-.shop-info {
-    font-size: 8px;
-    line-height: 1.2;
-    margin-bottom: 3px;
-}
-.title {
-    font-size: 11px;
-    font-weight: bold;
-    margin: 4px 0;
-}
-.dashed-line {
-    border-bottom: 1px dashed #000;
-    margin: 5px 0;
-    width: 100%;
-}
-.row-item {
-    display: flex;
-    justify-content: space-between;
-    width: 100%;
-    margin-bottom: 2px;
-}
-.thank-you {
-    text-align: center;
-    font-size: 9px;
-    margin-top: 6px;
-    padding-bottom: 8px;
+    display: block;
 }
 @media print {
     html, body {
-        width: 48mm;
+        width: 100%;
         height: auto;
     }
 }
@@ -643,60 +623,29 @@ body {
 </head>
 <body>
 
-<div class="center">
-    <div class="shop-name">R. TAIPAN HARDWARE</div>
-    <div class="shop-info">
-        R. Taipan Construction Supply and Services, OPC<br>
-        190 Cabrera Rd. Sitio Burol<br>
-        Brgy. San Juan, Taytay, Rizal<br>
-        Contact: 0907 456 5632
-    </div>
-    <div class="title">OFFICIAL RECEIPT</div>
-</div>
+<pre class="receipt">
+<span class="center"><b><font size="3">R. TAIPAN HARDWARE</font></b>
+R. Taipan Construction Supply
+and Services, OPC
+190 Cabrera Rd. Sitio Burol
+Brgy. San Juan, Taytay, Rizal
+Contact: 0907 456 5632
 
-<div class="dashed-line"></div>
-
-<div class="row-item">
-    <span>Transaction No:</span>
-    <span>${escapeHtml(String(transactionId))}</span>
-</div>
-<div class="row-item">
-    <span>Date:</span>
-    <span>${escapeHtml(formattedDate)}</span>
-</div>
-<div class="row-item">
-    <span>Cashier:</span>
-    <span>${escapeHtml(String(cashierName))}</span>
-</div>
-<div class="row-item">
-    <span>Sold To:</span>
-    <span>${escapeHtml(String(soldTo))}</span>
-</div>
-
-<div class="dashed-line"></div>
-
-${cartHTML}
-
-<div class="dashed-line"></div>
-
-<div class="row-item" style="font-weight:bold; font-size:11px;">
-    <span>TOTAL AMOUNT:</span>
-    <span>Php ${total.toFixed(2)}</span>
-</div>
-<div class="row-item">
-    <span>Amount Paid:</span>
-    <span>Php ${paid.toFixed(2)}</span>
-</div>
-<div class="row-item">
-    <span>CHANGE:</span>
-    <span>Php ${change.toFixed(2)}</span>
-</div>
-
-<div class="dashed-line"></div>
-
-<div class="thank-you">
-    Thank you for your purchase!<br>Please come again.
-</div>
+<b>*** OFFICIAL RECEIPT ***</b></span>
+--------------------------------
+${formatLine("Transaction No:", transactionId)}
+${formatLine("Date:", formattedDate)}
+${formatLine("Cashier:", cashierName)}
+${formatLine("Sold To:", soldTo)}
+--------------------------------
+${cartHTML}--------------------------------
+${formatLine("TOTAL AMOUNT:", "Php " + total.toFixed(2), true)}
+${formatLine("Amount Paid:", "Php " + paid.toFixed(2))}
+${formatLine("CHANGE:", "Php " + change.toFixed(2), true)}
+--------------------------------
+<span class="center">Thank you for your purchase!
+Please come again.</span>
+</pre>
 
 </body>
 </html>
