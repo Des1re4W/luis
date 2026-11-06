@@ -61,7 +61,7 @@ if (isset($_POST['place_order'])) {
         $paid_amount = 0;
     }
 
-    // UPLOAD CUSTOMER PROOF OF PAYMENT TO GOOGLE DRIVE
+    // UPLOAD CUSTOMER PROOF OF PAYMENT DIRECTLY TO "Customer Receipt" GOOGLE DRIVE FOLDER
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
             $tmp = $_FILES['proof_of_payment']['tmp_name'];
@@ -75,9 +75,13 @@ if (isset($_POST['place_order'])) {
                     $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
                     $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
 
+                    // Dedicated Folder ID para sa Customer Receipt
+                    $customerFolderId = "1K63T1f7Z2JucT5lgyBuNobLIRJZFYNno";
+
                     try {
                         if (function_exists('uploadProductImageToDrive')) {
-                            $file_id = uploadProductImageToDrive($tmp, $new_filename);
+                            // Ipinasa ang $customerFolderId bilang 3rd parameter
+                            $file_id = uploadProductImageToDrive($tmp, $new_filename, $customerFolderId);
                             if (!empty($file_id)) {
                                 $proof_of_payment = "https://drive.google.com/uc?export=view&id=" . $file_id;
                             }
@@ -86,7 +90,7 @@ if (isset($_POST['place_order'])) {
                         error_log("CUSTOMER PROOF GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
                     }
 
-                    // Fallback to local uploads if Drive fails
+                    // Fallback to local uploads kung sakaling mag-fail ang Drive API
                     if (empty($proof_of_payment)) {
                         $target_dir = "../uploads/proofs/";
                         if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
