@@ -695,10 +695,10 @@ body {
 <div class="line"></div>
 
 <table class="info-table">
-    <tr><td>Transaction No.</td><td>${escapeHtml(String(transactionId))}</td></tr>
-    <tr><td>Date</td><td>${escapeHtml(formattedDate)}</td></tr>
-    <tr><td>Cashier</td><td>${escapeHtml(String(cashierName))}</td></tr>
-    <tr><td>Sold To</td><td>${escapeHtml(String(soldTo))}</td></tr>
+    <tr><td>Transaction No.:</td><td>${escapeHtml(String(transactionId))}</td></tr>
+    <tr><td>Date:</td><td>${escapeHtml(formattedDate)}</td></tr>
+    <tr><td>Cashier:</td><td>${escapeHtml(String(cashierName))}</td></tr>
+    <tr><td>Sold To:</td><td>${escapeHtml(String(soldTo))}</td></tr>
 </table>
 
 <div class="line"></div>
