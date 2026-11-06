@@ -949,7 +949,6 @@ function viewCustomer(data) {
         let referenceNumber = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : "Not Provided");
         let paymentScheme = data.payment_scheme ? data.payment_scheme : 'full_payment';
         
-        // Kukunin ang amount at receiptdt mula sa data object
         let amountSent = data.paid_amount ? '₱' + parseFloat(data.paid_amount).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : "Not Provided";
         let receiptDateTime = data.receiptdt ? data.receiptdt : "Not Provided";
 
@@ -965,12 +964,14 @@ function viewCustomer(data) {
     }
 
     if (data.proof_of_payment && data.proof_of_payment.trim() !== "" && currentMOP !== "COD") {
-        // Path resolver para maiwasan ang broken image path
         let proofPath = data.proof_of_payment.trim();
         let finalSrc = "";
 
+        // SMART GOOGLE DRIVE & LOCAL PATH RESOLUTION FOR PROOF OF PAYMENT
         if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
             finalSrc = proofPath;
+        } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
+            finalSrc = '../drive-image.php?id=' + encodeURIComponent(proofPath);
         } else if (proofPath.startsWith('../')) {
             finalSrc = proofPath;
         } else {
