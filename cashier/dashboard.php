@@ -533,11 +533,11 @@ function printReceipt(transactionId){
 
         cartHTML += `
         <tr>
-            <td colspan="2" style="font-weight:bold; padding-top:4px;">${escapeHtml(item.name)}</td>
+            <td colspan="2" class="item-name">${escapeHtml(item.name)}</td>
         </tr>
         <tr>
-            <td style="padding-bottom:4px;">${item.qty} x Php ${item.price.toFixed(2)}</td>
-            <td align="right" style="padding-bottom:4px; font-weight:bold;">Php ${subtotal.toFixed(2)}</td>
+            <td class="item-qty">${item.qty} x Php ${item.price.toFixed(2)}</td>
+            <td class="item-price">Php ${subtotal.toFixed(2)}</td>
         </tr>`;
     });
 
@@ -588,7 +588,7 @@ function printReceipt(transactionId){
 html, body {
     margin: 0;
     padding: 0;
-    width: 48mm; /* Standard printable printable printable area ng 58mm roll */
+    width: 48mm;
     background: #fff;
     color: #000;
 }
@@ -596,7 +596,7 @@ body {
     font-family: 'Courier New', Courier, monospace;
     font-size: 10px;
     line-height: 1.2;
-    padding: 2mm 0;
+    padding: 2mm 1mm;
 }
 .center {
     text-align: center;
@@ -609,6 +609,7 @@ body {
 .shop-info {
     font-size: 8px;
     line-height: 1.2;
+    margin-bottom: 4px;
 }
 .title {
     font-size: 11px;
@@ -617,22 +618,47 @@ body {
 }
 .dashed-line {
     border-bottom: 1px dashed #000;
-    margin: 5px 0;
+    margin: 6px 0;
     width: 100%;
 }
 table.receipt-table {
     width: 100%;
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 10px;
 }
 table.receipt-table td {
     vertical-align: top;
-    word-break: break-word;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+.item-name {
+    font-weight: bold;
+    padding-top: 4px;
+    width: 100%;
+}
+.item-qty {
+    width: 55%;
+    padding-bottom: 4px;
+}
+.item-price {
+    width: 45%;
+    text-align: right;
+    font-weight: bold;
+    padding-bottom: 4px;
+}
+.lbl-col {
+    width: 45%;
+}
+.val-col {
+    width: 55%;
+    text-align: right;
 }
 .thank-you {
     text-align: center;
     font-size: 9px;
-    margin-top: 6px;
+    margin-top: 8px;
+    padding-bottom: 10px;
 }
 @media print {
     html, body {
@@ -659,20 +685,20 @@ table.receipt-table td {
 
 <table class="receipt-table">
     <tr>
-        <td style="width: 45%;">Transaction No:</td>
-        <td align="right">${escapeHtml(String(transactionId))}</td>
+        <td class="lbl-col">Transaction No:</td>
+        <td class="val-col">${escapeHtml(String(transactionId))}</td>
     </tr>
     <tr>
-        <td>Date:</td>
-        <td align="right">${escapeHtml(formattedDate)}</td>
+        <td class="lbl-col">Date:</td>
+        <td class="val-col">${escapeHtml(formattedDate)}</td>
     </tr>
     <tr>
-        <td>Cashier:</td>
-        <td align="right">${escapeHtml(String(cashierName))}</td>
+        <td class="lbl-col">Cashier:</td>
+        <td class="val-col">${escapeHtml(String(cashierName))}</td>
     </tr>
     <tr>
-        <td>Sold To:</td>
-        <td align="right">${escapeHtml(String(soldTo))}</td>
+        <td class="lbl-col">Sold To:</td>
+        <td class="val-col">${escapeHtml(String(soldTo))}</td>
     </tr>
 </table>
 
@@ -686,16 +712,16 @@ table.receipt-table td {
 
 <table class="receipt-table">
     <tr style="font-size: 11px; font-weight: bold;">
-        <td>TOTAL AMOUNT</td>
-        <td align="right">Php ${total.toFixed(2)}</td>
+        <td class="lbl-col">TOTAL AMOUNT</td>
+        <td class="val-col">Php ${total.toFixed(2)}</td>
     </tr>
     <tr>
-        <td>Amount Paid</td>
-        <td align="right">Php ${paid.toFixed(2)}</td>
+        <td class="lbl-col">Amount Paid</td>
+        <td class="val-col">Php ${paid.toFixed(2)}</td>
     </tr>
     <tr>
-        <td>CHANGE</td>
-        <td align="right">Php ${change.toFixed(2)}</td>
+        <td class="lbl-col">CHANGE</td>
+        <td class="val-col">Php ${change.toFixed(2)}</td>
     </tr>
 </table>
 
