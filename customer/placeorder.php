@@ -1,54 +1,12 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/google_drive.php';
 require_once __DIR__ . '/../config/image.php';
 
-// Siguraduhing kasama ang Google Drive helper
-if (file_exists(__DIR__ . '/../config/gdrive.php')) {
-    require_once __DIR__ . '/../config/gdrive.php';
-}
-
-// Helper function para sa Google Drive at Image resolution
+// Helper function para sa Checkout Item Image resolution
 function getCheckoutItemImageSrc($image_value) {
-    $img_src = '../assets/images/no-image.png';
-
-    if (!empty($image_value)) {
-        $image_value = trim($image_value);
-        $file_id = '';
-
-        if (stripos($image_value, 'data:image/') === 0) {
-            $img_src = $image_value;
-        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
-            $parsed_url = parse_url($image_value);
-            $host = strtolower($parsed_url['host'] ?? '');
-
-            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
-                parse_str($parsed_url['query'] ?? '', $query_params);
-
-                if (!empty($query_params['id'])) {
-                    $file_id = $query_params['id'];
-                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
-                    $file_id = $matches[1];
-                }
-
-                if ($file_id !== '') {
-                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
-                }
-            } else {
-                $img_src = $image_value;
-            }
-        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
-            $img_src = '../drive-image.php?id=' . urlencode($image_value);
-        } else {
-            $clean_path = ltrim($image_value, '/');
-            if (str_starts_with($clean_path, '../')) {
-                $img_src = $clean_path;
-            } else {
-                $img_src = '../' . $clean_path;
-            }
-        }
-    }
-    return $img_src;
+    return getProductImageSrc($image_value);
 }
 
 $checkout_source = isset($_GET['from']) ? $_GET['from'] : 'cart';
@@ -103,33 +61,35 @@ if (isset($_POST['place_order'])) {
         $paid_amount = 0;
     }
 
-    // GOOGLE DRIVE PROOF OF PAYMENT UPLOAD INTEGRATION
+    // UPLOAD CUSTOMER PROOF OF PAYMENT TO GOOGLE DRIVE
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
             $tmp = $_FILES['proof_of_payment']['tmp_name'];
+            $file_name = $_FILES['proof_of_payment']['name'];
             
             if (!empty($tmp) && file_exists($tmp)) {
                 $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
                 $file_mime_check = mime_content_type($tmp);
 
                 if (in_array($file_mime_check, $allowed_types)) {
-                    $drive_file_id = null;
-                    
-                    if (function_exists('uploadToGoogleDrive')) {
-                        $drive_file_id = uploadToGoogleDrive($tmp, $_FILES['proof_of_payment']['name'], $file_mime_check);
-                    } elseif (function_exists('uploadToDrive')) {
-                        $drive_file_id = uploadToDrive($tmp, $_FILES['proof_of_payment']['name'], $file_mime_check);
+                    $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+                    $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+
+                    try {
+                        if (function_exists('uploadProductImageToDrive')) {
+                            $file_id = uploadProductImageToDrive($tmp, $new_filename);
+                            if (!empty($file_id)) {
+                                $proof_of_payment = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log("CUSTOMER PROOF GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
                     }
 
-                    if ($drive_file_id) {
-                        $proof_of_payment = $drive_file_id;
-                    } else {
-                        // Fallback sa local uploads kung sakaling offline/failed ang Drive API
+                    // Fallback to local uploads if Drive fails
+                    if (empty($proof_of_payment)) {
                         $target_dir = "../uploads/proofs/";
                         if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-                        
-                        $ext = pathinfo($_FILES["proof_of_payment"]["name"], PATHINFO_EXTENSION);
-                        $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
                         
                         if (move_uploaded_file($tmp, $target_dir . $new_filename)) {
                             $proof_of_payment = "uploads/proofs/" . $new_filename;
@@ -415,7 +375,6 @@ function togglePaymentFields() {
         if (optionBox) optionBox.classList.add('d-none');
         if (proofInput) proofInput.required = false;
         
-        // Reset hidden OCR inputs for COD
         document.getElementById('ref_no_input').value = "";
         document.getElementById('paid_amount_input').value = "";
         document.getElementById('receiptdt_input').value = "";
@@ -451,7 +410,6 @@ function toggleSubmitButton() {
     }
 }
 
-// Tesseract OCR Receipt Scanner Function with Strict Validation
 async function processReceiptOCR(fileInput) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -461,9 +419,7 @@ async function processReceiptOCR(fileInput) {
     const refInput = document.getElementById('ref_no_input');
     const paidInput = document.getElementById('paid_amount_input');
     const dtInput = document.getElementById('receiptdt_input');
-    const submitBtn = document.getElementById('submitBtn');
 
-    // CLEAR HIDDEN INPUTS BEFORE SCANNING
     refInput.value = "";
     paidInput.value = "";
     dtInput.value = "";
@@ -493,7 +449,6 @@ async function processReceiptOCR(fileInput) {
         let detectedAmount = '';
         let detectedDateTime = '';
 
-        // 1. REF NO EXTRACTION
         let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([0-9\s]{9,20})/i);
         if (refMatch) {
             let cleanedDigits = refMatch[1].replace(/\s+/g, '').trim();
@@ -509,7 +464,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // 2. AMOUNT EXTRACTION
         let amountMatch = text.match(/(?:Total\s*Amount\s*Sent|Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
         if (amountMatch) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
@@ -520,7 +474,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // 3. DATE & TIME EXTRACTION
         let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i);
         if (!dateTimeMatch) {
             dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
@@ -529,7 +482,6 @@ async function processReceiptOCR(fileInput) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // STRICT CHECK: IF NO REFERENCE NUMBER OR AMOUNT IS DETECTED
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
@@ -538,12 +490,10 @@ async function processReceiptOCR(fileInput) {
             return;
         }
 
-        // Assign values to hidden inputs ONLY IF VALID
         refInput.value = detectedRef;
         paidInput.value = detectedAmount;
         dtInput.value = detectedDateTime ? detectedDateTime : "N/A";
 
-        // Display Success Message
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-success');
         
