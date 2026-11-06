@@ -3,8 +3,9 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/image.php';
 
-if (file_exists(__DIR__ . '/../config/gdrive.php')) {
-    require_once __DIR__ . '/../config/gdrive.php';
+// Gamitin ang EKSAKTONG file path mula sa addProduct.php at editProduct.php
+if (file_exists(__DIR__ . '/../config/google_drive.php')) {
+    require_once __DIR__ . '/../config/google_drive.php';
 }
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
@@ -29,6 +30,7 @@ if (!$product) {
     exit();
 }
 
+// Helper function for audit logging
 function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $ip_address)
 {
     $sql = "INSERT INTO audit_log
@@ -47,7 +49,7 @@ function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $
     ]);
 }
 
-// DEFINITIVE GOOGLE DRIVE UPLOAD HANDLER FOR VARIANTS
+// GOOGLE DRIVE VARIANT UPLOAD HANDLER (USING EXACT FUNCTION FROM ADDPRODUCT.PHP)
 function handleGoogleDriveVariantUpload($fileArray)
 {
     if (!isset($fileArray['tmp_name']) || $fileArray['error'] !== UPLOAD_ERR_OK) {
@@ -55,48 +57,49 @@ function handleGoogleDriveVariantUpload($fileArray)
     }
 
     $tmp = $fileArray['tmp_name'];
-    $allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp'];
-    $file_mime_check = mime_content_type($tmp);
-
-    if (!in_array($file_mime_check, $allowed_types)) {
-        return false;
+    
+    if (empty($tmp) || !file_exists($tmp)) {
+        return null;
     }
 
-    $drive_result = null;
-
-    // Subukang gamitin ang ginagamit sa addProduct.php / products.php
-    if (function_exists('uploadToDrive')) {
-        $drive_result = uploadToDrive($tmp, $fileArray['name'], $file_mime_check);
-    } elseif (function_exists('uploadToGoogleDrive')) {
-        $drive_result = uploadToGoogleDrive($tmp, $fileArray['name'], $file_mime_check);
-    } elseif (function_exists('uploadImageToDrive')) {
-        $drive_result = uploadImageToDrive($tmp, $fileArray['name'], $file_mime_check);
-    } elseif (function_exists('uploadImage')) {
-        $drive_result = uploadImage($fileArray);
+    $check_image = getimagesize($tmp);
+    if ($check_image === false) {
+        return false; // Invalid image file
     }
 
-    // Kung nagbalik ng Google Drive URL o File ID
-    if (!empty($drive_result) && is_string($drive_result)) {
-        // Kung File ID lang ang binigay, i-format tulad ng sa Products
-        if (preg_match('/^[A-Za-z0-9_-]{20,}$/', $drive_result) && !str_contains($drive_result, 'http')) {
-            return "https://drive.google.com/uc?export=view&id=" . $drive_result;
+    $original_name = $fileArray['name'];
+    $image_extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+    $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
+
+    if (!in_array($image_extension, $allowed_extensions, true)) {
+        return false; // Extension not allowed
+    }
+
+    $new_image_name = uniqid("var_", true) . '.' . $image_extension;
+
+    try {
+        // Tumawag sa eksaktong function na ginagamit ng addProduct.php / editProduct.php
+        if (function_exists('uploadProductImageToDrive')) {
+            $file_id = uploadProductImageToDrive($tmp, $new_image_name);
+
+            if (!empty($file_id)) {
+                return "https://drive.google.com/uc?export=view&id=" . $file_id;
+            }
         }
-        return $drive_result;
+    } catch (Throwable $e) {
+        error_log("VARIANT GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
     }
 
-    // FALLBACK: Kung talagang hindi available ang Drive Function
+    // Fallback sa local uploads folder kung sakaling magka-error sa Drive API
     $target_dir = __DIR__ . '/../uploads/';
     if (!is_dir($target_dir)) {
         mkdir($target_dir, 0755, true);
     }
 
-    $original_name = basename($fileArray['name']);
-    $safe_name = preg_replace('/[^A-Za-z0-9._-]/', '_', $original_name);
-    $filename = uniqid('var_', true) . '_' . $safe_name;
-    $target_file = $target_dir . $filename;
+    $target_file = $target_dir . $new_image_name;
 
     if (move_uploaded_file($tmp, $target_file)) {
-        return 'uploads/' . $filename;
+        return 'uploads/' . $new_image_name;
     }
 
     return null;
@@ -129,6 +132,7 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
+    // Check duplicate variant names
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -146,11 +150,12 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
+    // Upload with Google Drive Logic
     if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] === UPLOAD_ERR_OK) {
         $upload_result = handleGoogleDriveVariantUpload($_FILES['variant_image']);
 
         if ($upload_result === false) {
-            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
+            $_SESSION['error_message'] = "Error: Invalid file! Only JPG, JPEG, PNG, and WEBP images are allowed.";
             header("Location: manageVariants.php?product_id=$product_id");
             exit();
         } elseif ($upload_result !== null) {
@@ -158,6 +163,7 @@ if (isset($_POST['add_variant'])) {
         }
     }
 
+    // Insert variant
     $insert_sql = "
         INSERT INTO product_variants
         (product_id, variant_name, variant_description,
@@ -223,6 +229,7 @@ if (isset($_POST['update_variant'])) {
         exit();
     }
 
+    // Check duplicate names
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -261,11 +268,12 @@ if (isset($_POST['update_variant'])) {
         'product_id' => $product_id
     ];
 
+    // Replace image with Google Drive upload logic
     if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK) {
         $upload_result = handleGoogleDriveVariantUpload($_FILES['edit_variant_image']);
 
         if ($upload_result === false) {
-            $_SESSION['error_message'] = "Error: Invalid file type! Only JPG, JPEG, PNG, and WEBP images are allowed.";
+            $_SESSION['error_message'] = "Error: Invalid file! Only JPG, JPEG, PNG, and WEBP images are allowed.";
             header("Location: manageVariants.php?product_id=$product_id");
             exit();
         } elseif ($upload_result !== null) {
@@ -345,6 +353,7 @@ if (isset($_GET['delete_id'])) {
     exit();
 }
 
+// Get all variants for this product
 $stmt = $pdo->prepare("
     SELECT *
     FROM product_variants
