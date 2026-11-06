@@ -533,11 +533,10 @@ function printReceipt(transactionId){
         let qtyPrice = `${item.qty} x Php ${item.price.toFixed(2)}`;
         let subStr = `Php ${subtotal.toFixed(2)}`;
         
-        // Manual spacing para maghiwalay sa kanan at kaliwa sa Text Only driver
         let spacesNeeded = Math.max(1, 32 - (qtyPrice.length + subStr.length));
         let spaceStr = " ".repeat(spacesNeeded);
 
-        cartHTML += `<b>${name}</b>\n${qtyPrice}${spaceStr}<b>${subStr}</b>\n`;
+        cartHTML += `<strong style="font-weight:900;">${name}</strong>\n${qtyPrice}${spaceStr}<strong style="font-weight:900;">${subStr}</strong>\n`;
     });
 
     let today = new Date();
@@ -553,13 +552,12 @@ function printReceipt(transactionId){
     let paid = parseFloat(document.getElementById("amountPaid").value) || 0;
     let change = paid - total;
 
-    // Helper function para sa alignment sa kanan at kaliwa gamit ang ASCII spaces
     function formatLine(left, right, isBold = false) {
         let l = String(left);
         let r = String(right);
         let spaceCount = Math.max(1, 32 - (l.length + r.length));
         let line = l + " ".repeat(spaceCount) + r;
-        return isBold ? `<b>${line}</b>` : line;
+        return isBold ? `<strong style="font-weight:900;">${line}</strong>` : line;
     }
 
     let oldFrame = document.getElementById("receipt-print-frame");
@@ -613,6 +611,11 @@ pre.receipt {
     text-align: center;
     display: block;
 }
+.bold-header {
+    font-weight: 900;
+    font-size: 13px;
+    letter-spacing: 1px;
+}
 @media print {
     html, body {
         width: 100%;
@@ -624,14 +627,14 @@ pre.receipt {
 <body>
 
 <pre class="receipt">
-<span class="center"><b><font size="3">R. TAIPAN HARDWARE</font></b>
+<span class="center"><strong class="bold-header">R. TAIPAN HARDWARE</strong>
 R. Taipan Construction Supply
 and Services, OPC
 190 Cabrera Rd. Sitio Burol
 Brgy. San Juan, Taytay, Rizal
 Contact: 0907 456 5632
 
-<b>*** OFFICIAL RECEIPT ***</b></span>
+<strong style="font-weight:900;">*** OFFICIAL RECEIPT ***</strong></span>
 --------------------------------
 ${formatLine("Transaction No:", transactionId)}
 ${formatLine("Date:", formattedDate)}
@@ -643,8 +646,10 @@ ${formatLine("TOTAL AMOUNT:", "Php " + total.toFixed(2), true)}
 ${formatLine("Amount Paid:", "Php " + paid.toFixed(2))}
 ${formatLine("CHANGE:", "Php " + change.toFixed(2), true)}
 --------------------------------
-<span class="center">Thank you for your purchase!
-Please come again.</span>
+<span class="center"><strong style="font-weight:900;">Thank you for your purchase!
+Please come again.</strong></span>
+
+
 </pre>
 
 </body>
