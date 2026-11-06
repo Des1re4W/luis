@@ -1,6 +1,50 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
+
+// Helper function para sa Google Drive at Image resolution
+function getCheckoutItemImageSrc($image_value) {
+    $img_src = '../assets/images/no-image.png';
+
+    if (!empty($image_value)) {
+        $image_value = trim($image_value);
+        $file_id = '';
+
+        if (stripos($image_value, 'data:image/') === 0) {
+            $img_src = $image_value;
+        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+            $parsed_url = parse_url($image_value);
+            $host = strtolower($parsed_url['host'] ?? '');
+
+            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                parse_str($parsed_url['query'] ?? '', $query_params);
+
+                if (!empty($query_params['id'])) {
+                    $file_id = $query_params['id'];
+                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                    $file_id = $matches[1];
+                }
+
+                if ($file_id !== '') {
+                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                }
+            } else {
+                $img_src = $image_value;
+            }
+        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
+            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+        } else {
+            $clean_path = ltrim($image_value, '/');
+            if (str_starts_with($clean_path, '../')) {
+                $img_src = $clean_path;
+            } else {
+                $img_src = '../' . $clean_path;
+            }
+        }
+    }
+    return $img_src;
+}
 
 $checkout_source = isset($_GET['from']) ? $_GET['from'] : 'cart';
 $items_to_process = [];
@@ -190,8 +234,14 @@ if (isset($_POST['place_order'])) {
                 <h5 class="mb-3 fw-bold">Items to Purchase</h5>
                 <div class="overflow-auto" style="max-height: 300px;">
                     <?php foreach ($items_to_process as $item): ?>
+                        <?php $item_img_src = getCheckoutItemImageSrc($item['image'] ?? ''); ?>
                         <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                           <img src="../<?php echo htmlspecialchars($item['image']); ?>" class="rounded me-3" style="width: 50px; height: 50px; object-fit: cover;">
+                           <img src="<?php echo htmlspecialchars($item_img_src, ENT_QUOTES, 'UTF-8'); ?>" 
+                                alt="<?php echo htmlspecialchars($item['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                                class="rounded me-3" 
+                                style="width: 50px; height: 50px; object-fit: cover;"
+                                onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                loading="lazy">
                             <div class="flex-grow-1">
                                 <h6 class="mb-0 fw-bold small text-truncate"><?php echo htmlspecialchars($item['name']); ?></h6>
                                 <small class="text-muted">Qty: <?php echo (int)$item['qty']; ?> × ₱<?php echo number_format((float)$item['price'], 2); ?></small>
@@ -461,12 +511,12 @@ async function processReceiptOCR(fileInput) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // STRICT CHECK: IF NO REFERENCE NUMBER OR AMOUNT IS DETECTED (e.g. photo of a dog)
+        // STRICT CHECK: IF NO REFERENCE NUMBER OR AMOUNT IS DETECTED
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
             statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear GCash/Maya payment receipt screenshot.';
-            fileInput.value = ""; // Clear file selection
+            fileInput.value = "";
             return;
         }
 
