@@ -701,7 +701,11 @@ body{
                 </tr>
             </thead>
             <tbody>
-                <?php while($row = $orders_result->fetch(PDO::FETCH_ASSOC)): ?>
+                <?php while($row = $orders_result->fetch(PDO::FETCH_ASSOC)): 
+                    // Pre-process image paths directly in PHP for reliable rendering
+                    $row['proof_of_payment_resolved'] = !empty($row['proof_of_payment']) ? getProductImageSrc($row['proof_of_payment']) : '';
+                    $row['refund_receipt_resolved'] = !empty($row['refund_receipt']) ? getProductImageSrc($row['refund_receipt']) : '';
+                ?>
                 <tr id="order-<?php echo $row['id']; ?>">
                     <td class="text-center">#<?php echo $row['id']; ?></td>
                     <td class="text-center"><strong><?php echo htmlspecialchars($row['fullname']); ?></strong></td>
@@ -757,11 +761,8 @@ body{
                                     $pm = strtoupper(trim($row['payment_method'] ?? 'COD'));
                                     $isEwallet = ($pm === 'GCASH' || $pm === 'MAYA');
                                     ?>
-                                    <?php if($isEwallet && !empty($row['refund_receipt'])): ?>
-                                        <?php 
-                                        $refundSrc = getProductImageSrc($row['refund_receipt']);
-                                        ?>
-                                        <br><a href="<?php echo htmlspecialchars($refundSrc); ?>" target="_blank" class="small text-success fw-bold">
+                                    <?php if($isEwallet && !empty($row['refund_receipt_resolved'])): ?>
+                                        <br><a href="<?php echo htmlspecialchars($row['refund_receipt_resolved']); ?>" target="_blank" class="small text-success fw-bold">
                                             <i class="bi bi-image"></i> View Refund Proof
                                         </a>
                                     <?php endif; ?>
@@ -947,19 +948,38 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-// Helper to format image URLs
+// Helper to format image URLs accurately for Google Drive Links, Proxy Viewers, or Local Paths
 function resolveImageSrc(path) {
     if (!path) return '';
     let proofPath = path.trim();
-    if (proofPath.startsWith('http://') || proofPath.startsWith('https://') || proofPath.startsWith('data:image/')) {
+    
+    // Direct Base64 / HTTP
+    if (proofPath.startsWith('data:image/')) {
         return proofPath;
-    } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
-        return '../drive-image.php?id=' + encodeURIComponent(proofPath);
-    } else if (proofPath.startsWith('../')) {
-        return proofPath;
-    } else {
-        return '../' + proofPath.replace(/^\/+/, '');
     }
+    
+    // Check for Google Drive File ID extraction
+    let fileId = '';
+    if (proofPath.includes('drive.google.com') || proofPath.includes('id=')) {
+        let match = proofPath.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) {
+            fileId = match[1];
+        }
+    } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
+        fileId = proofPath;
+    }
+
+    if (fileId) {
+        return '../drive-image.php?id=' + encodeURIComponent(fileId);
+    }
+
+    if (proofPath.startsWith('http://') || proofPath.startsWith('https://')) {
+        return proofPath;
+    }
+    if (proofPath.startsWith('../')) {
+        return proofPath;
+    }
+    return '../' + proofPath.replace(/^\/+/, '');
 }
 
 function viewCustomer(data) {
@@ -995,8 +1015,9 @@ function viewCustomer(data) {
         `;
     }
 
-    if (data.proof_of_payment && data.proof_of_payment.trim() !== "" && currentMOP !== "COD") {
-        let finalSrc = resolveImageSrc(data.proof_of_payment);
+    let customerProofPath = data.proof_of_payment_resolved || data.proof_of_payment;
+    if (customerProofPath && customerProofPath.trim() !== "" && currentMOP !== "COD") {
+        let finalSrc = resolveImageSrc(customerProofPath);
 
         htmlContent += `
             <div class="text-center">
@@ -1012,8 +1033,9 @@ function viewCustomer(data) {
     proofContainer.innerHTML = htmlContent;
 
     // 2. Admin Refund Proof (if order was declined with e-wallet refund)
-    if (data.status === 'declined' && data.refund_receipt && data.refund_receipt.trim() !== '') {
-        let refundSrc = resolveImageSrc(data.refund_receipt);
+    let adminRefundPath = data.refund_receipt_resolved || data.refund_receipt;
+    if (data.status === 'declined' && adminRefundPath && adminRefundPath.trim() !== '') {
+        let refundSrc = resolveImageSrc(adminRefundPath);
         let refundRef = data.refund_reference ? data.refund_reference : 'N/A';
         
         let refundHtml = `
