@@ -1,9 +1,53 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
 
 $cart = $_SESSION['cart'] ?? [];
 $total = 0;
+
+// Helper function para sa ligtas na pag-resolve ng Google Drive image o local path
+function getCartItemImageSrc($image_value) {
+    $img_src = '../assets/images/no-image.png';
+
+    if (!empty($image_value)) {
+        $image_value = trim($image_value);
+        $file_id = '';
+
+        if (stripos($image_value, 'data:image/') === 0) {
+            $img_src = $image_value;
+        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+            $parsed_url = parse_url($image_value);
+            $host = strtolower($parsed_url['host'] ?? '');
+
+            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                parse_str($parsed_url['query'] ?? '', $query_params);
+
+                if (!empty($query_params['id'])) {
+                    $file_id = $query_params['id'];
+                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                    $file_id = $matches[1];
+                }
+
+                if ($file_id !== '') {
+                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                }
+            } else {
+                $img_src = $image_value;
+            }
+        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
+            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+        } else {
+            $clean_path = ltrim($image_value, '/');
+            if (str_starts_with($clean_path, '../')) {
+                $img_src = $clean_path;
+            } else {
+                $img_src = '../' . $clean_path;
+            }
+        }
+    }
+    return $img_src;
+}
 
 // Kalkulahin ang total nang ligtas
 foreach ($cart as $item) {
@@ -40,6 +84,7 @@ foreach ($cart as $item) {
                         <tr>
                             <th>Product</th>
                             <th>Price</th>
+                            <style>/* Adjust column widths if needed */</style>
                             <th style="min-width: 140px;">Quantity</th>
                             <th>Subtotal</th>
                             <th class="text-center">Action</th>
@@ -57,13 +102,19 @@ foreach ($cart as $item) {
         }
         $stock_data = $stmt->fetch(PDO::FETCH_ASSOC);
         $max_stock = $stock_data['stock'] ?? 0;
+
+        // Resolve Image Src
+        $img_src = getCartItemImageSrc($item['image'] ?? '');
     ?>
         <tr>
             <td>
                 <div class="d-flex align-items-center">
-                    <img src="../<?php echo $item['image'] ?? 'images/default.jpg'; ?>" 
-                         class="rounded me-2 me-md-3 cart-img">
-                    <span class="fw-bold text-wrap" style="max-width: 200px; font-size: 0.9rem;"><?php echo $item['name'] ?? 'Unknown'; ?></span>
+                    <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>" 
+                         alt="<?php echo htmlspecialchars($item['name'] ?? 'Product', ENT_QUOTES, 'UTF-8'); ?>"
+                         class="rounded me-2 me-md-3 cart-img"
+                         onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                         loading="lazy">
+                    <span class="fw-bold text-wrap" style="max-width: 200px; font-size: 0.9rem;"><?php echo htmlspecialchars($item['name'] ?? 'Unknown'); ?></span>
                 </div>
             </td>
             
