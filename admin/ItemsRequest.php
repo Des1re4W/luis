@@ -50,6 +50,7 @@ if (isset($_POST['send_email_update'])) {
             $mail->Password   = 'miohifpavqdzvzvn';   
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = 587;
+            $mail->Timeout    = 10;
 
             $mail->setFrom('rtaipancss@gmail.com', 'R. Taipan Construction Supply and Services');
             $mail->addAddress($customer_email, $customer_name);
@@ -282,7 +283,7 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
     exit();
 }
 
-// --- 3. REFUND SUBMISSION LOGIC WITH GOOGLE DRIVE REFUND RECEIPT UPLOAD ---
+// --- 3. REFUND SUBMISSION LOGIC WITH GOOGLE DRIVE REFUND RECEIPT UPLOAD & TIMEOUT SAFETY ---
 if (isset($_POST['submit_refund'])) {
     $req_id = (int)$_POST['ticket_id'];
     $ref_no = trim($_POST['refund_reference']);
@@ -300,23 +301,26 @@ if (isset($_POST['submit_refund'])) {
             // Dedicated Refund Receipt Google Drive Folder ID
             $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
 
-            try {
-                if (function_exists('uploadProductImageToDrive')) {
-                    $file_id = uploadProductImageToDrive($file_tmp, $proof_filename, $REFUND_RECEIPTS_FOLDER_ID);
-                    if (!empty($file_id)) {
-                        $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
-                    }
-                }
-            } catch (Throwable $e) {
-                error_log("ADMIN REFUND REQUEST GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
+            // 1. Unang subukang i-upload sa local bilang fallback
+            $target_dir = "../uploads/";
+            if (!is_dir($target_dir)) {
+                mkdir($target_dir, 0777, true);
             }
+            $local_path = $target_dir . $proof_filename;
 
-            // Local fallback kung mag-fail ang Drive upload
-            if (empty($proof_path)) {
-                $target_dir = "../uploads/";
-                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-                if (move_uploaded_file($file_tmp, $target_dir . $proof_filename)) {
-                    $proof_path = "uploads/" . $proof_filename;
+            if (move_uploaded_file($file_tmp, $local_path)) {
+                $proof_path = "uploads/" . $proof_filename;
+                
+                // 2. Subukang i-sync sa Google Drive (may fail-safe)
+                try {
+                    if (function_exists('uploadProductImageToDrive')) {
+                        $file_id = uploadProductImageToDrive($local_path, $proof_filename, $REFUND_RECEIPTS_FOLDER_ID);
+                        if (!empty($file_id)) {
+                            $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                        }
+                    }
+                } catch (Throwable $e) {
+                    error_log("ADMIN REFUND REQUEST GOOGLE DRIVE UPLOAD TIMEOUT/ERROR: " . $e->getMessage());
                 }
             }
         }
@@ -355,6 +359,7 @@ if (isset($_POST['submit_refund'])) {
                 $mail->Password   = 'miohifpavqdzvzvn';   
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
+                $mail->Timeout    = 10; // 10-second timeout para maiwasan ang un-ending loading
 
                 $mail->setFrom('rtaipancss@gmail.com', 'R. Taipan Construction Supply and Services');
                 $mail->addAddress($customer_email, $customer_name);
