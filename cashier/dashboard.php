@@ -697,15 +697,15 @@ table.receipt-table td {
 
 <table class="receipt-table">
     <tr style="font-size: 10px; font-weight: bold;">
-        <td class="lbl-col">TOTAL AMOUNT</td>
+        <td class="lbl-col">TOTAL AMOUNT:</td>
         <td class="val-col">Php ${total.toFixed(2)}</td>
     </tr>
     <tr>
-        <td class="lbl-col">Amount Paid</td>
+        <td class="lbl-col">Amount Paid:</td>
         <td class="val-col">Php ${paid.toFixed(2)}</td>
     </tr>
     <tr>
-        <td class="lbl-col">CHANGE</td>
+        <td class="lbl-col">CHANGE:</td>
         <td class="val-col">Php ${change.toFixed(2)}</td>
     </tr>
 </table>
@@ -713,8 +713,7 @@ table.receipt-table td {
 <div class="dashed-line"></div>
 
 <div class="thank-you">
-    Thank you for your purchase!<br>
-    Please come again.
+    Thank you for your purchase! Please come again.
 </div>
 
 </body>
