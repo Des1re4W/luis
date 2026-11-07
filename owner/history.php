@@ -333,14 +333,15 @@ function viewOnlineItems(data) {
     const container = document.getElementById('receiptContainer');
     container.innerHTML = "<div class='text-center py-3 text-white'>Loading receipt items...</div>";
     invoiceModal.show();
-
-    fetch(`getOnlineItems.php?id=${data.id}`)
+    fetch(`./getOnlineitems.php?id=${data.id}`)
     .then(res => { 
-        if (!res.ok) throw new Error("Network response error"); 
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
         return res.json(); 
     })
     .then(resData => {
-        // Safe & Flexible Array Extraction
+
         let rawItems = [];
         if (Array.isArray(resData)) {
             rawItems = resData;
@@ -495,7 +496,11 @@ function viewOnlineItems(data) {
     })
     .catch(err => {
         console.error("Online Receipt Error:", err);
-        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load online order details.</div>`;
+        container.innerHTML = `
+            <div class="text-center text-danger py-3">
+                Failed to load online order details.<br>
+                <small class="text-muted d-block mt-1">${err.message}</small>
+            </div>`;
     });
 }
 // View Receipt Walk-in (POS)
