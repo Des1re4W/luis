@@ -328,40 +328,66 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 });
-
 // View Receipt Online Order
 function viewOnlineItems(data) {
     const container = document.getElementById('receiptContainer');
-    container.innerHTML = "<div class='text-center py-3'>Loading receipt items...</div>";
+    container.innerHTML = "<div class='text-center py-3 text-white'>Loading receipt items...</div>";
     invoiceModal.show();
 
     fetch(`getOnlineItems.php?id=${data.id}`)
-    .then(res => { if (!res.ok) throw new Error("Network response error"); return res.json(); })
-    .then(items => {
+    .then(res => { 
+        if (!res.ok) throw new Error("Network response error"); 
+        return res.json(); 
+    })
+    .then(resData => {
+        // Safe & Flexible Array Extraction
+        let rawItems = [];
+        if (Array.isArray(resData)) {
+            rawItems = resData;
+        } else if (resData && Array.isArray(resData.items)) {
+            rawItems = resData.items;
+        } else if (resData && Array.isArray(resData.cart)) {
+            rawItems = resData.cart;
+        } else if (resData && typeof resData.items === 'object' && resData.items !== null) {
+            rawItems = Object.values(resData.items);
+        } else if (resData && typeof resData.cart === 'object' && resData.cart !== null) {
+            rawItems = Object.values(resData.cart);
+        }
+
+        let orderData = (resData && resData.order) ? resData.order : data;
+
         let itemsHtml = '';
-        items.forEach(item => {
-            let price = parseFloat(item.price || 0);
-            let qty = parseInt(item.qty || 1);
-            let subtotal = parseFloat(item.subtotal || (price * qty));
+        if (rawItems.length > 0) {
+            rawItems.forEach(item => {
+                let price = parseFloat(item.price || 0);
+                let qty = parseInt(item.qty || item.quantity || 1);
+                let subtotal = parseFloat(item.subtotal || (price * qty));
+                let productName = item.product_name || item.name || 'Item';
 
-            itemsHtml += `
-                <tr>
-                    <td>${item.product_name || item.name || 'Item'} (x${qty})</td>
-                    <td align="right">₱${subtotal.toFixed(2)}</td>
-                </tr>
-            `;
-        });
+                itemsHtml += `
+                    <tr>
+                        <td class="text-start py-1">
+                            <b>${productName}</b><br>
+                            <small class="text-muted">${qty} x ₱${price.toFixed(2)}</small>
+                        </td>
+                        <td class="text-end align-top py-1 fw-bold">₱${subtotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+        } else {
+            itemsHtml = `<tr><td colspan="2" class="text-center py-2 text-muted">No line items found.</td></tr>`;
+        }
 
-        let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
-        let paymentScheme = (data.payment_scheme || '').toLowerCase();
-        let totalAmt = parseFloat(data.total_amount || 0);
-        let orderStatus = (data.status || 'pending').toUpperCase();
+        let paymentMethodName = String(orderData.payment_method || 'COD').toUpperCase();
+        let paymentScheme = String(orderData.payment_scheme || '').toLowerCase();
+        let totalAmt = parseFloat(orderData.total_amount || orderData.total || 0);
+        let orderStatus = String(orderData.status || 'PENDING').toUpperCase();
 
         let paymentBreakdownHtml = '';
 
         if (paymentMethodName === 'COD') {
             paymentBreakdownHtml = `
-                <div class="d-flex justify-content-between small fw-bold mb-2">
+                <div class="d-flex justify-content-between small fw-bold mb-1">
                     <span>TOTAL AMOUNT:</span>
                     <span>₱${totalAmt.toFixed(2)}</span>
                 </div>
@@ -371,7 +397,7 @@ function viewOnlineItems(data) {
             `;
         }
         else if (totalAmt >= 5000 && (paymentScheme.includes('50') || paymentScheme.includes('down'))) {
-            let downpayment = parseFloat(data.paid_amount || (totalAmt * 0.5));
+            let downpayment = parseFloat(orderData.paid_amount || (totalAmt * 0.5));
             let balance = totalAmt - downpayment;
 
             paymentBreakdownHtml = `
@@ -391,8 +417,8 @@ function viewOnlineItems(data) {
             `;
         }
         else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
-            let paidAmount = parseFloat(data.paid_amount || totalAmt);
-            let refNoField = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : '');
+            let paidAmount = parseFloat(orderData.paid_amount || totalAmt);
+            let refNoField = orderData.refund_reference ? orderData.refund_reference : (orderData.ref_no ? orderData.ref_no : '');
 
             paymentBreakdownHtml = `
                 <div class="d-flex justify-content-between small fw-bold mb-1">
@@ -407,8 +433,8 @@ function viewOnlineItems(data) {
 
             if (refNoField) {
                 paymentBreakdownHtml += `
-                    <div class="small text-muted">
-                        Reference No: ${refNoField}
+                    <div class="small text-muted mt-1">
+                        <b>Ref No:</b> ${refNoField}
                     </div>
                 `;
             }
@@ -422,27 +448,32 @@ function viewOnlineItems(data) {
             `;
         }
 
+        let fullName = `${orderData.fullname || ''} ${orderData.surname || ''}`.trim() || 'Customer';
+
         let fullReceiptHtml = `
             <div class="text-center mb-2">
-                <h5 class="fw-bold my-0 text-uppercase">R. Taipan Hardware</h5>
-                <small>190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</small><br>
-                <small>Contact: 0907 456 5632</small>
+                <h5 class="fw-bold my-0 text-uppercase">*** R. TAIPAN HARDWARE ***</h5>
+                <small class="d-block">R. Taipan Construction Supply and Services, OPC</small>
+                <small class="d-block">190 Cabrera Rd. Sitio Burol Brgy. San Juan, Taytay, Rizal</small>
+                <small class="d-block">Contact: 0907 456 5632</small>
                 <div class="receipt-line"></div>
-                <small><b>OFFICIAL RECEIPT (ONLINE ORDER)</b></small>
+                <small><b>*** OFFICIAL RECEIPT (ONLINE ORDER) ***</b></small>
                 <div class="receipt-line"></div>
             </div>
 
-            <p class="small mb-1"><b>Order ID:</b> #${data.id}</p>
-            <p class="small mb-1"><b>Date:</b> ${data.order_date || 'N/A'}</p>
-            <p class="small mb-1"><b>Customer:</b> ${data.fullname || ''} ${data.surname || ''}</p>
-            <p class="small mb-1"><b>Contact:</b> ${data.contact_number || 'N/A'}</p>
-            <p class="small mb-1"><b>Address:</b> ${data.full_address || 'N/A'}</p>
-            <p class="small mb-2"><b>Landmark:</b> ${data.landmark || 'N/A'}</p>
+            <p class="small mb-1"><b>Order ID:</b> #${orderData.id}</p>
+            <p class="small mb-1"><b>Date:</b> ${orderData.order_date || orderData.created_at || 'N/A'}</p>
+            <p class="small mb-1"><b>Customer:</b> ${fullName}</p>
+            <p class="small mb-1"><b>Contact:</b> ${orderData.contact_number || 'N/A'}</p>
+            <p class="small mb-1"><b>Address:</b> ${orderData.full_address || 'N/A'}</p>
+            <p class="small mb-2"><b>Landmark:</b> ${orderData.landmark || 'N/A'}</p>
 
             <div class="receipt-line"></div>
 
             <table width="100%" class="small mb-2">
-                ${itemsHtml}
+                <tbody>
+                    ${itemsHtml}
+                </tbody>
             </table>
 
             <div class="receipt-line"></div>
@@ -451,19 +482,20 @@ function viewOnlineItems(data) {
 
             <div class="receipt-line mt-2"></div>
 
-            <div class="text-start small">
+            <div class="text-start small mb-1">
                 <b>Mode of Payment:</b> ${paymentMethodName}
             </div>
 
-            <div class="text-center mt-2">
-                <small class="fw-bold">STATUS: ${orderStatus}</small>
+            <div class="text-center mt-3">
+                <small class="fw-bold d-block">STATUS: ${orderStatus}</small>
             </div>
         `;
 
         container.innerHTML = fullReceiptHtml;
     })
     .catch(err => {
-        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
+        console.error("Online Receipt Error:", err);
+        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load online order details.</div>`;
     });
 }
 // View Receipt Walk-in (POS)
