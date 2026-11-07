@@ -581,7 +581,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-white">
-                    <h5 class="modal-title fw-bold fs-6" id="editVariantModalLabel">📝 Edit Variant Configuration</h5>
+                    <h5 class="modal-title fw-bold fs-6" id="editVariantModalLabel">Edit Variant Configuration</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
                         aria-label="Close"></button>
                 </div>
