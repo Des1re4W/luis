@@ -469,38 +469,63 @@ function viewOnlineItems(data) {
 // View Receipt Walk-in (POS)
 function viewPOSitems(data) {
     const container = document.getElementById('receiptContainer');
-    container.innerHTML = "<div class='text-center py-3'>Loading receipt items...</div>";
+    container.innerHTML = "<div class='text-center py-3 text-white'>Loading receipt items...</div>";
     invoiceModal.show();
 
     fetch(`getPOSitems.php?id=${data.id}`)
-    .then(res => { if (!res.ok) throw new Error("Network response error"); return res.json(); })
-    .then(items => {
+    .then(res => { 
+        if (!res.ok) throw new Error("Network response error"); 
+        return res.json(); 
+    })
+    .then(resData => {
+        // 1. Matatag na Array Extraction Guard
+        let rawItems = [];
+        if (Array.isArray(resData)) {
+            rawItems = resData;
+        } else if (resData && Array.isArray(resData.items)) {
+            rawItems = resData.items;
+        } else if (resData && Array.isArray(resData.cart)) {
+            rawItems = resData.cart;
+        } else if (resData && typeof resData.items === 'object' && resData.items !== null) {
+            // Kung sakaling object-hash (halimbawa {0: {...}, 1: {...}})
+            rawItems = Object.values(resData.items);
+        } else if (resData && typeof resData.cart === 'object' && resData.cart !== null) {
+            rawItems = Object.values(resData.cart);
+        }
+
+        let tx = (resData && resData.transaction) ? resData.transaction : data;
+
         let itemsHtml = '';
-        items.forEach(item => {
-            let price = parseFloat(item.price || 0);
-            let qty = parseInt(item.qty || 1);
-            let subtotal = parseFloat(item.subtotal || (price * qty));
-            let productName = item.product_name || item.name || 'Item';
+        if (rawItems.length > 0) {
+            rawItems.forEach(item => {
+                let price = parseFloat(item.price || 0);
+                let qty = parseInt(item.qty || 1);
+                let subtotal = parseFloat(item.subtotal || (price * qty));
+                let productName = item.product_name || item.name || 'Item';
 
-            itemsHtml += `
-                <tr>
-                    <td class="text-start py-1">
-                        <b>${productName}</b><br>
-                        <small class="text-muted">${qty} x ₱${price.toFixed(2)}</small>
-                    </td>
-                    <td class="text-end align-top py-1 fw-bold">₱${subtotal.toFixed(2)}</td>
-                </tr>
-            `;
-        });
+                itemsHtml += `
+                    <tr>
+                        <td class="text-start py-1">
+                            <b>${productName}</b><br>
+                            <small class="text-muted">${qty} x ₱${price.toFixed(2)}</small>
+                        </td>
+                        <td class="text-end align-top py-1 fw-bold">₱${subtotal.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+        } else {
+            itemsHtml = `<tr><td colspan="2" class="text-center py-2 text-muted">No line items found.</td></tr>`;
+        }
 
-        // Kunin ang mga halaga mula sa database object
-        let totalAmt = parseFloat(data.total_amount || data.total || 0);
-        let paidAmt = parseFloat(data.paid_amount || data.amount_paid || data.paid || totalAmt);
-        let changeAmt = parseFloat(data.change_amount || data.change || (paidAmt - totalAmt));
+        // 2. Kunin ang iba pang transaction figures
+        let totalAmt = parseFloat(tx.total_amount || tx.total || data.total_amount || 0);
+        let paidAmt = parseFloat(tx.paid_amount || tx.amount_paid || tx.paid || totalAmt);
+        let changeAmt = parseFloat(tx.change_amount || tx.change || (paidAmt - totalAmt));
         if (changeAmt < 0) changeAmt = 0;
 
-        let soldTo = data.customer_name || data.sold_to || 'Walk-in Customer';
-        let cashierName = data.cashier_name || 'Cashier';
+        let soldTo = tx.customer_name || tx.sold_to || tx.customer || 'Walk-in Customer';
+        let cashierName = tx.cashier_name || tx.cashier || data.cashier_name || 'Cashier';
+        let transactionDate = tx.transaction_date || tx.created_at || data.transaction_date || 'N/A';
 
         let fullReceiptHtml = `
             <div class="text-center mb-2">
@@ -513,8 +538,8 @@ function viewPOSitems(data) {
                 <div class="receipt-line"></div>
             </div>
 
-            <p class="small mb-1"><b>Transaction No:</b> #${data.id}</p>
-            <p class="small mb-1"><b>Date:</b> ${data.transaction_date || data.created_at || 'N/A'}</p>
+            <p class="small mb-1"><b>Transaction No:</b> #${tx.id || data.id}</p>
+            <p class="small mb-1"><b>Date:</b> ${transactionDate}</p>
             <p class="small mb-1"><b>Cashier:</b> ${cashierName}</p>
             <p class="small mb-2"><b>Sold To:</b> ${soldTo}</p>
 
@@ -556,8 +581,8 @@ function viewPOSitems(data) {
         container.innerHTML = fullReceiptHtml;
     })
     .catch(err => {
-        console.error(err);
-        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
+        console.error("POS Receipt Error:", err);
+        container.innerHTML = `<div class="text-center text-danger py-3">Failed to load receipt details.</div>`;
     });
 }
 
