@@ -2,15 +2,55 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 
-if (!isset($_SESSION['role'] ) || $_SESSION['role'] !== 'owner') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'owner') {
     header("Location: ../login.php");
     exit();
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
 $low_stock_threshold = 10;
 
+// Dynamic Image Resolver Function
+function resolveProductImage($raw_image) {
+    $img_src = '../assets/images/no-image.png';
+    if (!empty($raw_image)) {
+        $image_value = trim($raw_image);
+        
+        if (stripos($image_value, 'data:image/') === 0) {
+            $img_src = $image_value;
+        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+            $parsed_url = parse_url($image_value);
+            $host = strtolower($parsed_url['host'] ?? '');
+            
+            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                parse_str($parsed_url['query'] ?? '', $query_params);
+                $file_id = '';
+                if (!empty($query_params['id'])) {
+                    $file_id = $query_params['id'];
+                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                    $file_id = $matches[1];
+                }
+                if ($file_id !== '') {
+                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                }
+            } else {
+                $img_src = $image_value;
+            }
+        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
+            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+        } else {
+            $clean_path = ltrim($image_value, '/');
+            if (str_starts_with($clean_path, '../')) {
+                $img_src = $clean_path;
+            } else {
+                $img_src = '../' . $clean_path;
+            }
+        }
+    }
+    return $img_src;
+}
+
 // ==========================================
-// 1. DATA FETCHING PARA SA MGA SUMMARY CARDS (PDO compatible)
+// 1. SUMMARY CARDS DATA FETCHING
 // ==========================================
 $count_query = $pdo->query("SELECT COUNT(*) as total FROM products UNION ALL SELECT COUNT(*) as total FROM product_variants");
 $total_products = 0; 
@@ -28,11 +68,15 @@ $out_query = $pdo->query("SELECT COUNT(*) as total FROM products WHERE stock = 0
 $out_of_stock_count = 0; 
 while($oq = $out_query->fetch(PDO::FETCH_ASSOC)) { $out_of_stock_count += $oq['total']; }
 
+// ==========================================
+// 2. MAIN PRODUCTS & VARIANTS QUERY (KASAMA ANG IMAGE AT IS_ARCHIVED)
+// ==========================================
 $inventory_query = $pdo->query("
-    SELECT id, product_name, price, stock, 'Main Product' AS item_type FROM products
+    SELECT id, product_name, price, stock, image, is_archived, 'Main Product' AS item_type FROM products
     UNION ALL
-    SELECT v.id, v.variant_name AS product_name, v.price, v.stock, 'Variant Item' AS item_type 
+    SELECT v.id, v.variant_name AS product_name, v.price, v.stock, COALESCE(NULLIF(v.variant_image, ''), p.image) AS image, p.is_archived, 'Variant Item' AS item_type 
     FROM product_variants v
+    JOIN products p ON v.product_id = p.id
     ORDER BY product_name ASC
 ");
 ?>
@@ -128,6 +172,15 @@ $inventory_query = $pdo->query("
         transition: margin 0.3s ease;
     }
 
+    .item-img {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        background-color: #f1f5f9;
+    }
+
     .sidebar::-webkit-scrollbar {
         width: 5px;
     }
@@ -178,7 +231,6 @@ $inventory_query = $pdo->query("
         <div class="d-flex align-items-center gap-2">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu (Visible lang sa mobile gamit ang d-lg-none) -->
         <div class="d-flex align-items-center text-white gap-3">
             <span>
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
@@ -263,12 +315,14 @@ $inventory_query = $pdo->query("
                     <table class="table table-hover align-middle mb-0" id="inventoryTable">
                         <thead class="table-light text-secondary small text-uppercase">
                             <tr>
-                                <th class="ps-4 py-3" style="width: 15%;">Item ID</th>
-                                <th style="width: 18%;">Products</th>
-                                <th style="width: 15%;">Type</th>
-                                <th style="width: 15%;">Price</th>
+                                <th class="ps-4 py-3" style="width: 10%;">Item ID</th>
+                                <th style="width: 10%;">Image</th>
+                                <th style="width: 20%;">Products</th>
+                                <th style="width: 12%;">Type</th>
+                                <th style="width: 13%;">Price</th>
                                 <th style="width: 10%;">Stock Qty</th>
-                                <th class="pe-4 text-center" style="width: 10%;">Status</th>
+                                <th class="text-center" style="width: 12%;">Stock Status</th>
+                                <th class="pe-4 text-center" style="width: 13%;">Item Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -276,29 +330,45 @@ $inventory_query = $pdo->query("
                             $rows = $inventory_query->fetchAll(PDO::FETCH_ASSOC);
                             if (count($rows) > 0) {
                                 foreach($rows as $row) { 
+                                    // Stock Level Status Badge
                                     if ($row['stock'] == 0) {
-                                        $status_badge = '<span class="badge bg-danger-subtle text-danger px-2 py-1 rounded">Out of Stock</span>';
+                                        $stock_status_badge = '<span class="badge bg-danger-subtle text-danger px-2 py-1 rounded">Out of Stock</span>';
                                     } elseif ($row['stock'] <= $low_stock_threshold) {
-                                        $status_badge = '<span class="badge bg-warning-subtle text-warning px-2 py-1 rounded">Low Stock</span>';
+                                        $stock_status_badge = '<span class="badge bg-warning-subtle text-warning px-2 py-1 rounded">Low Stock</span>';
                                     } else {
-                                        $status_badge = '<span class="badge bg-success-subtle text-success px-2 py-1 rounded">Good Stock</span>';
+                                        $stock_status_badge = '<span class="badge bg-success-subtle text-success px-2 py-1 rounded">Good Stock</span>';
                                     }
+
+                                    // Active vs Archived Badge (Green = Active, Red = Archived)
+                                    $item_status_badge = ($row['is_archived'] == 1)
+                                        ? '<span class="badge bg-danger text-white px-2 py-1 rounded"><i class="bi bi-archive-fill me-1"></i> Archived</span>'
+                                        : '<span class="badge bg-success text-white px-2 py-1 rounded"><i class="bi bi-check-circle-fill me-1"></i> Active</span>';
 
                                     $type_badge = ($row['item_type'] == 'Variant Item') 
                                         ? '<span class="text-purple fw-semibold small"><i class="bi bi-layers-half"></i> Variant</span>' 
                                         : '<span class="text-primary fw-semibold small"><i class="bi bi-box"></i> Main</span>';
+
+                                    $image_path = resolveProductImage($row['image']);
                                     ?>
                                     <tr class="inventory-row" data-name="<?php echo strtolower($row['product_name']); ?>">
                                         <td class="ps-4 text-muted font-monospace">#<?php echo $row['id']; ?></td>
+                                        <td>
+                                            <img src="<?php echo htmlspecialchars($image_path, ENT_QUOTES, 'UTF-8'); ?>" 
+                                                 class="item-img" 
+                                                 alt="<?php echo htmlspecialchars($row['product_name']); ?>"
+                                                 onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                                 loading="lazy">
+                                        </td>
                                         <td class="fw-bold text-dark"><?php echo htmlspecialchars($row['product_name']); ?></td>
                                         <td><?php echo $type_badge; ?></td>
                                         <td class="fw-semibold">₱<?php echo number_format($row['price'], 2); ?></td>
                                         <td class="fw-bold"><?php echo $row['stock']; ?></td>
-                                        <td class="pe-4 text-center"><?php echo $status_badge; ?></td>
+                                        <td class="text-center"><?php echo $stock_status_badge; ?></td>
+                                        <td class="pe-4 text-center"><?php echo $item_status_badge; ?></td>
                                     </tr>
                                 <?php } 
                             } else { ?>
-                                <tr><td colspan="6" class="text-center py-5 text-muted">No operational inventory records found.</td></tr>
+                                <tr><td colspan="8" class="text-center py-5 text-muted">No operational inventory records found.</td></tr>
                             <?php } ?>
                         </tbody>
                     </table>
