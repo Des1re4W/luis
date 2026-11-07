@@ -3,7 +3,6 @@ session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/image.php';
 
-// Gamitin ang EKSAKTONG file path mula sa addProduct.php at editProduct.php
 if (file_exists(__DIR__ . '/../config/google_drive.php')) {
     require_once __DIR__ . '/../config/google_drive.php';
 }
@@ -20,7 +19,6 @@ $ip_address = $_SERVER['REMOTE_ADDR'] ?? '';
 
 $product_id = filter_input(INPUT_GET, 'product_id', FILTER_VALIDATE_INT) ?: 0;
 
-// Get main product
 $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
 $stmt->execute(['id' => $product_id]);
 $product = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -30,7 +28,6 @@ if (!$product) {
     exit();
 }
 
-// Helper function for audit logging
 function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $ip_address)
 {
     $sql = "INSERT INTO audit_log
@@ -49,36 +46,48 @@ function logVariantAction($pdo, $user_id, $username, $role, $action, $details, $
     ]);
 }
 
-// GOOGLE DRIVE VARIANT UPLOAD HANDLER (USING EXACT FUNCTION FROM ADDPRODUCT.PHP)
+// HANDLER WITHOUT GIF ALLOWANCE
 function handleGoogleDriveVariantUpload($fileArray)
 {
-    if (!isset($fileArray['tmp_name']) || $fileArray['error'] !== UPLOAD_ERR_OK) {
+    if (!isset($fileArray['tmp_name']) || $fileArray['error'] === UPLOAD_ERR_NO_FILE) {
         return null;
+    }
+
+    $upload_error = $fileArray['error'];
+    if ($upload_error === UPLOAD_ERR_INI_SIZE || $upload_error === UPLOAD_ERR_FORM_SIZE) {
+        throw new Exception("Uploaded file size exceeds the server limit (Max 20MB). Please choose a smaller image.");
+    } elseif ($upload_error !== UPLOAD_ERR_OK) {
+        throw new Exception("Image upload failed. Error code: " . $upload_error);
     }
 
     $tmp = $fileArray['tmp_name'];
+    $original_name = $fileArray['name'];
     
     if (empty($tmp) || !file_exists($tmp)) {
-        return null;
+        throw new Exception("Uploaded image temporary file is invalid.");
     }
 
-    $check_image = getimagesize($tmp);
-    if ($check_image === false) {
-        return false; // Invalid image file
-    }
-
-    $original_name = $fileArray['name'];
     $image_extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
     $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-    if (!in_array($image_extension, $allowed_extensions, true)) {
-        return false; // Extension not allowed
+    $is_valid_image = false;
+    if (function_exists('finfo_open')) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $tmp);
+        finfo_close($finfo);
+        $is_valid_image = str_starts_with($mime, 'image/') && $mime !== 'image/gif';
+    } else {
+        $check_image = @getimagesize($tmp);
+        $is_valid_image = ($check_image !== false && $check_image[2] !== IMAGETYPE_GIF);
+    }
+
+    if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
+        throw new Exception("Invalid image file format. GIF images are not allowed. Please upload JPG, JPEG, PNG, or WEBP.");
     }
 
     $new_image_name = uniqid("var_", true) . '.' . $image_extension;
 
     try {
-        // Tumawag sa eksaktong function na ginagamit ng addProduct.php / editProduct.php
         if (function_exists('uploadProductImageToDrive')) {
             $file_id = uploadProductImageToDrive($tmp, $new_image_name);
 
@@ -90,7 +99,6 @@ function handleGoogleDriveVariantUpload($fileArray)
         error_log("VARIANT GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
     }
 
-    // Fallback sa local uploads folder kung sakaling magka-error sa Drive API
     $target_dir = __DIR__ . '/../uploads/';
     if (!is_dir($target_dir)) {
         mkdir($target_dir, 0755, true);
@@ -105,7 +113,6 @@ function handleGoogleDriveVariantUpload($fileArray)
     return null;
 }
 
-// ADD NEW VARIANT
 if (isset($_POST['add_variant'])) {
     $variant_name = trim($_POST['variant_name'] ?? '');
     $variant_description = trim($_POST['variant_description'] ?? '');
@@ -132,7 +139,6 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
-    // Check duplicate variant names
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -150,20 +156,19 @@ if (isset($_POST['add_variant'])) {
         exit();
     }
 
-    // Upload with Google Drive Logic
-    if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] === UPLOAD_ERR_OK) {
-        $upload_result = handleGoogleDriveVariantUpload($_FILES['variant_image']);
-
-        if ($upload_result === false) {
-            $_SESSION['error_message'] = "Error: Invalid file! Only JPG, JPEG, PNG, and WEBP images are allowed.";
-            header("Location: manageVariants.php?product_id=$product_id");
-            exit();
-        } elseif ($upload_result !== null) {
-            $variant_image_path = $upload_result;
+    try {
+        if (isset($_FILES['variant_image']) && $_FILES['variant_image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $upload_result = handleGoogleDriveVariantUpload($_FILES['variant_image']);
+            if ($upload_result !== null) {
+                $variant_image_path = $upload_result;
+            }
         }
+    } catch (Throwable $e) {
+        $_SESSION['error_message'] = "Error: " . $e->getMessage();
+        header("Location: manageVariants.php?product_id=$product_id");
+        exit();
     }
 
-    // Insert variant
     $insert_sql = "
         INSERT INTO product_variants
         (product_id, variant_name, variant_description,
@@ -202,7 +207,6 @@ if (isset($_POST['add_variant'])) {
     }
 }
 
-// UPDATE / EDIT VARIANT
 if (isset($_POST['update_variant'])) {
     $v_id = filter_input(INPUT_POST, 'edit_variant_id', FILTER_VALIDATE_INT) ?: 0;
     $v_name = trim($_POST['edit_variant_name'] ?? '');
@@ -229,7 +233,6 @@ if (isset($_POST['update_variant'])) {
         exit();
     }
 
-    // Check duplicate names
     $stmt = $pdo->prepare("
         SELECT id
         FROM product_variants
@@ -268,18 +271,18 @@ if (isset($_POST['update_variant'])) {
         'product_id' => $product_id
     ];
 
-    // Replace image with Google Drive upload logic
-    if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] === UPLOAD_ERR_OK) {
-        $upload_result = handleGoogleDriveVariantUpload($_FILES['edit_variant_image']);
-
-        if ($upload_result === false) {
-            $_SESSION['error_message'] = "Error: Invalid file! Only JPG, JPEG, PNG, and WEBP images are allowed.";
-            header("Location: manageVariants.php?product_id=$product_id");
-            exit();
-        } elseif ($upload_result !== null) {
-            $update_sql .= ", variant_image = :variant_image";
-            $params['variant_image'] = $upload_result;
+    try {
+        if (isset($_FILES['edit_variant_image']) && $_FILES['edit_variant_image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $upload_result = handleGoogleDriveVariantUpload($_FILES['edit_variant_image']);
+            if ($upload_result !== null) {
+                $update_sql .= ", variant_image = :variant_image";
+                $params['variant_image'] = $upload_result;
+            }
         }
+    } catch (Throwable $e) {
+        $_SESSION['error_message'] = "Error: " . $e->getMessage();
+        header("Location: manageVariants.php?product_id=$product_id");
+        exit();
     }
 
     $update_sql .= " WHERE id = :variant_id AND product_id = :product_id";
@@ -303,7 +306,6 @@ if (isset($_POST['update_variant'])) {
     }
 }
 
-// DELETE VARIANT
 if (isset($_GET['delete_id'])) {
     $delete_id = filter_input(INPUT_GET, 'delete_id', FILTER_VALIDATE_INT) ?: 0;
 
@@ -353,7 +355,6 @@ if (isset($_GET['delete_id'])) {
     exit();
 }
 
-// Get all variants for this product
 $stmt = $pdo->prepare("
     SELECT *
     FROM product_variants
@@ -431,7 +432,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <input type="number" name="stock" min="0" step="1" required class="form-control form-control-sm">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label small fw-bold">Variant Photo <small class="text-muted">(JPG, PNG, WEBP)</small></label>
+                            <label class="form-label small fw-bold">Variant Photo <small class="text-muted">(JPG, JPEG, PNG, WEBP)</small></label>
                             <input type="file" name="variant_image" class="form-control form-control-sm"
                                 accept=".jpg, .jpeg, .png, .webp">
                         </div>
@@ -619,7 +620,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         </div>
 
                         <div class="mb-1">
-                            <label class="form-label small fw-bold">Change Variant Image <small class="text-muted">(JPG, PNG, WEBP)</small></label>
+                            <label class="form-label small fw-bold">Change Variant Image <small class="text-muted">(JPG, JPEG, PNG, WEBP)</small></label>
                             <input type="file" name="edit_variant_image" class="form-control" accept=".jpg, .jpeg, .png, .webp">
                         </div>
                     </div>

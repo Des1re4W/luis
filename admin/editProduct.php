@@ -5,7 +5,6 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/google_drive.php';
 require_once __DIR__ . '/../config/image.php';
 
-// Check admin access
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
     exit();
@@ -14,14 +13,12 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 $message = "";
 $messageType = "";
 
-// Get product ID
 $product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
 
 if (!$product_id) {
     die("Invalid product ID.");
 }
 
-// Fetch existing product
 $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
 $stmt->execute([':id' => $product_id]);
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -30,9 +27,6 @@ if (!$row) {
     die("Product not found.");
 }
 
-// ==========================================
-// UPDATE PRODUCT
-// ==========================================
 if (isset($_POST['update'])) {
 
     $name = trim($_POST['product_name']);
@@ -42,7 +36,6 @@ if (isset($_POST['update'])) {
     $stock = $_POST['stock'];
     $description = trim($_POST['product_description']);
 
-    // Keep the existing image unless a new one is uploaded
     $image_path = $row['image'];
 
     try {
@@ -70,9 +63,6 @@ if (isset($_POST['update'])) {
             throw new Exception("Another product with this name already exists.");
         }
 
-        // ==========================================
-        // GOOGLE DRIVE IMAGE UPLOAD WITH BETTER ERROR HANDLING
-        // ==========================================
         if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
             $upload_error = $_FILES['image']['error'];
 
@@ -89,30 +79,26 @@ if (isset($_POST['update'])) {
                 throw new Exception("Uploaded image temporary file is invalid.");
             }
 
-            // Case-insensitive extension check
+            // Exclude GIF extension
             $image_extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
-            $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-            // Flexible image validation
             $is_valid_image = false;
             if (function_exists('finfo_open')) {
                 $finfo = finfo_open(FILEINFO_MIME_TYPE);
                 $mime = finfo_file($finfo, $tmp);
                 finfo_close($finfo);
-                $is_valid_image = str_starts_with($mime, 'image/');
+                $is_valid_image = str_starts_with($mime, 'image/') && $mime !== 'image/gif';
             } else {
                 $check_image = @getimagesize($tmp);
-                $is_valid_image = ($check_image !== false);
+                $is_valid_image = ($check_image !== false && $check_image[2] !== IMAGETYPE_GIF);
             }
 
             if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
-                throw new Exception("Invalid image file format. Please upload JPG, JPEG, PNG, WEBP, or GIF.");
+                throw new Exception("Invalid image file format. GIF images are not allowed. Please upload JPG, JPEG, PNG, or WEBP.");
             }
 
-            // Generate unique filename
             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
-
-            // Upload to Google Drive
             $file_id = uploadProductImageToDrive($tmp, $new_image_name);
 
             if (empty($file_id)) {
@@ -122,7 +108,6 @@ if (isset($_POST['update'])) {
             $image_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
         }
 
-        // UPDATE DATABASE
         $update_query = "
             UPDATE products
             SET
@@ -148,7 +133,6 @@ if (isset($_POST['update'])) {
             ':id' => $product_id
         ]);
 
-        // AUDIT TRAIL
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
         $user_id = $_SESSION['user_id'] ?? null;
@@ -172,7 +156,6 @@ if (isset($_POST['update'])) {
         $message = "Product updated successfully!";
         $messageType = "success";
 
-        // Refresh product information
         $stmt = $pdo->prepare("SELECT * FROM products WHERE id = :id");
         $stmt->execute([':id' => $product_id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -268,7 +251,7 @@ if (isset($_POST['update'])) {
                     <?php endif; ?>
 
                     <label class="form-label fw-bold">Change Image (Optional)</label>
-                    <input type="file" name="image" class="form-control mb-4" accept="image/*">
+                    <input type="file" name="image" class="form-control mb-4" accept=".jpg, .jpeg, .png, .webp">
 
                     <div class="d-flex gap-2">
                         <a href="products.php" class="btn btn-secondary w-50 fw-bold">Cancel</a>

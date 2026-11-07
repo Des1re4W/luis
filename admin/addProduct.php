@@ -32,7 +32,6 @@ if (isset($_POST['submit'])) {
             } else {
                 $upload_error = $_FILES['image']['error'];
 
-                // Handle PHP Upload Error Codes dynamically
                 if ($upload_error === UPLOAD_ERR_INI_SIZE || $upload_error === UPLOAD_ERR_FORM_SIZE) {
                     $message = "Error: File size is too large for the server limit (Max 20MB). Please choose a smaller image.";
                 } elseif ($upload_error !== UPLOAD_ERR_OK) {
@@ -44,24 +43,24 @@ if (isset($_POST['submit'])) {
                     if (empty($tmp) || !file_exists($tmp)) {
                         $message = "Error: Uploaded file temporary path is empty or invalid.";
                     } else {
-                        // Case-insensitive extension extraction (handles .PNG, .JPG, .JPEG, etc.)
+                        // Case-insensitive extension check - EXCLUDING GIF
                         $image_extension = strtolower(pathinfo($image_original_name, PATHINFO_EXTENSION));
-                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
 
-                        // Check MIME type safely using finfo or getimagesize fallback
                         $is_valid_image = false;
                         if (function_exists('finfo_open')) {
                             $finfo = finfo_open(FILEINFO_MIME_TYPE);
                             $mime = finfo_file($finfo, $tmp);
                             finfo_close($finfo);
-                            $is_valid_image = str_starts_with($mime, 'image/');
+                            // Bawal ang image/gif MIME type
+                            $is_valid_image = str_starts_with($mime, 'image/') && $mime !== 'image/gif';
                         } else {
                             $check_image = @getimagesize($tmp);
-                            $is_valid_image = ($check_image !== false);
+                            $is_valid_image = ($check_image !== false && $check_image[2] !== IMAGETYPE_GIF);
                         }
 
                         if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
-                            $message = "Error: Invalid image file format! Please upload a valid JPG, JPEG, PNG, WEBP, or GIF photo.";
+                            $message = "Error: Invalid image file format! GIF images are not allowed. Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
                         } else {
                             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
 
@@ -197,8 +196,8 @@ if (isset($_POST['submit'])) {
 
                         <div class="mb-4">
                             <label class="form-label fw-semibold">Product Image <small class="text-muted">(JPG, JPEG,
-                                    PNG, WEBP, GIF)</small></label>
-                            <input type="file" name="image" class="form-control" accept="image/*"
+                                    PNG, WEBP only)</small></label>
+                            <input type="file" name="image" class="form-control" accept=".jpg, .jpeg, .png, .webp"
                                 required>
                         </div>
 
