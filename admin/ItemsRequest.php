@@ -17,6 +17,8 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
 }
 
 $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
+// Kunin ang Admin ID mula sa session (isinasama ang fallbacks kung user_id, id, o admin_id)
+$admin_id = $_SESSION['user_id'] ?? ($_SESSION['id'] ?? ($_SESSION['admin_id'] ?? null));
 
 // --- 1. EMAILER ACTION LOGIC ---
 if (isset($_POST['send_email_update'])) {
@@ -204,8 +206,9 @@ if (isset($_POST['update_status'])) {
                             }
                         }
                     }
-                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = ?");
-                    $up_ord->execute([$order_number]);
+                    // NA-UPDATE: Isinama ang cancelled_by sa orders table
+                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
+                    $up_ord->execute([$admin_id, $order_number]);
                 }
 
                 $pdo->commit();
@@ -263,8 +266,9 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
                             }
                         }
                     }
-                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0 WHERE id = ?");
-                    $up_ord->execute([$order_number]);
+                    // NA-UPDATE: Isinama ang cancelled_by sa orders table
+                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
+                    $up_ord->execute([$admin_id, $order_number]);
                 }
 
                 $pdo->commit();
