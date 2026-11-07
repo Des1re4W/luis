@@ -51,7 +51,7 @@ if (isset($_GET['archive_id']) || isset($_GET['unarchive_id'])) {
 
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
-        $user_id = $_SESSION['user_id'] ?? null; // Kunin ang user_id mula sa session
+        $user_id = $_SESSION['user_id'] ?? null;
         $details = ($is_archive_action ? "Archived product: " : "Unarchived product: ") . $p_name;
 
         $log_stmt = $pdo->prepare("
@@ -90,7 +90,6 @@ $filter = $_GET['filter'] ?? '';
 try {
     if ($filter === 'low_stock') {
 
-        // Low-stock products without variants + low-stock variants (excluding archived)
         $query = "
             SELECT *
             FROM (
@@ -155,7 +154,6 @@ try {
 
     } elseif ($filter === 'out_of_stock') {
 
-        // Out of stock products without variants (stock <= 0) + out of stock variants (stock <= 0)
         $query = "
             SELECT *
             FROM (
@@ -218,7 +216,6 @@ try {
 
     } else {
 
-        // Normal inventory list or archived list based on filter
         $archived_condition = ($filter === 'archived') ? "p.is_archived = 1" : "p.is_archived = 0";
 
         $query = "
@@ -363,6 +360,21 @@ try {
             height: 60px;
             object-fit: cover;
             border-radius: 5px;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .table img:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
+        }
+
+        #imageZoomModal {
+            z-index: 2050 !important;
+        }
+
+        #imageZoomModal .modal-backdrop {
+            z-index: 2040 !important;
         }
 
         .sidebar::-webkit-scrollbar {
@@ -395,7 +407,7 @@ try {
 <body>
 
     <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
-        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-box-seam"></i> Inventory Management123</span>
+        <span class="navbar-brand fw-bold fs-6"><i class="bi bi-box-seam"></i> Inventory Management</span>
         <button class="btn btn-outline-light btn-sm" type="button" id="sidebarToggle">
             <i class="bi bi-list fs-4"></i>
         </button>
@@ -600,7 +612,9 @@ try {
                                         <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
                                             alt="<?php echo htmlspecialchars($p_name, ENT_QUOTES, 'UTF-8'); ?>"
                                             onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
-                                            loading="lazy">
+                                            onclick="openProductImageZoom(this.src)"
+                                            loading="lazy"
+                                            title="Click to zoom image">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
@@ -678,7 +692,33 @@ try {
         </div>
     </div>
 
+    <!-- FLOATING IMAGE ZOOM MODAL WITH CLOSE BUTTON -->
+    <div class="modal fade" id="imageZoomModal" tabindex="-1" aria-hidden="true" style="z-index: 2050;">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content bg-transparent border-0">
+                <div class="text-center">
+                    <img id="zoomImage" src="" class="img-fluid rounded shadow" style="max-height: 85vh; border: 3px solid #fff;">
+                </div>
+                <div class="text-center mt-3">
+                    <button type="button" class="btn px-4 py-2 fw-bold shadow"
+                        style="background:#6c757d; color:#fff; border:0;" data-bs-dismiss="modal">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        function openProductImageZoom(imgSrc) {
+            document.getElementById('zoomImage').src = imgSrc;
+            var modal = new bootstrap.Modal(document.getElementById('imageZoomModal'), {
+                backdrop: true,
+                keyboard: true
+            });
+            modal.show();
+        }
+
         function liveSearch() {
             let query = document.getElementById('search-input').value;
             let tableBody = document.getElementById('inventory-table');
