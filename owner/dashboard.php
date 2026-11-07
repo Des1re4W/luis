@@ -16,7 +16,8 @@ $sales_data = $sales_query->fetch(PDO::FETCH_ASSOC);
 $pending_query = $pdo->query("SELECT COUNT(*) as pending_count FROM orders WHERE status = 'pending'");
 $pending_data = $pending_query->fetch(PDO::FETCH_ASSOC);
 
-$orders_query = $pdo->query("SELECT * FROM orders ORDER BY order_date DESC LIMIT 5");
+// Ginawang 10 mula sa dating 5
+$orders_query = $pdo->query("SELECT * FROM orders ORDER BY order_date DESC LIMIT 10");
 ?>
 
 <!DOCTYPE html>
@@ -241,13 +242,26 @@ body{
                     </thead>
 
                     <tbody>
-                    <?php while($row = $orders_query->fetch(PDO::FETCH_ASSOC)) { ?>
+                    <?php 
+                    while($row = $orders_query->fetch(PDO::FETCH_ASSOC)) { 
+                        $status = strtolower(trim($row['status']));
+                        
+                        // Condition para sa Kulay ng Status Badge
+                        if (in_array($status, ['declined', 'cancelled', 'canceled'])) {
+                            $badge_class = 'bg-danger text-white';
+                        } elseif ($status === 'pending') {
+                            $badge_class = 'bg-warning text-dark';
+                        } else {
+                            // Approved, Completed, at iba pang success status
+                            $badge_class = 'bg-success text-white';
+                        }
+                    ?>
                         <tr>
                             <td>#<?= $row['id']; ?></td>
                             <td><?= htmlspecialchars($row['fullname'].' '.$row['surname']); ?></td>
-                            <td>₱<?= number_format($row['total_amount'],2); ?></td>
+                            <td>₱<?= number_format($row['total_amount'], 2); ?></td>
                             <td>
-                                <span class="badge <?= $row['status']=='pending'?'bg-warning text-dark':'bg-success'; ?>">
+                                <span class="badge <?= $badge_class; ?>">
                                     <?= ucfirst($row['status']); ?>
                                 </span>
                             </td>
