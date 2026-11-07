@@ -466,7 +466,6 @@ function viewOnlineItems(data) {
         container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
     });
 }
-
 // View Receipt Walk-in (POS)
 function viewPOSitems(data) {
     const container = document.getElementById('receiptContainer');
@@ -481,35 +480,50 @@ function viewPOSitems(data) {
             let price = parseFloat(item.price || 0);
             let qty = parseInt(item.qty || 1);
             let subtotal = parseFloat(item.subtotal || (price * qty));
+            let productName = item.product_name || item.name || 'Item';
 
             itemsHtml += `
                 <tr>
-                    <td>${item.product_name || item.name || 'Item'} (x${qty})</td>
-                    <td align="right">₱${subtotal.toFixed(2)}</td>
+                    <td class="text-start py-1">
+                        <b>${productName}</b><br>
+                        <small class="text-muted">${qty} x ₱${price.toFixed(2)}</small>
+                    </td>
+                    <td class="text-end align-top py-1 fw-bold">₱${subtotal.toFixed(2)}</td>
                 </tr>
             `;
         });
 
-        let totalAmt = parseFloat(data.total_amount || 0);
+        // Kunin ang mga halaga mula sa database object
+        let totalAmt = parseFloat(data.total_amount || data.total || 0);
+        let paidAmt = parseFloat(data.paid_amount || data.amount_paid || data.paid || totalAmt);
+        let changeAmt = parseFloat(data.change_amount || data.change || (paidAmt - totalAmt));
+        if (changeAmt < 0) changeAmt = 0;
+
+        let soldTo = data.customer_name || data.sold_to || 'Walk-in Customer';
+        let cashierName = data.cashier_name || 'Cashier';
 
         let fullReceiptHtml = `
             <div class="text-center mb-2">
-                <h5 class="fw-bold my-0 text-uppercase">R. Taipan Hardware</h5>
-                <small>190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</small><br>
-                <small>Contact: 0907 456 5632</small>
+                <h5 class="fw-bold my-0 text-uppercase">*** R. TAIPAN HARDWARE ***</h5>
+                <small class="d-block">R. Taipan Construction Supply and Services, OPC</small>
+                <small class="d-block">190 Cabrera Rd. Sitio Burol Brgy. San Juan, Taytay, Rizal</small>
+                <small class="d-block">Contact: 0907 456 5632</small>
                 <div class="receipt-line"></div>
-                <small><b>OFFICIAL RECEIPT (POS WALK-IN)</b></small>
+                <small><b>*** OFFICIAL RECEIPT ***</b></small>
                 <div class="receipt-line"></div>
             </div>
 
-            <p class="small mb-1"><b>Transaction ID:</b> #POS-${data.id}</p>
-            <p class="small mb-1"><b>Date:</b> ${data.transaction_date || 'N/A'}</p>
-            <p class="small mb-2"><b>Cashier:</b> ${data.cashier_name || 'Counter'}</p>
+            <p class="small mb-1"><b>Transaction No:</b> #${data.id}</p>
+            <p class="small mb-1"><b>Date:</b> ${data.transaction_date || data.created_at || 'N/A'}</p>
+            <p class="small mb-1"><b>Cashier:</b> ${cashierName}</p>
+            <p class="small mb-2"><b>Sold To:</b> ${soldTo}</p>
 
             <div class="receipt-line"></div>
 
             <table width="100%" class="small mb-2">
-                ${itemsHtml}
+                <tbody>
+                    ${itemsHtml}
+                </tbody>
             </table>
 
             <div class="receipt-line"></div>
@@ -518,21 +532,31 @@ function viewPOSitems(data) {
                 <span>TOTAL AMOUNT:</span>
                 <span>₱${totalAmt.toFixed(2)}</span>
             </div>
+            <div class="d-flex justify-content-between small text-muted mb-1">
+                <span>Amount Paid:</span>
+                <span>₱${paidAmt.toFixed(2)}</span>
+            </div>
+            <div class="d-flex justify-content-between small fw-bold text-success mb-1">
+                <span>CHANGE:</span>
+                <span>₱${changeAmt.toFixed(2)}</span>
+            </div>
 
             <div class="receipt-line mt-2"></div>
 
-            <div class="text-start small">
+            <div class="text-start small mb-2">
                 <b>Mode of Payment:</b> CASH
             </div>
 
-            <div class="text-center mt-2">
-                <small class="fw-bold">STATUS: COMPLETED</small>
+            <div class="text-center mt-3">
+                <small class="fw-bold d-block">Thank you for your purchase!</small>
+                <small class="text-muted d-block">Please come again.</small>
             </div>
         `;
 
         container.innerHTML = fullReceiptHtml;
     })
     .catch(err => {
+        console.error(err);
         container.innerHTML = `<div class="text-center text-danger py-3">Failed to load items.</div>`;
     });
 }
