@@ -8,13 +8,15 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'owner') {
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
 
-// Fetch lahat ng orders gamit ang approved_by at declined_by columns
+// Fetch lahat ng orders kasama ang Admin details para sa Approved, Declined, at Cancelled requests
 $orders_query = $pdo->query("SELECT o.*, 
                              u1.username as approved_admin, 
-                             u2.username as declined_admin 
+                             u2.username as declined_admin,
+                             u3.username as cancelled_admin 
                              FROM orders o 
                              LEFT JOIN users u1 ON o.approved_by = u1.id 
                              LEFT JOIN users u2 ON o.declined_by = u2.id 
+                             LEFT JOIN users u3 ON o.cancelled_by = u3.id 
                              ORDER BY o.id DESC");
 ?>
 
@@ -200,19 +202,24 @@ body{
                         </td>
                         <td>
                             <?php 
-                                // Hanapin kung aling admin ang nag-approve o nag-decline ng cancellation/order
-                                $admin_name = !empty($row['approved_admin']) ? $row['approved_admin'] : (!empty($row['declined_admin']) ? $row['declined_admin'] : '');
-
-                                if (in_array($status, ['declined', 'cancelled', 'canceled'])) {
-                                    if (!empty($admin_name)) {
-                                        echo '<span class="text-danger">' . ucfirst($status) . ': <strong>' . htmlspecialchars($admin_name) . '</strong></span>';
+                                if (in_array($status, ['cancelled', 'canceled'])) {
+                                    if (!empty($row['cancelled_admin'])) {
+                                        echo '<span class="text-danger">Cancelled: <strong>' . htmlspecialchars($row['cancelled_admin']) . '</strong></span>';
                                     } else {
-                                        echo '<small class="text-muted">Cancelled by Customer</small>';
+                                        echo '<small class="text-muted">N/A</small>';
                                     }
-                                } elseif (!empty($admin_name)) {
-                                    echo '<span class="text-success">Approved: <strong>' . htmlspecialchars($admin_name) . '</strong></span>';
+                                } elseif ($status === 'declined') {
+                                    if (!empty($row['declined_admin'])) {
+                                        echo '<span class="text-danger">Declined: <strong>' . htmlspecialchars($row['declined_admin']) . '</strong></span>';
+                                    } else {
+                                        echo '<small class="text-muted">N/A</small>';
+                                    }
                                 } else {
-                                    echo '<small class="text-muted">N/A</small>';
+                                    if (!empty($row['approved_admin'])) {
+                                        echo '<span class="text-success">Approved: <strong>' . htmlspecialchars($row['approved_admin']) . '</strong></span>';
+                                    } else {
+                                        echo '<small class="text-muted">N/A</small>';
+                                    }
                                 }
                             ?>
                         </td>
