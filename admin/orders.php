@@ -249,7 +249,6 @@ if (isset($_POST['send_email_update'])) {
                 $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
                 $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
 
-                // Handle Google Drive Refund Proof URL or Local
                 $refundImgSrc = getProductImageSrc($order['refund_receipt']);
 
                 $refundEmailSection = "
@@ -268,7 +267,7 @@ if (isset($_POST['send_email_update'])) {
 
             $mail->Body = "
                 <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
-                <p>We regret to inform you that your order <b>#$order_id</b> has been <b>DECLINED</b>.</p>
+                <p>We regret to inform you that your order <b>#$order_id</b> has been <b>" . strtoupper($current_status) . "</b>.</p>
                 <p><strong>Reason:</strong><br>$decline_reason_text</p>
                 $refundEmailSection
                 <p>If you have any questions, please contact us through our Facebook page below:</p>
@@ -412,7 +411,6 @@ if (isset($_POST['update_status'])) {
     $ref_no = $_POST['refund_reference'] ?? '';
     $proof_path = "";
 
-    // UPLOAD REFUND RECEIPT DIRECTLY TO GOOGLE DRIVE "Refund Receipt" FOLDER IF DECLINED
     if ($new_status == 'declined') {
         if (($pm === 'GCASH' || $pm === 'MAYA') && isset($_FILES['refund_receipt']) && $_FILES['refund_receipt']['error'] === UPLOAD_ERR_OK) {
             $file_tmp = $_FILES['refund_receipt']['tmp_name'];
@@ -423,12 +421,10 @@ if (isset($_POST['update_status'])) {
             if (in_array($file_ext, $allowed_exts)) {
                 $new_filename = "refund_" . $order_id . "_" . time() . "." . $file_ext;
                 
-                // Dedicated Google Drive Refund Receipt Folder ID
                 $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
 
                 try {
                     if (function_exists('uploadProductImageToDrive')) {
-                        // Ipinasa ang $REFUND_RECEIPTS_FOLDER_ID bilang 3rd parameter
                         $file_id = uploadProductImageToDrive($file_tmp, $new_filename, $REFUND_RECEIPTS_FOLDER_ID);
                         if (!empty($file_id)) {
                             $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
@@ -438,7 +434,6 @@ if (isset($_POST['update_status'])) {
                     error_log("ADMIN REFUND GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
                 }
 
-                // Fallback to local if Drive fails
                 if (empty($proof_path)) {
                     $target_dir = "../uploads/";
                     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
@@ -702,7 +697,6 @@ body{
             </thead>
             <tbody>
                 <?php while($row = $orders_result->fetch(PDO::FETCH_ASSOC)): 
-                    // Pre-process image paths directly in PHP for reliable rendering
                     $row['proof_of_payment_resolved'] = !empty($row['proof_of_payment']) ? getProductImageSrc($row['proof_of_payment']) : '';
                     $row['refund_receipt_resolved'] = !empty($row['refund_receipt']) ? getProductImageSrc($row['refund_receipt']) : '';
                 ?>
@@ -718,8 +712,16 @@ body{
                     </td>
                     <td class="text-center">
                         <span class="badge <?php 
-                            echo ($row['status'] == 'pending') ? 'bg-warning text-dark' : 
-                                 (($row['status'] == 'completed') ? 'bg-success' : 'bg-info'); 
+                            $st = strtolower($row['status']);
+                            if ($st == 'pending') {
+                                echo 'bg-warning text-dark';
+                            } elseif ($st == 'completed') {
+                                echo 'bg-success';
+                            } elseif ($st == 'declined' || $st == 'cancelled') {
+                                echo 'bg-danger';
+                            } else {
+                                echo 'bg-info';
+                            }
                         ?>">
                             <?php echo strtoupper($row['status']); ?>
                         </span>
@@ -766,6 +768,9 @@ body{
                                             <i class="bi bi-image"></i> View Refund Proof
                                         </a>
                                     <?php endif; ?>
+
+                                <?php elseif($row['status'] == 'cancelled'): ?>
+                                    <span class="badge bg-danger mb-1">Order Cancelled</span>
 
                                 <?php elseif($row['status'] == 'completed'): ?>
                                     <span class="text-success small fw-bold">Order Delivered</span>
@@ -908,7 +913,6 @@ body{
                     </div>
                 </div>
                 
-                <!-- CUSTOMER PROOF OF PAYMENT & ADMIN REFUND SECTION -->
                 <div class="bg-light p-3 border-start border-primary border-4 rounded mb-3 text-start">
                     <label class="text-muted small fw-bold text-uppercase d-block mb-2">Customer Proof of Payment</label>
                     <div id="proof-container"></div>
@@ -948,17 +952,14 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-// Helper to format image URLs accurately for Google Drive Links, Proxy Viewers, or Local Paths
 function resolveImageSrc(path) {
     if (!path) return '';
     let proofPath = path.trim();
     
-    // Direct Base64 / HTTP
     if (proofPath.startsWith('data:image/')) {
         return proofPath;
     }
     
-    // Check for Google Drive File ID extraction
     let fileId = '';
     if (proofPath.includes('drive.google.com') || proofPath.includes('id=')) {
         let match = proofPath.match(/[?&]id=([a-zA-Z0-9_-]+)/);
@@ -996,7 +997,6 @@ function viewCustomer(data) {
 
     let currentMOP = data.payment_method ? data.payment_method.toUpperCase() : "COD";
     
-    // 1. Customer Payment Details & Receipt Photo
     let htmlContent = "";
     if (currentMOP === "GCASH" || currentMOP === "MAYA") {
         let referenceNumber = data.ref_no ? data.ref_no : "Not Provided";
@@ -1032,16 +1032,15 @@ function viewCustomer(data) {
     }
     proofContainer.innerHTML = htmlContent;
 
-    // 2. Admin Refund Proof (if order was declined with e-wallet refund)
     let adminRefundPath = data.refund_receipt_resolved || data.refund_receipt;
-    if (data.status === 'declined' && adminRefundPath && adminRefundPath.trim() !== '') {
+    if ((data.status === 'declined' || data.status === 'cancelled') && adminRefundPath && adminRefundPath.trim() !== '') {
         let refundSrc = resolveImageSrc(adminRefundPath);
         let refundRef = data.refund_reference ? data.refund_reference : 'N/A';
         
         let refundHtml = `
             <div class="alert alert-warning py-2 px-3 mb-2 text-start small">
                 <b>Refund Reference No:</b> <span class="text-danger fw-bold">${refundRef}</span><br>
-                <b>Decline Reason:</b> ${data.decline_reason ? data.decline_reason : 'None provided'}
+                <b>Reason:</b> ${data.decline_reason ? data.decline_reason : 'None provided'}
             </div>
             <div class="text-center">
                 <a href="${refundSrc}" target="_blank" title="Click to view full refund proof">
