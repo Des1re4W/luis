@@ -475,17 +475,56 @@ try {
             return '../' + val.replace(/^\/+/, '');
         }
 
-        // LIVE SEARCH ENGINE
-        function liveSearch() {
-            let searchValue = document.getElementById("searchInput").value;
-            let xhr = new XMLHttpRequest();
-            xhr.open("POST", "livesearch.php", true);
-            xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
-            xhr.onload = function () {
-                document.getElementById("productResults").innerHTML = this.responseText;
-            };
-            xhr.send("search=" + encodeURIComponent(searchValue));
+// LIVE SEARCH ENGINE WITH NATIVE CLEAR (X BUTTON) & TITLE UPDATE HANDLER
+function liveSearch() {
+    let searchInput = document.getElementById("searchInput");
+    let searchValue = searchInput.value.trim();
+    let titleHeader = document.getElementById("productSectionTitle");
+
+    // Baguhin ang Header Title batay sa search input
+    if (titleHeader) {
+        if (searchValue !== "") {
+            titleHeader.innerHTML = `Search Results for: <span class="text-primary">"${escapeHtml(searchValue)}"</span>`;
+        } else {
+            // Ibalik sa default header kapag walang laman ang search input
+            titleHeader.innerHTML = `<?php
+                if ($category != '') {
+                    echo "Category: " . htmlspecialchars($category);
+                } else if (isset($_GET['view'])) {
+                    echo "All Products";
+                } else if ($is_home) {
+                    echo "Top Selling Items";
+                } else {
+                    echo "Product List";
+                }
+                if ($sort != '') {
+                    echo " <span class='text-muted' style='font-size: 16px;'>$sort_label</span>";
+                }
+            ?>`;
         }
+    }
+
+    let xhr = new XMLHttpRequest();
+    xhr.open("POST", "livesearch.php", true);
+    xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+    xhr.onload = function () {
+        document.getElementById("productResults").innerHTML = this.responseText;
+    };
+    xhr.send("search=" + encodeURIComponent(searchValue));
+}
+
+// Helper function para ligtas ang HTML display sa title
+function escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+
+// Event Listeners: Tinitiyak na gagana sa keyup, pag-paste, at sa pag-click ng browser 'X' clear button ('search' / 'input' event)
+const searchInputField = document.getElementById("searchInput");
+if (searchInputField) {
+    searchInputField.addEventListener("keyup", liveSearch);
+    searchInputField.addEventListener("input", liveSearch);
+    searchInputField.addEventListener("search", liveSearch); // Hahawakan nito ang pag-click sa native 'x' button!
+}
         document.getElementById("searchInput").addEventListener("keyup", liveSearch);
 
         // DYNAMIC AJAX MODAL PARSER
