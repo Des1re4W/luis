@@ -264,22 +264,22 @@ try {
 
     <div class="container mt-5">
         <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4>
-                <?php
-                if ($category != '') {
-                    echo "Category: " . htmlspecialchars($category);
-                } else if (isset($_GET['view'])) {
-                    echo "All Products";
-                } else if ($is_home) {
-                    echo "Top Selling Items";
-                } else {
-                    echo "Product List";
-                }
-                if ($sort != '') {
-                    echo " <span class='text-muted' style='font-size: 16px;'>$sort_label</span>";
-                }
-                ?>
-            </h4>
+            <h4 id="productSectionTitle">
+    <?php
+    if ($category != '') {
+        echo "Category: " . htmlspecialchars($category);
+    } else if (isset($_GET['view'])) {
+        echo "All Products";
+    } else if ($is_home) {
+        echo "Top Selling Items";
+    } else {
+        echo "Product List";
+    }
+    if ($sort != '') {
+        echo " <span class='text-muted' style='font-size: 16px;'>$sort_label</span>";
+    }
+    ?>
+</h4>
         </div>
 
         <div class="row row-cols-2 row-cols-sm-2 row-cols-md-3 row-cols-lg-4 g-4" id="productResults">
