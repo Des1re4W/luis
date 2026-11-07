@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/google_drive.php';
+
 if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     header("Location: ../login.php");
     exit();
@@ -15,56 +16,70 @@ if (isset($_POST['submit'])) {
     $price = $_POST['price'];
     $category = $_POST['category'];
     $stock = $_POST['stock'];
-    $description = $_POST['product_description'];
+    $description = trim($_POST['product_description']);
 
     if (floatval($cost_price) > floatval($price)) {
         $message = "Error: Cost price cannot be higher than the selling price!";
     } else {
-        $check_stmt = $pdo->prepare("SELECT id FROM products WHERE product_name = :name");
+        $check_stmt = $pdo->prepare("SELECT id FROM products WHERE LOWER(product_name) = LOWER(:name)");
         $check_stmt->execute([':name' => $name]);
 
         if ($check_stmt->rowCount() > 0) {
             $message = "Error: Product '$name' already exists in the inventory!";
         } else {
-            if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                $error_code = $_FILES['image']['error'] ?? 'No file';
-                $message = "Error: Please select a valid product image to upload. (Code: " . $error_code . ")";
+            if (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE) {
+                $message = "Error: Please select a valid product image to upload.";
             } else {
-                $image = $_FILES['image']['name'];
-                $tmp = $_FILES['image']['tmp_name'];
+                $upload_error = $_FILES['image']['error'];
 
-                // Siguraduhing hindi empty ang temporary path
-                if (empty($tmp) || !file_exists($tmp)) {
-                    $message = "Error: Uploaded file temporary path is empty or invalid.";
+                // Handle PHP Upload Error Codes dynamically
+                if ($upload_error === UPLOAD_ERR_INI_SIZE || $upload_error === UPLOAD_ERR_FORM_SIZE) {
+                    $message = "Error: File size is too large for the server limit (Max 20MB). Please choose a smaller image.";
+                } elseif ($upload_error !== UPLOAD_ERR_OK) {
+                    $message = "Error: Image upload failed. (Code: " . $upload_error . ")";
                 } else {
-                    // Gamitin ang getimagesize para masigurong totoong image file ito ( JPG, JPEG, PNG, WEBP )
-                    $check_image = getimagesize($tmp);
+                    $image_original_name = $_FILES['image']['name'];
+                    $tmp = $_FILES['image']['tmp_name'];
 
-                    if ($check_image === false) {
-                        $message = "Error: Invalid image file! Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
+                    if (empty($tmp) || !file_exists($tmp)) {
+                        $message = "Error: Uploaded file temporary path is empty or invalid.";
                     } else {
-                        // Kunin ang extension mula sa file name
-                        $image_extension = strtolower(pathinfo($image, PATHINFO_EXTENSION));
-                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
+                        // Case-insensitive extension extraction (handles .PNG, .JPG, .JPEG, etc.)
+                        $image_extension = strtolower(pathinfo($image_original_name, PATHINFO_EXTENSION));
+                        $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 
-                        if (!in_array($image_extension, $allowed_extensions)) {
-                            $message = "Error: Only JPG, JPEG, PNG, and WEBP extensions are allowed.";
+                        // Check MIME type safely using finfo or getimagesize fallback
+                        $is_valid_image = false;
+                        if (function_exists('finfo_open')) {
+                            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                            $mime = finfo_file($finfo, $tmp);
+                            finfo_close($finfo);
+                            $is_valid_image = str_starts_with($mime, 'image/');
+                        } else {
+                            $check_image = @getimagesize($tmp);
+                            $is_valid_image = ($check_image !== false);
+                        }
+
+                        if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
+                            $message = "Error: Invalid image file format! Please upload a valid JPG, JPEG, PNG, WEBP, or GIF photo.";
                         } else {
                             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
 
                             try {
-
                                 $file_id = uploadProductImageToDrive($tmp, $new_image_name);
+
+                                if (empty($file_id)) {
+                                    throw new Exception("Google Drive did not return an image ID.");
+                                }
 
                                 $savePath = "https://drive.google.com/uc?export=view&id=" . $file_id;
 
                                 $query = "INSERT INTO products
-        (product_name, cost_price, price, category, image, stock, product_description)
-        VALUES
-        (:name, :cost_price, :price, :category, :image, :stock, :description)";
+                                    (product_name, cost_price, price, category, image, stock, product_description)
+                                    VALUES
+                                    (:name, :cost_price, :price, :category, :image, :stock, :description)";
 
                                 $stmt = $pdo->prepare($query);
-
                                 $stmt->execute([
                                     ':name' => $name,
                                     ':cost_price' => $cost_price,
@@ -81,12 +96,11 @@ if (isset($_POST['submit'])) {
                                 $user_id = $_SESSION['user_id'] ?? null;
 
                                 $log_query = "INSERT INTO audit_log
-        (user_id, username, role, action, details, timestamp)
-        VALUES
-        (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)";
+                                    (user_id, username, role, action, details, timestamp)
+                                    VALUES
+                                    (:user_id, :username, :role, :action, :details, CURRENT_TIMESTAMP)";
 
                                 $log_stmt = $pdo->prepare($log_query);
-
                                 $log_stmt->execute([
                                     ':user_id' => $user_id,
                                     ':username' => $username,
@@ -95,14 +109,11 @@ if (isset($_POST['submit'])) {
                                     ':details' => 'Added new product: ' . $name
                                 ]);
 
-                                $message = "Product added successfully! ";
+                                $message = "Product added successfully!";
 
                             } catch (Throwable $e) {
-
                                 error_log("PRODUCT GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
-
                                 $message = "Error uploading product image: " . $e->getMessage();
-
                             }
                         }
                     }
@@ -120,7 +131,6 @@ if (isset($_POST['submit'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Add Product | Admin</title>
-    <!-- Bootstrap CSS CDN -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 
@@ -135,7 +145,7 @@ if (isset($_POST['submit'])) {
                     <?php if ($message != "") { ?>
                         <div class="alert <?php echo strpos($message, 'Error') !== false ? 'alert-danger' : 'alert-success'; ?> alert-dismissible fade show"
                             role="alert">
-                            <?php echo $message; ?>
+                            <?php echo htmlspecialchars($message, ENT_QUOTES, 'UTF-8'); ?>
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     <?php } ?>
@@ -187,8 +197,8 @@ if (isset($_POST['submit'])) {
 
                         <div class="mb-4">
                             <label class="form-label fw-semibold">Product Image <small class="text-muted">(JPG, JPEG,
-                                    PNG, WEBP only)</small></label>
-                            <input type="file" name="image" class="form-control" accept=".jpg, .jpeg, .png, .webp"
+                                    PNG, WEBP, GIF)</small></label>
+                            <input type="file" name="image" class="form-control" accept="image/*"
                                 required>
                         </div>
 
@@ -203,7 +213,6 @@ if (isset($_POST['submit'])) {
         </div>
     </div>
 
-    <!-- Bootstrap Bundle with Popper JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 

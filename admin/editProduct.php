@@ -12,7 +12,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
 }
 
 $message = "";
-$messageType = ""; // 'success' o 'danger' para sa Bootstrap alert class
+$messageType = "";
 
 // Get product ID
 $product_id = filter_var($_GET['product_id'] ?? null, FILTER_VALIDATE_INT);
@@ -46,12 +46,7 @@ if (isset($_POST['update'])) {
     $image_path = $row['image'];
 
     try {
-
-        // Validate prices
-        if (
-            !is_numeric($cost_price) || !is_numeric($price) ||
-            floatval($cost_price) < 0 || floatval($price) < 0
-        ) {
+        if (!is_numeric($cost_price) || !is_numeric($price) || floatval($cost_price) < 0 || floatval($price) < 0) {
             throw new Exception("Please enter valid prices.");
         }
 
@@ -59,7 +54,6 @@ if (isset($_POST['update'])) {
             throw new Exception("Cost price cannot be higher than the selling price.");
         }
 
-        // Check duplicate product name, excluding the current product
         $check_stmt = $pdo->prepare("
             SELECT id
             FROM products
@@ -77,18 +71,15 @@ if (isset($_POST['update'])) {
         }
 
         // ==========================================
-        // GOOGLE DRIVE IMAGE UPLOAD
+        // GOOGLE DRIVE IMAGE UPLOAD WITH BETTER ERROR HANDLING
         // ==========================================
+        if (isset($_FILES['image']) && $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $upload_error = $_FILES['image']['error'];
 
-        if (
-            isset($_FILES['image']) &&
-            $_FILES['image']['error'] !== UPLOAD_ERR_NO_FILE
-        ) {
-
-            if ($_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception(
-                    "Image upload failed. Error code: " . $_FILES['image']['error']
-                );
+            if ($upload_error === UPLOAD_ERR_INI_SIZE || $upload_error === UPLOAD_ERR_FORM_SIZE) {
+                throw new Exception("Uploaded file size exceeds the server limit (Max 20MB). Please choose a smaller image.");
+            } elseif ($upload_error !== UPLOAD_ERR_OK) {
+                throw new Exception("Image upload failed. Error code: " . $upload_error);
             }
 
             $tmp = $_FILES['image']['tmp_name'];
@@ -98,42 +89,40 @@ if (isset($_POST['update'])) {
                 throw new Exception("Uploaded image temporary file is invalid.");
             }
 
-            // Confirm that the uploaded file is an actual image
-            $check_image = getimagesize($tmp);
+            // Case-insensitive extension check
+            $image_extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+            $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
 
-            if ($check_image === false) {
-                throw new Exception("Invalid image. Please upload JPG, JPEG, PNG, or WEBP.");
+            // Flexible image validation
+            $is_valid_image = false;
+            if (function_exists('finfo_open')) {
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime = finfo_file($finfo, $tmp);
+                finfo_close($finfo);
+                $is_valid_image = str_starts_with($mime, 'image/');
+            } else {
+                $check_image = @getimagesize($tmp);
+                $is_valid_image = ($check_image !== false);
             }
 
-            // Validate extension
-            $image_extension = strtolower(
-                pathinfo($original_name, PATHINFO_EXTENSION)
-            );
-
-            $allowed_extensions = ['jpg', 'jpeg', 'png', 'webp'];
-
-            if (!in_array($image_extension, $allowed_extensions, true)) {
-                throw new Exception("Only JPG, JPEG, PNG, and WEBP images are allowed.");
+            if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
+                throw new Exception("Invalid image file format. Please upload JPG, JPEG, PNG, WEBP, or GIF.");
             }
 
             // Generate unique filename
             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
 
-            // Use the SAME working function from addProduct.php
+            // Upload to Google Drive
             $file_id = uploadProductImageToDrive($tmp, $new_image_name);
 
             if (empty($file_id)) {
                 throw new Exception("Google Drive did not return an image file ID.");
             }
 
-            // Save the same URL format used by addProduct.php
             $image_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
         }
 
-        // ==========================================
         // UPDATE DATABASE
-        // ==========================================
-
         $update_query = "
             UPDATE products
             SET
@@ -148,7 +137,6 @@ if (isset($_POST['update'])) {
         ";
 
         $update_stmt = $pdo->prepare($update_query);
-
         $update_stmt->execute([
             ':name' => $name,
             ':cost_price' => $cost_price,
@@ -160,10 +148,7 @@ if (isset($_POST['update'])) {
             ':id' => $product_id
         ]);
 
-        // ==========================================
         // AUDIT TRAIL
-        // ==========================================
-
         $username = $_SESSION['username'] ?? 'Admin';
         $role = $_SESSION['role'] ?? 'admin';
         $user_id = $_SESSION['user_id'] ?? null;
@@ -176,7 +161,6 @@ if (isset($_POST['update'])) {
         ";
 
         $log_stmt = $pdo->prepare($log_query);
-
         $log_stmt->execute([
             ':user_id' => $user_id,
             ':username' => $username,
@@ -194,9 +178,7 @@ if (isset($_POST['update'])) {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     } catch (Throwable $e) {
-
         error_log("EDIT PRODUCT ERROR: " . $e->getMessage());
-
         $message = "Error updating product: " . $e->getMessage();
         $messageType = "danger";
     }
@@ -286,7 +268,7 @@ if (isset($_POST['update'])) {
                     <?php endif; ?>
 
                     <label class="form-label fw-bold">Change Image (Optional)</label>
-                    <input type="file" name="image" class="form-control mb-4" accept=".jpg, .jpeg, .png, .webp">
+                    <input type="file" name="image" class="form-control mb-4" accept="image/*">
 
                     <div class="d-flex gap-2">
                         <a href="products.php" class="btn btn-secondary w-50 fw-bold">Cancel</a>
