@@ -82,7 +82,7 @@ function handleGoogleDriveVariantUpload($fileArray)
     }
 
     if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
-        throw new Exception("Invalid image file format. GIF images are not allowed. Please upload JPG, JPEG, PNG, or WEBP.");
+        throw new Exception("Invalid image file format! Please upload JPG, JPEG, PNG, or WEBP.");
     }
 
     $new_image_name = uniqid("var_", true) . '.' . $image_extension;

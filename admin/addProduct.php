@@ -60,7 +60,7 @@ if (isset($_POST['submit'])) {
                         }
 
                         if (!$is_valid_image || !in_array($image_extension, $allowed_extensions, true)) {
-                            $message = "Error: Invalid image file format! GIF images are not allowed. Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
+                            $message = "Error: Invalid image file format! Please upload a valid JPG, JPEG, PNG, or WEBP photo.";
                         } else {
                             $new_image_name = uniqid("prod_", true) . '.' . $image_extension;
 
