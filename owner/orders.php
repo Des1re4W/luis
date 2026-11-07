@@ -8,14 +8,18 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'owner') {
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
 
-// Fetch lahat ng orders kasama ang admin name gamit ang PDO
+// Fetch lahat ng orders kasama ang admin name (Sinama ang u3 para sa cancellation approval/action)
 $orders_query = $pdo->query("SELECT o.*, 
                              u1.username as approved_admin, 
-                             u2.username as declined_admin 
+                             u2.username as declined_admin,
+                             u3.username as cancelled_admin 
                              FROM orders o 
                              LEFT JOIN users u1 ON o.approved_by = u1.id 
                              LEFT JOIN users u2 ON o.declined_by = u2.id 
-                             ORDER BY o.order_date DESC");
+                             LEFT JOIN users u3 ON (
+                                 (CASE WHEN o.cancelled_by IS NOT NULL THEN o.cancelled_by ELSE NULL END) = u3.id
+                             )
+                             ORDER BY o.id DESC");
 ?>
 
 <!DOCTYPE html>
@@ -180,29 +184,39 @@ body{
                     <?php 
                     $rows = $orders_query->fetchAll(PDO::FETCH_ASSOC);
                     foreach($rows as $row) { 
+                        $status = strtolower(trim($row['status']));
+
+                        // Dynamic Status Badge Color matching Dashboard logic
+                        if (in_array($status, ['declined', 'cancelled', 'canceled'])) {
+                            $badge_bg = 'bg-danger text-white';
+                        } elseif ($status === 'pending') {
+                            $badge_bg = 'bg-warning text-dark';
+                        } else {
+                            // Approved, Preparing, Completed, Out-for-delivery, etc.
+                            $badge_bg = 'bg-success text-white';
+                        }
                     ?>
                     <tr>
                         <td>#<?php echo $row['id']; ?></td>
                         <td><?php echo htmlspecialchars($row['fullname'] . ' ' . $row['surname']); ?></td>
                         <td>
-                            <?php 
-                                $status = $row['status'];
-                                $color = [
-                                    'pending'         => 'warning', 
-                                    'preparing'       => 'info', 
-                                    'out-of-delivery' => 'primary', 
-                                    'completed'       => 'success', 
-                                    'declined'        => 'danger'
-                                ][$status] ?? 'secondary';
-                            ?>
-                            <span class="badge bg-<?php echo $color; ?>"><?php echo ucfirst($status); ?></span>
+                            <span class="badge <?php echo $badge_bg; ?>"><?php echo ucfirst($status); ?></span>
                         </td>
                         <td>
                             <?php 
-                                if (!empty($row['approved_admin'])) {
-                                    echo '<span class="text-success">Approved: <strong>' . htmlspecialchars($row['approved_admin']) . '</strong></span>';
-                                } elseif (!empty($row['declined_admin'])) {
-                                    echo '<span class="text-danger">Declined: <strong>' . htmlspecialchars($row['declined_admin']) . '</strong></span>';
+                                // Hanapin kung sinong Admin ang nag-process (Approved, Declined, o Cancelled)
+                                $admin_name = $row['approved_admin'] ?? ($row['declined_admin'] ?? ($row['cancelled_admin'] ?? ''));
+
+                                if (in_array($status, ['declined', 'cancelled', 'canceled'])) {
+                                    if (!empty($admin_name)) {
+                                        echo '<span class="text-danger">' . ucfirst($status) . ': <strong>' . htmlspecialchars($admin_name) . '</strong></span>';
+                                    } elseif (!empty($row['approved_admin'])) {
+                                        echo '<span class="text-danger">' . ucfirst($status) . ': <strong>' . htmlspecialchars($row['approved_admin']) . '</strong></span>';
+                                    } else {
+                                        echo '<small class="text-muted">Cancelled by Customer</small>';
+                                    }
+                                } elseif (!empty($admin_name)) {
+                                    echo '<span class="text-success">Approved: <strong>' . htmlspecialchars($admin_name) . '</strong></span>';
                                 } else {
                                     echo '<small class="text-muted">N/A</small>';
                                 }
