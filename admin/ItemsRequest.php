@@ -148,7 +148,6 @@ if (isset($_POST['send_email_update'])) {
     header("Location: ItemsRequest.php" . $pane_target);
     exit();
 }
-
 // --- 2. STATUS UPDATE LOGIC ---
 if (isset($_POST['update_status'])) {
     $req_id = (int)$_POST['ticket_id'];
@@ -206,9 +205,30 @@ if (isset($_POST['update_status'])) {
                             }
                         }
                     }
-                    // NA-UPDATE: Isinama ang cancelled_by sa orders table
                     $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
                     $up_ord->execute([$admin_id, $order_number]);
+                }
+
+                // AUTOMATIC INSERTION SA DAMAGED_ITEMS TABLE KUNG DAMAGED ANG REASON
+                if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
+                    // I-check muna kung na-insert na dati para iwas duplication
+                    $check_dmg = $pdo->prepare("SELECT id FROM damaged_items WHERE order_number = ? AND account = ? LIMIT 1");
+                    $check_dmg->execute([$order_number, $ticket_data['account']]);
+                    
+                    if ($check_dmg->rowCount() == 0) {
+                        $item_details = !empty($ticket_data['item_to_replace']) ? $ticket_data['item_to_replace'] : $ticket_data['reason'];
+                        if (!empty($ticket_data['details'])) {
+                            $item_details .= "\nDetails: " . $ticket_data['details'];
+                        }
+
+                        $ins_dmg = $pdo->prepare("INSERT INTO damaged_items (order_number, account, product_image, item_details, date_logged) VALUES (?, ?, ?, ?, NOW())");
+                        $ins_dmg->execute([
+                            $order_number,
+                            $ticket_data['account'],
+                            $ticket_data['product_image'],
+                            $item_details
+                        ]);
+                    }
                 }
 
                 $pdo->commit();
