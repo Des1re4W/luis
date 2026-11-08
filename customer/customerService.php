@@ -5,13 +5,17 @@ session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 
-// Safe include database config ($pdo)
+// Safe include database config ($pdo) & Google Drive helper
 if (file_exists(__DIR__ . '/../config/db.php')) {
     require_once __DIR__ . '/../config/db.php';
 } else {
     header('Content-Type: application/json; charset=utf-8');
     echo json_encode(['success' => false, 'message' => 'Config db.php file missing.']);
     exit;
+}
+
+if (file_exists(__DIR__ . '/../config/google_drive.php')) {
+    require_once __DIR__ . '/../config/google_drive.php';
 }
 
 $message = "";
@@ -167,10 +171,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
             $message_type = "danger";
         } else {
             $filename = null;
-            if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === 0) {
-                $ext = pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION);
-                $filename = "REQ_" . time() . "_" . rand(1000, 9999) . "." . $ext;
-                move_uploaded_file($_FILES['product_image']['tmp_name'], "../uploads/" . $filename);
+            if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === UPLOAD_ERR_OK) {
+                $file_tmp = $_FILES['product_image']['tmp_name'];
+                $ext = strtolower(pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION));
+                $new_filename = "REQ_" . $order_id . "_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+
+                // Dedicated Customer Service Google Drive Folder ID
+                $CUSTOMER_SERVICE_FOLDER_ID = "1Gu8SOPjnIDEwoMhRFhZkxHqPsUL7MKNS";
+
+                // 1. Unang i-upload sa Google Drive mula sa temporary PHP file
+                try {
+                    if (function_exists('uploadProductImageToDrive')) {
+                        $file_id = uploadProductImageToDrive($file_tmp, $new_filename, $CUSTOMER_SERVICE_FOLDER_ID);
+                        if (!empty($file_id)) {
+                            $filename = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                        }
+                    }
+                } catch (Throwable $e) {
+                    error_log("CUSTOMER SERVICE GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
+                }
+
+                // 2. Fallback sa Local Uploads directory kung nag-fail o nag-timeout ang Drive upload
+                if (empty($filename)) {
+                    $target_dir = "../uploads/";
+                    if (!is_dir($target_dir)) {
+                        mkdir($target_dir, 0777, true);
+                    }
+                    if (move_uploaded_file($file_tmp, $target_dir . $new_filename)) {
+                        $filename = $new_filename;
+                    }
+                }
             }
 
             $total_ordered_qty_map = [];
