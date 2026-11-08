@@ -547,14 +547,14 @@ $countArchived = (int)($countArchivedResult->fetch(PDO::FETCH_ASSOC)['total'] ??
     <a href="orders.php" class="sidebar-link">
         <i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring
     </a>
-    <a href="accountManagement.php" class="sidebar-link active">
-        <i class="bi bi-person-circle"></i> Account Management
-    </a>
     <a href="history.php" class="sidebar-link">
         <i class="bi bi-clock-history"></i> History
     </a>
     <a href="auditTrail.php" class="sidebar-link">
         <i class="bi bi-shield-lock"></i> Audit Trail
+    </a>
+    <a href="accountManagement.php" class="sidebar-link active">
+        <i class="bi bi-person-circle"></i> Account Management
     </a>
 
     <div class="logout-section">

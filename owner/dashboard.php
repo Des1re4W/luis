@@ -184,7 +184,7 @@ body{
         <i class="bi bi-shield-lock"></i> Audit Trail
     </a>
     <a href="accountManagement.php" class="sidebar-link">
-        <i class="bi bi-shield-lock"></i> Account Management
+        <i class="bi bi-person-gear"></i> Account Management
     </a>
 
     <div class="logout-section">
