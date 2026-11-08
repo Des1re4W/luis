@@ -183,6 +183,9 @@ body{
     <a href="auditTrail.php" class="sidebar-link">
         <i class="bi bi-shield-lock"></i> Audit Trail
     </a>
+    <a href="accountManagement.php" class="sidebar-link">
+        <i class="bi bi-shield-lock"></i> Account Management
+    </a>
 
     <div class="logout-section">
          <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
