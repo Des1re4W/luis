@@ -609,11 +609,11 @@ try {
                                 <tr>
                                     <td class="text-center">
                                         <img src="<?php echo htmlspecialchars($img_src, ENT_QUOTES, 'UTF-8'); ?>"
-                                            alt="<?php echo htmlspecialchars($p_name, ENT_QUOTES, 'UTF-8'); ?>"
+                                            alt="<?php echo htmlspecialchars($p_name, ENT_QUOTES, 'UTF-8'); ?>" loading="lazy"
+                                            decoding="async" width="100" height="100"
+                                            style="object-fit: contain; cursor: zoom-in;"
                                             onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
-                                            onclick="openProductImageZoom(this.src)"
-                                            loading="lazy"
-                                            title="Click to zoom image">
+                                            onclick="openProductImageZoom(this.src)" title="Click to zoom image">
                                     </td>
                                     <td>
                                         <span class="fw-bold text-dark d-block"><?php echo htmlspecialchars($p_name); ?></span>
@@ -696,7 +696,8 @@ try {
         <div class="modal-dialog modal-dialog-centered modal-lg">
             <div class="modal-content bg-transparent border-0">
                 <div class="text-center">
-                    <img id="zoomImage" src="" class="img-fluid rounded shadow" style="max-height: 85vh; border: 3px solid #fff;">
+                    <img id="zoomImage" src="" class="img-fluid rounded shadow"
+                        style="max-height: 85vh; border: 3px solid #fff;">
                 </div>
                 <div class="text-center mt-3">
                     <button type="button" class="btn px-4 py-2 fw-bold shadow"
