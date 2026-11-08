@@ -420,7 +420,6 @@ try {
         <a href="orders.php"><i class="bi bi-receipt"></i> Orders</a>
         <a href="ItemsRequest.php"><i class="bi bi-arrow-return-left"></i> Customer Service request</a>
         <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
-        <a href="accountManagement.php"><i class="bi bi-person-circle"></i> Account Management</a>
         <a href="profile.php" class="sidebar-link"><i class="bi bi-person-badge"></i> My Profile</a>
         <div class="logout-section">
             <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to logout?')">
