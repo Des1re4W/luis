@@ -196,7 +196,7 @@ try {
                         </ul>
                     </li>
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle text-warning fw-bold" href="#" id="sortDropdown"
+                        <a class="nav-link dropdown-toggle text-warning" href="#" id="sortDropdown"
                             role="button" data-bs-toggle="dropdown">Sort By</a>
                         <ul class="dropdown-menu">
                             <li><a class="dropdown-item" href="?sort=price_low&category=<?php echo $category; ?>">Price:
