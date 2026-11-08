@@ -17,7 +17,6 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
 }
 
 $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
-// Kunin ang Admin ID mula sa session (isinasama ang fallbacks kung user_id, id, o admin_id)
 $admin_id = $_SESSION['user_id'] ?? ($_SESSION['id'] ?? ($_SESSION['admin_id'] ?? null));
 
 // --- 1. EMAILER ACTION LOGIC ---
@@ -148,6 +147,7 @@ if (isset($_POST['send_email_update'])) {
     header("Location: ItemsRequest.php" . $pane_target);
     exit();
 }
+
 // --- 2. STATUS UPDATE LOGIC ---
 if (isset($_POST['update_status'])) {
     $req_id = (int)$_POST['ticket_id'];
@@ -211,7 +211,6 @@ if (isset($_POST['update_status'])) {
 
                 // AUTOMATIC INSERTION SA DAMAGED_ITEMS TABLE KUNG DAMAGED ANG REASON
                 if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
-                    // I-check muna kung na-insert na dati para iwas duplication
                     $check_dmg = $pdo->prepare("SELECT id FROM damaged_items WHERE order_number = ? AND account = ? LIMIT 1");
                     $check_dmg->execute([$order_number, $ticket_data['account']]);
                     
@@ -325,7 +324,7 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
     $pane_target = ($request_type == 'cancel') ? '#cancel-pane' : '#exchange-pane';
     header("Location: ItemsRequest.php" . $pane_target);
     exit();
-}a
+}
 
 // --- 3. REFUND SUBMISSION LOGIC WITH GOOGLE DRIVE REFUND RECEIPT UPLOAD & TIMEOUT SAFETY ---
 if (isset($_POST['submit_refund'])) {
@@ -350,7 +349,6 @@ if (isset($_POST['submit_refund'])) {
                 if (function_exists('uploadProductImageToDrive')) {
                     $file_id = uploadProductImageToDrive($file_tmp, $proof_filename, $REFUND_RECEIPTS_FOLDER_ID);
                     if (!empty($file_id)) {
-                        // Direct proxy drive URL for reliable browser preview
                         $proof_path = "https://drive.google.com/uc?export=view&id=" . $file_id;
                     }
                 }
