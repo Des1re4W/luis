@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
+require_once __DIR__ . '/../config/image.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header("Location: ../login.php");
@@ -29,7 +30,7 @@ $damaged_rows = $damaged_result->fetchAll(PDO::FETCH_ASSOC);
             overflow-x: hidden;
         }
 
-        /* SIDEBAR (Katulad ng sa Dashboard) */
+        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -85,7 +86,7 @@ $damaged_rows = $damaged_result->fetchAll(PDO::FETCH_ASSOC);
             border-top: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        /* MAIN CONTENT (Katulad ng sa Dashboard) */
+        /* MAIN CONTENT */
         .main {
             margin-left: 260px;
             padding: 25px;
@@ -205,13 +206,12 @@ $damaged_rows = $damaged_result->fetchAll(PDO::FETCH_ASSOC);
                                 <?php 
                                 $img_path = "";
                                 if(!empty($row['product_image'])) {
-                                    if(file_exists("../uploads/" . $row['product_image'])) { $img_path = "../uploads/" . $row['product_image']; }
-                                    elseif(file_exists("uploads/" . $row['product_image'])) { $img_path = "uploads/" . $row['product_image']; }
+                                    $img_path = getProductImageSrc($row['product_image']);
                                 }
                                 if(!empty($img_path)): 
                                 ?>
-                                    <a href="<?php echo $img_path; ?>" target="_blank">
-                                        <img src="<?php echo $img_path; ?>" class="img-thumb-preview" title="Open Image Proof">
+                                    <a href="<?php echo htmlspecialchars($img_path); ?>" target="_blank">
+                                        <img src="<?php echo htmlspecialchars($img_path); ?>" class="img-thumb-preview" title="Open Image Proof">
                                     </a>
                                 <?php else: ?>
                                     <span class="text-muted small italic"><i class="bi bi-image"></i> None</span>
