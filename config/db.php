@@ -1,10 +1,18 @@
+
 <?php
 
-$host = "aws-0-ap-northeast-1.pooler.supabase.com";
-$port = "5432";
-$db   = "postgres";
-$user = "postgres.pfyvduwfjoybdgtfeofs";
-$pass = "9NNgtbg2!253717228";
+require_once __DIR__ . '/../vendor/autoload.php';
+
+// Load .env from hardwareSystem root
+$dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
+$dotenv->load();
+
+// Database credentials
+$host = $_ENV['DB_HOST'];
+$port = $_ENV['DB_PORT'] ?? '5432';
+$db   = $_ENV['DB_NAME'];
+$user = $_ENV['DB_USER'];
+$pass = $_ENV['DB_PASSWORD'];
 
 try {
     $pdo = new PDO(
@@ -16,9 +24,9 @@ try {
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
         ]
     );
+
 } catch (PDOException $e) {
     error_log($e->getMessage());
     http_response_code(500);
     exit("Database connection failed.");
 }
-?>
