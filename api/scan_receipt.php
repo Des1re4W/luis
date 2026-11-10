@@ -31,8 +31,8 @@ if (!isset($_FILES['proof_of_payment']) || $_FILES['proof_of_payment']['error'] 
     exit();
 }
 
-// Kumuha mula sa Environment Variable (.env)
-$api_key = getenv('GEMINI_API_KEY') ?: ($_ENV['GEMINI_API_KEY'] ?? '');
+// 2. Priority check: Server Environment (Render) -> .env File
+$api_key = getenv('GEMINI_API_KEY') ?: ($_ENV['GEMINI_API_KEY'] ?? ($_SERVER['GEMINI_API_KEY'] ?? ''));
 
 if (empty($api_key)) {
     echo json_encode(['success' => false, 'message' => 'Server Error: Gemini API key is missing in configuration.']);
@@ -73,20 +73,39 @@ $payload = [
     ]
 ];
 
-$url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $api_key;
+// 3. HYBRID AUTHENTICATION HANDLING (Gagana sa 'AQ...' at 'AIzaSy...' keys)
+$api_key_clean = trim($api_key);
+
+if (strpos($api_key_clean, 'AQ.') === 0) {
+    // Kapag 'AQ...' token (Service Account / OAuth Token), ipasa sa Authorization Header
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+    $headers = [
+        'Content-Type: application/json',
+        'Authorization: Bearer ' . $api_key_clean
+    ];
+} else {
+    // Kapag standard API key (AIzaSy...), ipasa sa URL parameter
+    $url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" . $api_key_clean;
+    $headers = [
+        'Content-Type: application/json'
+    ];
+}
 
 $ch = curl_init($url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 
 $response = curl_exec($ch);
 $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
 if ($http_code !== 200 || !$response) {
-    echo json_encode(['success' => false, 'message' => 'Gemini API Error or Connection Failed. (HTTP Code: ' . $http_code . ')']);
+    echo json_encode([
+        'success' => false, 
+        'message' => 'Gemini API Error or Connection Failed. (HTTP Code: ' . $http_code . ')'
+    ]);
     exit();
 }
 
