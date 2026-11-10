@@ -67,8 +67,8 @@ function sendResetOtp(string $email, string $otp): array
     $smtpHost   = $getEnvVar('SMTP_HOST', 'smtp.gmail.com');
     $smtpUser   = $getEnvVar('SMTP_USER', 'rtaipancss@gmail.com');
     $smtpPass   = $getEnvVar('SMTP_PASS', 'nfgairnkprpxitkk');
-    $smtpPort   = (int) $getEnvVar('SMTP_PORT', 587);
-    $smtpSecure = $getEnvVar('SMTP_SECURE', 'tls');
+    $smtpPort   = (int) $getEnvVar('SMTP_PORT', 465);
+    $smtpSecure = $getEnvVar('SMTP_SECURE', 'ssl');
     $fromEmail  = $getEnvVar('SMTP_FROM_EMAIL', 'rtaipancss@gmail.com');
     $fromName   = $getEnvVar('SMTP_FROM_NAME', 'R. Taipan Hardware');
 
