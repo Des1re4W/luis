@@ -147,7 +147,7 @@ if (isset($_POST['login'])) {
                 <small class="text-muted">Please login to continue</small>
             </div>
 
-            <h3 class="text-center mb-3">Login</h3>
+            <h3 class="text-center mb-3">Login ka bobo!</h3>
 
             <?php if ($error != "") { ?>
                 <div class="alert alert-danger text-center">
