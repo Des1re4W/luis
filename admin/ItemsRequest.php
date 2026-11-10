@@ -12,9 +12,6 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
 $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
 $admin_id = $_SESSION['user_id'] ?? ($_SESSION['id'] ?? ($_SESSION['admin_id'] ?? null));
 
-/**
- * Sends Customer Request Email Update via Resend HTTP API (Bypasses SMTP port 587/465 timeout errors on cloud hosting)
- */
 function sendCustomerRequestEmail(string $toEmail, string $toName, string $subject, string $htmlBody): array
 {
     $apiKey = $_ENV['RESEND_API_KEY'] ?? getenv('RESEND_API_KEY');
@@ -22,6 +19,11 @@ function sendCustomerRequestEmail(string $toEmail, string $toName, string $subje
     if (empty($apiKey)) {
         error_log("MAILER ERROR: RESEND_API_KEY is not defined.");
         return ['success' => false, 'error' => 'RESEND_API_KEY is missing in environment variables.'];
+    }
+
+    // Siguraduhing hindi blangko ang html body para maiwasan ang validation error 422
+    if (empty(trim($htmlBody))) {
+        $htmlBody = "<p>Hello " . htmlspecialchars($toName) . ", you have a notification regarding your request.</p>";
     }
 
     $url = 'https://api.resend.com/emails';
