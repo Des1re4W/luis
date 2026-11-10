@@ -49,12 +49,23 @@ if (isset($_POST['place_order'])) {
     // Retrieve OCR Values
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
+    $sent_to = !empty($_POST['sent_to']) ? trim($_POST['sent_to']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
     // BACKEND STRICT VALIDATION FOR ONLINE PAYMENTS (GCash / Maya)
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (empty($ref_no) || $detected_paid_amount <= 0) {
             die("<script>alert('Order Failed: Invalid receipt photo. No valid Reference Number or Paid Amount detected by the OCR scanner.'); history.back();</script>");
+        }
+
+        // Compute required payment amount based on payment scheme
+        $required_amount = ($grand_total >= 5000 && $payment_scheme === '50_percent') ? ($grand_total * 0.5) : $grand_total;
+
+        // BACKEND AMOUNT MATCHING VALIDATION (BAWAL KULANG)
+        if ($detected_paid_amount < ($required_amount - 0.01)) {
+            $formatted_req = number_format($required_amount, 2);
+            $formatted_paid = number_format($detected_paid_amount, 2);
+            die("<script>alert('Order Failed: Insufficient Payment Amount! Required: ₱{$formatted_req}, but receipt amount detected is only ₱{$formatted_paid}. Please send the complete amount.'); history.back();</script>");
         }
 
         // BACKEND ANTI-REUSE CHECK: Harangan kung ang Reference Number ay ginamit na sa ibang order
@@ -115,11 +126,11 @@ if (isset($_POST['place_order'])) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->beginTransaction();
 
-        // Insert order into database
+        // Insert order into database (INCLUDES SENT_TO COLUMN)
         $order_query = "INSERT INTO orders 
-            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, order_date, status) 
+            (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, sent_to, order_date, status) 
             VALUES 
-            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, :receiptdt, CURRENT_TIMESTAMP, 'pending')";
+            (:fullname, :surname, :contact_number, :tel_no, :email, :full_address, :landmark, :total_amount, :paid_amount, :cart, :payment_method, :payment_scheme, :ref_no, :proof_of_payment, :receiptdt, :sent_to, CURRENT_TIMESTAMP, 'pending')";
         
         $stmt = $pdo->prepare($order_query);
         $stmt->execute([
@@ -137,7 +148,8 @@ if (isset($_POST['place_order'])) {
             ':payment_scheme' => $payment_scheme,
             ':ref_no' => $ref_no,
             ':proof_of_payment' => $proof_of_payment,
-            ':receiptdt' => $receiptdt
+            ':receiptdt' => $receiptdt,
+            ':sent_to' => $sent_to
         ]);
 
         $order_id = $pdo->lastInsertId();
@@ -335,6 +347,7 @@ if (isset($_POST['place_order'])) {
                             <input type="hidden" name="ref_no" id="ref_no_input">
                             <input type="hidden" name="paid_amount" id="paid_amount_input">
                             <input type="hidden" name="receiptdt" id="receiptdt_input">
+                            <input type="hidden" name="sent_to" id="sent_to_input">
 
                             <!-- OCR Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
@@ -364,6 +377,16 @@ if (isset($_POST['place_order'])) {
 <script>
 const grandTotal = <?php echo $grand_total; ?>;
 
+function getRequiredPaymentAmount() {
+    if (grandTotal >= 5000) {
+        const schemeRadio = document.querySelector('input[name="payment_scheme"]:checked');
+        if (schemeRadio && schemeRadio.value === '50_percent') {
+            return grandTotal * 0.5;
+        }
+    }
+    return grandTotal;
+}
+
 function togglePaymentFields() {
     const selectedRadio = document.querySelector('input[name="payment_method"]:checked');
     if (!selectedRadio) return;
@@ -388,6 +411,7 @@ function togglePaymentFields() {
         document.getElementById('ref_no_input').value = "";
         document.getElementById('paid_amount_input').value = "";
         document.getElementById('receiptdt_input').value = "";
+        document.getElementById('sent_to_input').value = "";
     }
 }
 
@@ -410,6 +434,12 @@ function updatePaymentDisplay() {
         if (dueText) dueText.innerText = "Total Amount to Pay:";
         if (displayDue) displayDue.innerText = "₱" + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
+
+    // Re-validate receipt kung may na-scan na dati bago pinalitan ang scheme
+    const proofInput = document.getElementById('proof_of_payment_input');
+    if (proofInput && proofInput.files.length > 0) {
+        processReceiptOCR(proofInput);
+    }
 }
 
 function toggleSubmitButton() {
@@ -429,10 +459,12 @@ async function processReceiptOCR(fileInput) {
     const refInput = document.getElementById('ref_no_input');
     const paidInput = document.getElementById('paid_amount_input');
     const dtInput = document.getElementById('receiptdt_input');
+    const sentToInput = document.getElementById('sent_to_input');
 
     refInput.value = "";
     paidInput.value = "";
     dtInput.value = "";
+    sentToInput.value = "";
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
@@ -480,12 +512,38 @@ async function processReceiptOCR(fileInput) {
         let detectedRef = '';
         let detectedAmount = '';
         let detectedDateTime = '';
+        let detectedSentTo = '';
 
         // -------------------------------------------------------------
-        // 2. REFERENCE NUMBER DETECTION
+        // 2. RECIPIENT (SENT TO) DETECTION (NAME & PHONE NUMBER)
         // -------------------------------------------------------------
+        // Pattern A: Masked/Full Name followed by +63 / 09 phone number (e.g. MI••••E R. +63 929 575 6385)
+        let sentToMatch = text.match(/([A-Z0-9\s•\.\*]{3,30})\s*(\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/i);
         
-        // Priority 1: Match labeled reference numbers including hyphenated bank formats (e.g. BN-20260930-04600502)
+        if (sentToMatch) {
+            let recipientName = sentToMatch[1].replace(/Sent|via|GCash|Express|Send/gi, '').trim();
+            let recipientPhone = sentToMatch[2].trim();
+            if (recipientName && recipientPhone) {
+                detectedSentTo = `${recipientName} (${recipientPhone})`;
+            } else if (recipientPhone) {
+                detectedSentTo = recipientPhone;
+            }
+        }
+
+        // Pattern B: Labeled recipient (e.g. "To: Raquel Domingo" o "Sent money to: +639682770376")
+        if (!detectedSentTo) {
+            let labeledRecipient = text.match(/(?:Sent\s*(?:money\s*)?to|To)\s*:?\s*([A-Z0-9\s•\.\*\+\-]{4,35})/i);
+            if (labeledRecipient) {
+                let cleanedName = labeledRecipient[1].replace(/G-Xchange|Inc\.|Gcash|Maya|InstaPay/gi, '').trim();
+                if (cleanedName.length >= 4) {
+                    detectedSentTo = cleanedName;
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 3. REFERENCE NUMBER DETECTION
+        // -------------------------------------------------------------
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
@@ -495,7 +553,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // Fallback A: Maya Alphanumeric Hex pattern (e.g. 06C0 4EC5 CA75)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
@@ -503,7 +560,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // Fallback B: GCash 10-13 digit space-separated numbers
         if (!detectedRef) {
             let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
             if (spaceSeparatedMatch) {
@@ -512,18 +568,13 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 3. ANTI-FAKE & FAKE RECEIPT GENERATOR FILTER
+        // 4. ANTI-FAKE & FAKE RECEIPT GENERATOR FILTER
         // -------------------------------------------------------------
         const isFakeGeneratorPattern = (ref) => {
             const cleanRef = ref.toUpperCase().replace(/[\s\-_]/g, '');
             
-            // Check 1: Nagsisimula sa letrang 'G' na may kasamang dummy sequence (e.g. G1709123456789)
             if (/^G\d{2,4}12345678/i.test(cleanRef) || /^G1709123456/i.test(cleanRef)) return true;
-            
-            // Check 2: Sequential dummy numbers (e.g. 12345678, 23456789, 98765432)
             if (/12345678|23456789|34567890|98765432|87654321/.test(cleanRef)) return true;
-
-            // Check 3: Repeated identical numbers (e.g. 00000000, 11111111, 99999999)
             if (/(\d)\1{7,}/.test(cleanRef)) return true;
 
             return false;
@@ -538,9 +589,9 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 4. UNIVERSAL AMOUNT DETECTION
+        // 5. UNIVERSAL AMOUNT DETECTION
         // -------------------------------------------------------------
-        let amountMatch = text.match(/(?:Total\s*Amount|Amount\s*Sent|Sent\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
+        let amountMatch = text.match(/(?:Total\s*Amount\s*(?:Sent)?|Amount\s*Sent|Sent\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
         
         if (amountMatch) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
@@ -557,7 +608,7 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 5. DATE & TIME DETECTION
+        // 6. DATE & TIME DETECTION
         // -------------------------------------------------------------
         let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?\b/i);
         if (!dateTimeMatch) {
@@ -568,7 +619,7 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 6. FINAL VALIDATION
+        // 7. FINAL STRICT VALIDATION & AMOUNT MATCHING (BAWAL KULANG)
         // -------------------------------------------------------------
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
@@ -578,21 +629,41 @@ async function processReceiptOCR(fileInput) {
             return;
         }
 
+        const parsedAmount = parseFloat(detectedAmount);
+        const requiredAmount = getRequiredPaymentAmount();
+
+        // Check kung KULANG ang bayad sa resibo kumpara sa Total Due Amount
+        if (parsedAmount < (requiredAmount - 0.01)) {
+            statusBox.classList.remove('alert-info');
+            statusBox.classList.add('alert-danger');
+            
+            let reqStr = requiredAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            let paidStr = parsedAmount.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            
+            statusText.innerHTML = `❌ <b>Insufficient Payment Amount!</b><br>Amount Due: <b>₱${reqStr}</b><br>Amount Sent on Receipt: <b>₱${paidStr}</b><br><small class="text-dark">Please upload a receipt with the exact required amount to proceed.</small>`;
+            fileInput.value = "";
+            return;
+        }
+
         refInput.value = detectedRef;
         paidInput.value = detectedAmount;
         dtInput.value = detectedDateTime ? detectedDateTime : "N/A";
+        sentToInput.value = detectedSentTo ? detectedSentTo : "N/A";
 
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-success');
         
         let message = `
             <strong>✓ Legitimate Receipt Scanned Successfully!</strong><br>
-            <small class="text-warning">
-                Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid order rejection.
+            <small class="text-success">
+                Payment verified! Amount sent matches the total required due.
             </small><br>
         `;
         message += `Ref No: <b>${detectedRef}</b>`;
-        message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+        message += `<br>Amount Sent: <b>₱${parsedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
+        if (detectedSentTo !== '') {
+            message += `<br>Sent To: <b>${detectedSentTo}</b>`;
+        }
         if (detectedDateTime !== '') {
             message += `<br>Date & Time: <b>${detectedDateTime}</b>`;
         }
@@ -615,6 +686,15 @@ document.querySelector('form').addEventListener('submit', function(e) {
         
         if (!refNo || !paidAmt) {
             alert("Checkout Blocked: Valid payment receipt details were not detected. Please upload a valid payment receipt.");
+            e.preventDefault();
+            return false;
+        }
+
+        const parsedPaid = parseFloat(paidAmt);
+        const reqAmt = getRequiredPaymentAmount();
+
+        if (parsedPaid < (reqAmt - 0.01)) {
+            alert("Checkout Blocked: Payment amount detected (₱" + parsedPaid.toFixed(2) + ") is less than the required amount (₱" + reqAmt.toFixed(2) + ").");
             e.preventDefault();
             return false;
         }
