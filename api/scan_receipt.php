@@ -1,6 +1,30 @@
 <?php
 header('Content-Type: application/json');
 
+// 1. LIGHTWEIGHT .ENV LOADER (Upang mabasa ang GEMINI_API_KEY kahit sa Local/XAMPP)
+function loadEnvFile($envPath) {
+    if (file_exists($envPath)) {
+        $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line) || strpos($line, '#') === 0) continue;
+            if (strpos($line, '=') !== false) {
+                list($name, $value) = explode('=', $line, 2);
+                $name = trim($name);
+                $value = trim(trim($value), '"\'');
+                if (!array_key_exists($name, $_SERVER) && !array_key_exists($name, $_ENV)) {
+                    putenv("{$name}={$value}");
+                    $_ENV[$name] = $value;
+                    $_SERVER[$name] = $value;
+                }
+            }
+        }
+    }
+}
+
+// Subukang i-load ang .env sa project root
+loadEnvFile(__DIR__ . '/../.env');
+
 // Siguraduhing may na-upload na file
 if (!isset($_FILES['proof_of_payment']) || $_FILES['proof_of_payment']['error'] !== UPLOAD_ERR_OK) {
     echo json_encode(['success' => false, 'message' => 'No file uploaded or upload error.']);
