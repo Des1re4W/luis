@@ -456,7 +456,7 @@ async function processReceiptOCR(fileInput) {
         console.log("OCR Extracted Raw Text:\n", text);
 
         // -------------------------------------------------------------
-        // STRICT LEGIT RECEIPT VERIFICATION (EXPANDED FOR BANK TO GCASH/MAYA TRANSFERS)
+        // 1. STRICT LEGIT RECEIPT VERIFICATION (BRAND / BANK KEYWORD CHECK)
         // -------------------------------------------------------------
         const legitBankKeywords = [
             'gcash', 'g-xchange', 'maya', 'paymaya', 'maribank', 'instapay', 'pesonet',
@@ -482,7 +482,7 @@ async function processReceiptOCR(fileInput) {
         let detectedDateTime = '';
 
         // -------------------------------------------------------------
-        // 1. REFERENCE NUMBER DETECTION (SUPPORTS BDO, INSTAPAY, GCASH, MAYA)
+        // 2. REFERENCE NUMBER DETECTION
         // -------------------------------------------------------------
         
         // Priority 1: Match labeled reference numbers including hyphenated bank formats (e.g. BN-20260930-04600502)
@@ -512,21 +512,43 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 2. UNIVERSAL AMOUNT DETECTION (PHP, ₱, Total Amount, Sent!)
+        // 3. ANTI-FAKE & FAKE RECEIPT GENERATOR FILTER
         // -------------------------------------------------------------
-        
-        // Priority 1: Match "PHP 17,000.00" or "Total Amount PHP 17,000.00"
-        let amountMatch = text.match(/(?:Total\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
+        const isFakeGeneratorPattern = (ref) => {
+            const cleanRef = ref.toUpperCase().replace(/[\s\-_]/g, '');
+            
+            // Check 1: Nagsisimula sa letrang 'G' na may kasamang dummy sequence (e.g. G1709123456789)
+            if (/^G\d{2,4}12345678/i.test(cleanRef) || /^G1709123456/i.test(cleanRef)) return true;
+            
+            // Check 2: Sequential dummy numbers (e.g. 12345678, 23456789, 98765432)
+            if (/12345678|23456789|34567890|98765432|87654321/.test(cleanRef)) return true;
+
+            // Check 3: Repeated identical numbers (e.g. 00000000, 11111111, 99999999)
+            if (/(\d)\1{7,}/.test(cleanRef)) return true;
+
+            return false;
+        };
+
+        if (detectedRef && isFakeGeneratorPattern(detectedRef)) {
+            statusBox.classList.remove('alert-info');
+            statusBox.classList.add('alert-danger');
+            statusText.innerHTML = `❌ <b>Fake Receipt Detected!</b> Reference Number (<b>${detectedRef}</b>) matches a known fake receipt template format. Please upload an actual official receipt screenshot.`;
+            fileInput.value = "";
+            return;
+        }
+
+        // -------------------------------------------------------------
+        // 4. UNIVERSAL AMOUNT DETECTION
+        // -------------------------------------------------------------
+        let amountMatch = text.match(/(?:Total\s*Amount|Amount\s*Sent|Sent\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
         
         if (amountMatch) {
             detectedAmount = amountMatch[1].replace(/,/g, '');
         } else {
-            // Priority 2: Standalone currency match (e.g., PHP 17,000.00)
             let currencyMatch = text.match(/(?:PHP|₱)\s*([\d,]+\.\d{2})/i);
             if (currencyMatch) {
                 detectedAmount = currencyMatch[1].replace(/,/g, '');
             } else {
-                // Priority 3: Fallback decimal match
                 let fallbackAmount = text.match(/\b[\d,]+\.\d{2}\b/);
                 if (fallbackAmount) {
                     detectedAmount = fallbackAmount[0].replace(/,/g, '');
@@ -535,7 +557,7 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 3. DATE & TIME DETECTION (e.g. Sep 30, 2026 03:49 PM)
+        // 5. DATE & TIME DETECTION
         // -------------------------------------------------------------
         let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?\b/i);
         if (!dateTimeMatch) {
@@ -546,12 +568,12 @@ async function processReceiptOCR(fileInput) {
         }
 
         // -------------------------------------------------------------
-        // 4. FINAL STRICT VALIDATION
+        // 6. FINAL VALIDATION
         // -------------------------------------------------------------
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear GCash, Maya, or Bank Transfer receipt screenshot.';
+            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear official payment receipt screenshot.';
             fileInput.value = "";
             return;
         }
