@@ -394,7 +394,7 @@ if (isset($_POST['submit_refund'])) {
         $up_ref = $pdo->prepare("UPDATE customer_requests SET status = 'Completed', refund_status = 'Refunded', refund_receipt = ?, refund_reference = ?, email_status = 'Completed' WHERE id = ?");
         $up_ref->execute([$proof_path, $ref_no, $req_id]);
 
-        $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme 
+        $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme, o.paid_amount 
                                    FROM customer_requests cr 
                                    JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
                                    WHERE cr.id = ?");
@@ -405,13 +405,18 @@ if (isset($_POST['submit_refund'])) {
             $customer_email = $t_data['email'];
             $customer_name = $t_data['fullname'] . ' ' . $t_data['surname'];
             $order_number = $t_data['order_number'];
-            $total_amount = $t_data['total_amount'];
+            $total_amount = (float)$t_data['total_amount'];
             $payment_method = strtoupper($t_data['payment_method']);
             $payment_scheme = strtolower($t_data['payment_scheme']);
+            $paid_amount = isset($t_data['paid_amount']) ? (float)$t_data['paid_amount'] : 0;
             
+            // Tumpak na pagkalkula ng refund amount para sa 50% downpayment vs Full Payment
             $ref_amount = $total_amount;
-            if ($total_amount >= 5000 && strpos($payment_scheme, '50') !== false) {
-                $ref_amount = $total_amount * 0.5;
+            if ($total_amount >= 5000 && (strpos($payment_scheme, '50') !== false || strpos($payment_scheme, 'down') !== false)) {
+                $ref_amount = $paid_amount > 0 ? $paid_amount : ($total_amount * 0.5);
+            } else {
+                // Kung full payment online, ang ire-refund ay ang kabuuang binayad
+                $ref_amount = $paid_amount > 0 ? $paid_amount : $total_amount;
             }
 
             // Fixed Image URL generation for Email client compatibility
@@ -816,6 +821,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                             </div>
                                         <?php elseif($req_status == 'Approved'): ?>
                                             <?php 
+                                            // Tinitiyak natin na sasailalim sa refund ang GCASH o MAYA kung may bayad na
                                             $needs_refund = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
                                             ?>
                                             <?php if($needs_refund): ?>
@@ -1032,7 +1038,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                         <?php 
                                         $req_status = $row['status'];
                                         
-                                        // Fixed Action Logic for Exchanges tab to prevent premature 'Handled' status
                                         if ($req_status === 'Pending'): 
                                         ?>
                                             <div class="d-flex flex-column gap-1">
@@ -1158,7 +1163,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
-// Improved OCR Function with Mobile Number Filtering to capture exact Reference Number
 async function processRefundOCR(fileInput, rowId) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -1184,11 +1188,8 @@ async function processRefundOCR(fileInput, rowId) {
         });
 
         const text = result.data.text;
-        console.log("OCR Refund Extracted Text:\n", text);
-
         let detectedRef = '';
 
-        // Hanapin ang mga mobile number sa resibo para maiwasang makuha bilang reference
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         for (let i = 0; i < lines.length; i++) {
@@ -1199,34 +1200,29 @@ async function processRefundOCR(fileInput, rowId) {
             }
         }
 
-        // 1. Unang subukan hanapin sa tabi ng mga keywords tulad ng Ref, Reference, o Trace Number
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
             let cleaned = refMatch[1].trim();
             let cleanRefDigits = cleaned.replace(/\D/g, '');
-            // Siguraduhing hindi ito ang mobile number ng customer
             if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
                 detectedRef = cleaned;
             }
         }
 
-        // 2. Kung walang keyword, hanapin ang 10-20 digit number na HINDI mobile number (hindi nagsisimula sa 09 o 639)
         if (!detectedRef) {
             const allNumberMatches = text.match(/\b\d{10,20}\b/g);
             if (allNumberMatches) {
                 for (let num of allNumberMatches) {
                     let cleanNum = num.trim();
-                    if (foundPhone && cleanNum === foundPhone) continue; // Laktawan kung ito ang mobile number
-                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Laktawan ang mga mobile prefix
-                    
+                    if (foundPhone && cleanNum === foundPhone) continue;
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
                     detectedRef = cleanNum;
                     break;
                 }
             }
         }
 
-        // 3. Fallback para sa Maya format (spaced hex / alphanumeric codes)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
@@ -1242,11 +1238,10 @@ async function processRefundOCR(fileInput, rowId) {
         } else {
             statusBox.classList.remove('alert-info', 'alert-success');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Reference number not automatically detected (avoided mobile number). Please type it manually.';
+            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
         }
 
     } catch (error) {
-        console.error("OCR Error:", error);
         statusBox.classList.remove('alert-info', 'alert-success');
         statusBox.classList.add('alert-warning');
         statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
@@ -1265,7 +1260,6 @@ function viewReceipt(data) {
             items = Object.values(cartObj);
         }
     } catch (e) {
-        console.error("Cart parsing error:", e);
         items = [];
     }
 
