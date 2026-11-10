@@ -252,7 +252,7 @@ if (isset($_POST['send_email_update'])) {
             </div>
         ";
 
-    // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
+  // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
     } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
         $decline_reason_text = !empty($order['decline_reason']) ? nl2br(htmlspecialchars($order['decline_reason'])) : 'No specific reason provided.';
         $pay_method_email = strtoupper(trim($order['payment_method'] ?? 'COD'));
@@ -263,15 +263,27 @@ if (isset($_POST['send_email_update'])) {
             $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
             $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
 
-            // Fixed Absolute URL generation for Email client compatibility
-            $raw_refund_proof = $order['refund_receipt'];
+            $raw_refund_proof = trim($order['refund_receipt']);
             $refundImgSrc = $raw_refund_proof;
-            if (strpos($raw_refund_proof, 'drive.google.com') === false && !preg_match('/^https?:\/\//', $raw_refund_proof)) {
+
+            // Kunin ang tamang Google Drive file ID kung naka-save man bilang Drive link o file ID
+            $driveFileId = '';
+            if (strpos($raw_refund_proof, 'drive.google.com') !== false || strpos($raw_refund_proof, 'id=') !== false) {
+                if (preg_match('/[?&]id=([a-zA-Z0-9_-]+)/', $raw_refund_proof, $match)) {
+                    $driveFileId = $match[1];
+                }
+            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $raw_refund_proof) && strpos($raw_refund_proof, '/') === false) {
+                $driveFileId = $raw_refund_proof;
+            }
+
+            if (!empty($driveFileId)) {
+                // Gamitin ang direct Google Drive export link para lumitaw nang tuwiran sa Gmail
+                $refundImgSrc = "https://drive.google.com/uc?export=view&id=" . $driveFileId;
+            } elseif (!preg_match('/^https?:\/\//', $raw_refund_proof)) {
+                // Kung nasa local server nakatago, gawan ng absolute URL
                 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
                 $host = $_SERVER['HTTP_HOST'];
                 $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($raw_refund_proof, '/');
-            } else {
-                $refundImgSrc = getProductImageSrc($raw_refund_proof);
             }
 
             $refundEmailSection = "

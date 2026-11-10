@@ -415,11 +415,23 @@ if (isset($_POST['submit_refund'])) {
             }
 
             // Fixed Image URL generation for Email client compatibility
-            $refundImgSrc = $proof_path;
-            if (strpos($proof_path, 'drive.google.com') === false && !preg_match('/^https?:\/\//', $proof_path)) {
+            $raw_refund_proof = trim($proof_path);
+            $refundImgSrc = $raw_refund_proof;
+            $driveFileId = '';
+            if (strpos($raw_refund_proof, 'drive.google.com') !== false || strpos($raw_refund_proof, 'id=') !== false) {
+                if (preg_match('/[?&]id=([a-zA-Z0-9_-]+)/', $raw_refund_proof, $match)) {
+                    $driveFileId = $match[1];
+                }
+            } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $raw_refund_proof) && strpos($raw_refund_proof, '/') === false) {
+                $driveFileId = $raw_refund_proof;
+            }
+
+            if (!empty($driveFileId)) {
+                $refundImgSrc = "https://drive.google.com/uc?export=view&id=" . $driveFileId;
+            } elseif (!preg_match('/^https?:\/\//', $raw_refund_proof)) {
                 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
                 $host = $_SERVER['HTTP_HOST'];
-                $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($proof_path, '/');
+                $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($raw_refund_proof, '/');
             }
 
             $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;' alt='Refund Receipt'></a></p>";
@@ -466,6 +478,10 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     <title>Admin | Items Request Management</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <!-- Tesseract.js OCR Engine -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
     <style>
         body {
             background: #f4f6f9;
@@ -720,12 +736,14 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                             ?>
                                 <tr><td colspan="8" class="text-center text-muted py-3">No cancellation requests found.</td></tr>
                             <?php endif; ?>
-                            <?php foreach($cancel_rows as $row): ?>
+                            <?php foreach($cancel_rows as $row): 
+                                $pay_method = strtoupper(trim($row['payment_method'] ?? ''));
+                            ?>
                                 <tr>
                                     <td class="fw-bold text-primary">#<?php echo htmlspecialchars($row['order_number']); ?></td>
                                     <td><?php echo htmlspecialchars($row['account']); ?></td>
                                     <td>
-                                        <span class="badge bg-dark"><?php echo strtoupper(htmlspecialchars($row['payment_method'])); ?></span>
+                                        <span class="badge bg-dark"><?php echo $pay_method; ?></span>
                                         <?php if(!empty($row['payment_scheme'])): ?>
                                             <br><small class="text-muted"><?php echo htmlspecialchars($row['payment_scheme']); ?></small>
                                         <?php endif; ?>
@@ -798,7 +816,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                             </div>
                                         <?php elseif($req_status == 'Approved'): ?>
                                             <?php 
-                                            $pay_method = strtoupper($row['payment_method']);
                                             $needs_refund = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
                                             ?>
                                             <?php if($needs_refund): ?>
@@ -862,7 +879,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                 </div>
                                 <?php endif; ?>
 
-                                <!-- REFUND PAYMENT MODAL -->
+                                <!-- REFUND PAYMENT MODAL WITH OCR -->
                                 <?php if($row['status'] == 'Approved' && ($pay_method === 'GCASH' || $pay_method === 'MAYA')): ?>
                                 <div class="modal fade" id="refundModal<?php echo $row['id']; ?>" tabindex="-1">
                                     <div class="modal-dialog">
@@ -874,13 +891,19 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                 </div>
                                                 <div class="modal-body text-start">
                                                     <input type="hidden" name="ticket_id" value="<?php echo $row['id']; ?>">
+                                                    
+                                                    <!-- OCR Status Message Box -->
+                                                    <div id="ocr_status_<?php echo $row['id']; ?>" class="alert alert-info py-2 d-none small">
+                                                        <span id="ocr_status_text_<?php echo $row['id']; ?>">Scanning receipt via OCR...</span>
+                                                    </div>
+
                                                     <div class="mb-3">
-                                                        <label class="form-label fw-bold small">E-Wallet Reference Number</label>
-                                                        <input type="text" name="refund_reference" class="form-control" placeholder="Enter transaction reference number..." required>
+                                                        <label class="form-label fw-bold small">E-Wallet Reference Number (Auto-detected)</label>
+                                                        <input type="text" name="refund_reference" id="refundReferenceInput_<?php echo $row['id']; ?>" class="form-control" placeholder="Enter transaction reference number..." required>
                                                     </div>
                                                     <div class="mb-3">
                                                         <label class="form-label fw-bold small">Upload Refund Receipt / Proof</label>
-                                                        <input type="file" name="refund_receipt" class="form-control" accept=".jpg,.jpeg,.png,.webp" required>
+                                                        <input type="file" name="refund_receipt" class="form-control" accept=".jpg,.jpeg,.png,.webp" onchange="processRefundOCR(this, '<?php echo $row['id']; ?>')" required>
                                                     </div>
                                                 </div>
                                                 <div class="modal-footer">
@@ -1136,6 +1159,94 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 });
+
+// OCR Function para sa Refund Receipt
+async function processRefundOCR(fileInput, rowId) {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const statusBox = document.getElementById('ocr_status_' + rowId);
+    const statusText = document.getElementById('ocr_status_text_' + rowId);
+    const refInput = document.getElementById('refundReferenceInput_' + rowId);
+
+    refInput.value = "";
+
+    statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    statusBox.classList.add('alert-info');
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning refund receipt via OCR...';
+
+    try {
+        const result = await Tesseract.recognize(file, 'eng', {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    let progress = Math.round(m.progress * 100);
+                    statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt text: ${progress}%`;
+                }
+            }
+        });
+
+        const text = result.data.text;
+        console.log("OCR Refund Extracted Text:\n", text);
+
+        let detectedRef = '';
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        let foundPhone = '';
+        for (let i = 0; i < lines.length; i++) {
+            let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
+            if (pMatch) {
+                foundPhone = pMatch[0].trim();
+                break;
+            }
+        }
+
+        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
+        
+        if (refMatch) {
+            let cleaned = refMatch[1].trim();
+            let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
+            let cleanRefDigits = cleaned.replace(/\D/g, '');
+
+            if (cleaned.length >= 8 && cleaned.length <= 26 && (!cleanPhoneDigits || cleanRefDigits !== cleanPhoneDigits)) {
+                detectedRef = cleaned;
+            }
+        }
+
+        if (!detectedRef) {
+            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
+            if (mayaHexMatch) {
+                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
+            }
+        }
+
+        if (!detectedRef) {
+            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
+            if (spaceSeparatedMatch) {
+                let candidate = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
+                let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
+                if (!cleanPhoneDigits || candidate !== cleanPhoneDigits) {
+                    detectedRef = candidate;
+                }
+            }
+        }
+
+        if (detectedRef) {
+            refInput.value = detectedRef;
+            statusBox.classList.remove('alert-info', 'alert-danger');
+            statusBox.classList.add('alert-success');
+            statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
+        } else {
+            statusBox.classList.remove('alert-info', 'alert-success');
+            statusBox.classList.add('alert-warning');
+            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually in the input field.';
+        }
+
+    } catch (error) {
+        console.error("OCR Error:", error);
+        statusBox.classList.remove('alert-info', 'alert-success');
+        statusBox.classList.add('alert-warning');
+        statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
+    }
+}
 
 function viewReceipt(data) {
     const orderStatus = (data.status || 'pending').toUpperCase();
