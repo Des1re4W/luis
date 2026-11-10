@@ -51,8 +51,8 @@ if (isset($_POST['place_order'])) {
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
 
-    // BACKEND STRICT VALIDATION FOR GCASH / MAYA
-    if (in_array($payment_method, ['GCash', 'Maya'])) {
+    // BACKEND STRICT VALIDATION FOR ONLINE PAYMENTS (GCash, Maya, Bank Transfer)
+    if (in_array($payment_method, ['GCash', 'Maya', 'Bank Transfer'])) {
         if (empty($ref_no) || $detected_paid_amount <= 0) {
             die("<script>alert('Order Failed: Invalid receipt photo. No valid Reference Number or Paid Amount detected by the OCR scanner.'); history.back();</script>");
         }
@@ -62,7 +62,7 @@ if (isset($_POST['place_order'])) {
     }
 
     // UPLOAD CUSTOMER PROOF OF PAYMENT DIRECTLY TO "Customer Receipt" GOOGLE DRIVE FOLDER
-    if (in_array($payment_method, ['GCash', 'Maya'])) {
+    if (in_array($payment_method, ['GCash', 'Maya', 'Bank Transfer'])) {
         if (isset($_FILES['proof_of_payment']) && $_FILES['proof_of_payment']['error'] === UPLOAD_ERR_OK) {
             $tmp = $_FILES['proof_of_payment']['tmp_name'];
             $file_name = $_FILES['proof_of_payment']['name'];
@@ -80,7 +80,6 @@ if (isset($_POST['place_order'])) {
 
                     try {
                         if (function_exists('uploadProductImageToDrive')) {
-                            // Ipinasa ang $customerFolderId bilang 3rd parameter
                             $file_id = uploadProductImageToDrive($tmp, $new_filename, $customerFolderId);
                             if (!empty($file_id)) {
                                 $proof_of_payment = "https://drive.google.com/uc?export=view&id=" . $file_id;
@@ -106,7 +105,6 @@ if (isset($_POST['place_order'])) {
 
     try {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        
         $pdo->beginTransaction();
 
         // Insert order into database
@@ -318,12 +316,13 @@ if (isset($_POST['place_order'])) {
                             <?php endif; ?>
                             <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="GCash" onclick="togglePaymentFields()" id="gcash_radio"><label class="form-check-label" for="gcash_radio">GCash</label></div>
                             <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Maya" onclick="togglePaymentFields()" id="maya_radio"><label class="form-check-label" for="maya_radio">Maya</label></div>
+                            <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Bank Transfer" onclick="togglePaymentFields()" id="bank_radio"><label class="form-check-label" for="bank_radio">Bank Transfer (MariBank, InstaPay, BDO, UnionBank, etc.)</label></div>
                             <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
                         </div>
 
                         <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC OCR EXTRACTOR -->
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
-                            <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code</a>
+                            <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code / Bank Details</a>
                             
                             <!-- Hidden Inputs: Automatically saved to Database -->
                             <input type="hidden" name="ref_no" id="ref_no_input">
@@ -335,7 +334,7 @@ if (isset($_POST['place_order'])) {
                                 <span id="ocr_status_text">Reading receipt image...</span>
                             </div>
 
-                            <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya)</label>
+                            <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya / Bank Receipt)</label>
                             <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-1" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
                             <small class="text-muted d-block mb-2"><i>Note: For best results, please upload a direct screenshot of your payment receipt.</i></small>
                         </div>
@@ -368,7 +367,7 @@ function togglePaymentFields() {
     const optionBox = document.getElementById('payment_option_box');
     const proofInput = document.getElementById('proof_of_payment_input');
 
-    if (selectedMethod === 'GCash' || selectedMethod === 'Maya') {
+    if (selectedMethod === 'GCash' || selectedMethod === 'Maya' || selectedMethod === 'Bank Transfer') {
         if (onlineFields) onlineFields.classList.remove('d-none');
         if (codMessage) codMessage.classList.add('d-none');
         if (optionBox) optionBox.classList.remove('d-none');
@@ -453,32 +452,72 @@ async function processReceiptOCR(fileInput) {
         let detectedAmount = '';
         let detectedDateTime = '';
 
-        let refMatch = text.match(/(?:Ref\.?\s*No\.?|Reference\s*No\.?|Transaction\s*No\.?|Ref)\s*:?\s*([0-9\s]{9,20})/i);
+        // -------------------------------------------------------------
+        // 1. UNIVERSAL REFERENCE NUMBER DETECTION (GCash, Maya, MariBank, InstaPay, BDO, BPI, UnionBank)
+        // -------------------------------------------------------------
+        
+        // Match standard keyword labels: "Reference ID", "Reference No", "Ref No", "Transaction ID", "Trace No", "InstaPay Ref"
+        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\s]{8,24})/i);
+        
         if (refMatch) {
-            let cleanedDigits = refMatch[1].replace(/\s+/g, '').trim();
-            if (cleanedDigits.length >= 9 && cleanedDigits.length <= 15) {
-                detectedRef = cleanedDigits;
+            let cleaned = refMatch[1].replace(/[\s\-_]+/g, '').trim();
+            // Siguraduhing may halo o may sapat na haba (halimbawa: 06C04EC5CA75 ng Maya o 10-13 digits ng GCash/MariBank)
+            if (cleaned.length >= 8 && cleaned.length <= 20) {
+                detectedRef = cleaned;
             }
         }
-        
+
+        // Fallback A: Maya Alphanumeric Hex pattern (hal. 06C0 4EC5 CA75)
         if (!detectedRef) {
-            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}\b/);
+            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
+            if (mayaHexMatch) {
+                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
+            }
+        }
+
+        // Fallback B: GCash 13-digit space separated numbers (hal. 1001 234 567 890 o 0019 123 4567)
+        if (!detectedRef) {
+            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
             if (spaceSeparatedMatch) {
                 detectedRef = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
             }
         }
 
-        let amountMatch = text.match(/(?:Total\s*Amount\s*Sent|Amount|Total|Sent|PHP|₱)\s*:?\s*₱?\s*([\d,]+\.\d{2})/i);
-        if (amountMatch) {
-            detectedAmount = amountMatch[1].replace(/,/g, '');
-        } else {
-            let fallbackAmount = text.match(/\b[\d,]+\.\d{2}\b/);
-            if (fallbackAmount) {
-                detectedAmount = fallbackAmount[0].replace(/,/g, '');
+        // Fallback C: Any isolated continuous block of 9 to 16 alphanumeric characters
+        if (!detectedRef) {
+            let standaloneMatch = text.match(/\b[A-Z0-9]{9,16}\b/i);
+            if (standaloneMatch && !/^(COMPLETED|SUCCESSFUL|TRANSFERRED|PAYMENT)$/i.test(standaloneMatch[0])) {
+                detectedRef = standaloneMatch[0].trim();
             }
         }
 
-        let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\b/i);
+        // -------------------------------------------------------------
+        // 2. UNIVERSAL AMOUNT DETECTION (Handles ₱, PHP, Maya '- ₱1.00', MariBank, InstaPay)
+        // -------------------------------------------------------------
+        
+        // Priority 1: Direct amount labels
+        let amountMatch = text.match(/(?:Total\s*Amount\s*(?:Sent|Paid)?|Amount\s*(?:Sent|Paid)?|Sent|Paid|Total)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
+        
+        if (amountMatch) {
+            detectedAmount = amountMatch[1].replace(/,/g, '');
+        } else {
+            // Priority 2: Maya or general format with currency symbol (halimbawa: - ₱1.00 o ₱ 1,500.00)
+            let currencyMatch = text.match(/[-–]?\s*(?:PHP|₱)\s*([\d,]+\.\d{2})/i);
+            if (currencyMatch) {
+                detectedAmount = currencyMatch[1].replace(/,/g, '');
+            } else {
+                // Priority 3: Any decimal number matching financial amount format (xx.xx)
+                let fallbackAmount = text.match(/\b[\d,]+\.\d{2}\b/);
+                if (fallbackAmount) {
+                    detectedAmount = fallbackAmount[0].replace(/,/g, '');
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // 3. DATE & TIME DETECTION
+        // -------------------------------------------------------------
+        let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?\b/i);
         if (!dateTimeMatch) {
             dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
         }
@@ -486,10 +525,13 @@ async function processReceiptOCR(fileInput) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
+        // -------------------------------------------------------------
+        // 4. VALIDATION AND DISPLAY RESULT
+        // -------------------------------------------------------------
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear GCash/Maya payment receipt screenshot.';
+            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear GCash, Maya, or Bank Transfer receipt screenshot.';
             fileInput.value = "";
             return;
         }
@@ -502,11 +544,11 @@ async function processReceiptOCR(fileInput) {
         statusBox.classList.add('alert-success');
         
         let message = `
-    <strong>✓ Receipt scanned successfully!</strong><br>
-    <small class="text-warning">
-        Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid order rejection.
-    </small><br>
-`;
+            <strong>✓ Receipt scanned successfully!</strong><br>
+            <small class="text-warning">
+                Reminder: Please ensure that the payment amount exactly matches the total amount due to avoid order rejection.
+            </small><br>
+        `;
         message += `Ref No: <b>${detectedRef}</b>`;
         message += `<br>Amount Sent: <b>₱${parseFloat(detectedAmount).toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
         if (detectedDateTime !== '') {
@@ -518,19 +560,19 @@ async function processReceiptOCR(fileInput) {
         console.error("OCR Reading Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Could not process image. Please upload a clear valid GCash or Maya receipt screenshot.';
+        statusText.innerHTML = '❌ Could not process image. Please upload a clear valid payment receipt screenshot.';
         fileInput.value = "";
     }
 }
 
 document.querySelector('form').addEventListener('submit', function(e) {
     const selectedRadio = document.querySelector('input[name="payment_method"]:checked');
-    if (selectedRadio && (selectedRadio.value === 'GCash' || selectedRadio.value === 'Maya')) {
+    if (selectedRadio && (selectedRadio.value === 'GCash' || selectedRadio.value === 'Maya' || selectedRadio.value === 'Bank Transfer')) {
         const refNo = document.getElementById('ref_no_input').value;
         const paidAmt = document.getElementById('paid_amount_input').value;
         
         if (!refNo || !paidAmt) {
-            alert("Checkout Blocked: Valid payment receipt details were not detected. Please upload a valid GCash or Maya payment receipt.");
+            alert("Checkout Blocked: Valid payment receipt details were not detected. Please upload a valid payment receipt.");
             e.preventDefault();
             return false;
         }
