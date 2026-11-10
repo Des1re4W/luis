@@ -7,7 +7,14 @@ if (!isset($_FILES['proof_of_payment']) || $_FILES['proof_of_payment']['error'] 
     exit();
 }
 
-$api_key = 'AQ.Ab8RN6LGvgq3I4nmTgmAUxvjslTdG2OtawYHUJM52G8HI_XX_A';
+// Kumuha mula sa Environment Variable (.env)
+$api_key = getenv('GEMINI_API_KEY') ?: ($_ENV['GEMINI_API_KEY'] ?? '');
+
+if (empty($api_key)) {
+    echo json_encode(['success' => false, 'message' => 'Server Error: Gemini API key is missing in configuration.']);
+    exit();
+}
+
 $file_tmp = $_FILES['proof_of_payment']['tmp_name'];
 $mime_type = mime_content_type($file_tmp);
 
@@ -55,7 +62,7 @@ $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
 if ($http_code !== 200 || !$response) {
-    echo json_encode(['success' => false, 'message' => 'Gemini API Error or Connection Failed.']);
+    echo json_encode(['success' => false, 'message' => 'Gemini API Error or Connection Failed. (HTTP Code: ' . $http_code . ')']);
     exit();
 }
 

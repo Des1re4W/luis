@@ -470,7 +470,7 @@ async function processReceiptOCR(fileInput) {
     formData.append('proof_of_payment', file);
 
     try {
-        const response = await fetch('api/scan_receipt.php', {
+        const response = await fetch('../api/scan_receipt.php', {
             method: 'POST',
             body: formData
         });
