@@ -4,8 +4,6 @@ session_start();
 // 1. Load Composer Autoloader and Database Connection (handles dotenv and PDO)
 require_once __DIR__ . "/config/db.php";
 
-use Resend\Resend;
-
 date_default_timezone_set('Asia/Manila');
 
 $message = "";
@@ -41,7 +39,8 @@ function sendResetOtp(string $email, string $otp): array
     }
 
     try {
-        $resend = Resend::client($apiKey);
+        // Gamitin ang fully-qualified namespace para maiwasan ang "already in use" conflict
+        $resend = \Resend\Resend::client($apiKey);
 
         $resend->emails->send([
             'from'    => 'R. Taipan Hardware <onboarding@resend.dev>',
