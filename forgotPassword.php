@@ -56,12 +56,13 @@ function sendResetOtp(string $email, string $otp): array
         return $default;
     };
 
+   // Direct configuration check with environment & hardcoded fallbacks
     $smtpHost   = $getEnvVar('SMTP_HOST', 'smtp.gmail.com');
-    $smtpUser   = $getEnvVar('SMTP_USER', '');
-    $smtpPass   = $getEnvVar('SMTP_PASS', '');
+    $smtpUser   = $getEnvVar('SMTP_USER', 'rtaipancss@gmail.com');
+    $smtpPass   = $getEnvVar('SMTP_PASS', 'nfgairnkprpxitkk');
     $smtpPort   = (int) $getEnvVar('SMTP_PORT', 587);
-    $smtpSecure = $getEnvVar('SMTP_SECURE', 'tls'); // 'tls' or 'ssl'
-    $fromEmail  = $getEnvVar('SMTP_FROM_EMAIL', $smtpUser);
+    $smtpSecure = $getEnvVar('SMTP_SECURE', 'tls');
+    $fromEmail  = $getEnvVar('SMTP_FROM_EMAIL', 'rtaipancss@gmail.com');
     $fromName   = $getEnvVar('SMTP_FROM_NAME', 'R. Taipan Hardware');
 
     if (empty($smtpUser) || empty($smtpPass)) {
