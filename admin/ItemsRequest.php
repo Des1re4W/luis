@@ -1030,21 +1030,19 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                     </td>
                                     <td class="text-center sticky-action">
                                         <?php 
-                                        $ord_status = strtolower($row['order_status'] ?? '');
                                         $req_status = $row['status'];
                                         
-                                        if ($ord_status === 'cancelled' || $ord_status === 'completed' || $req_status === 'Completed' || $req_status === 'Declined'): 
+                                        // Fixed Action Logic for Exchanges tab to prevent premature 'Handled' status
+                                        if ($req_status === 'Pending'): 
                                         ?>
-                                            <span class="text-muted small"><i class="bi bi-check-circle-fill text-primary"></i> Handled</span>
-                                        <?php elseif($req_status == 'Pending'): ?>
                                             <div class="d-flex flex-column gap-1">
                                                 <a href="ItemsRequest.php?id=<?php echo $row['id']; ?>&status=Approved" class="btn btn-sm btn-success px-2 py-1" onclick="return confirm('Approve this request?')">Approve</a>
                                                 <button type="button" class="btn btn-sm btn-danger px-2 py-1" data-bs-toggle="modal" data-bs-target="#declineModalEx<?php echo $row['id']; ?>">Decline</button>
                                             </div>
-                                        <?php elseif($req_status == 'Approved'): ?>
+                                        <?php elseif ($req_status === 'Approved'): ?>
                                             <a href="ItemsRequest.php?id=<?php echo $row['id']; ?>&status=Completed" class="btn btn-sm btn-primary px-2 py-1 w-100" onclick="return confirm('Mark as Completed?')">Mark Completed</a>
                                         <?php else: ?>
-                                            <span class="text-muted small"><i class="bi bi-check-circle-fill text-primary"></i> Completed</span>
+                                            <span class="text-muted small"><i class="bi bi-check-circle-fill text-primary"></i> Handled</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="text-center sticky-emailer">
@@ -1160,7 +1158,7 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
-// OCR Function para sa Refund Receipt
+// Improved OCR Function with Mobile Number Filtering to capture exact Reference Number
 async function processRefundOCR(fileInput, rowId) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -1189,43 +1187,50 @@ async function processRefundOCR(fileInput, rowId) {
         console.log("OCR Refund Extracted Text:\n", text);
 
         let detectedRef = '';
+
+        // Hanapin ang mga mobile number sa resibo para maiwasang makuha bilang reference
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         for (let i = 0; i < lines.length; i++) {
             let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
             if (pMatch) {
-                foundPhone = pMatch[0].trim();
+                foundPhone = pMatch[0].replace(/\D/g, '').trim();
                 break;
             }
         }
 
+        // 1. Unang subukan hanapin sa tabi ng mga keywords tulad ng Ref, Reference, o Trace Number
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
             let cleaned = refMatch[1].trim();
-            let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
             let cleanRefDigits = cleaned.replace(/\D/g, '');
-
-            if (cleaned.length >= 8 && cleaned.length <= 26 && (!cleanPhoneDigits || cleanRefDigits !== cleanPhoneDigits)) {
+            // Siguraduhing hindi ito ang mobile number ng customer
+            if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
                 detectedRef = cleaned;
             }
         }
 
+        // 2. Kung walang keyword, hanapin ang 10-20 digit number na HINDI mobile number (hindi nagsisimula sa 09 o 639)
+        if (!detectedRef) {
+            const allNumberMatches = text.match(/\b\d{10,20}\b/g);
+            if (allNumberMatches) {
+                for (let num of allNumberMatches) {
+                    let cleanNum = num.trim();
+                    if (foundPhone && cleanNum === foundPhone) continue; // Laktawan kung ito ang mobile number
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Laktawan ang mga mobile prefix
+                    
+                    detectedRef = cleanNum;
+                    break;
+                }
+            }
+        }
+
+        // 3. Fallback para sa Maya format (spaced hex / alphanumeric codes)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
                 detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
-            }
-        }
-
-        if (!detectedRef) {
-            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
-            if (spaceSeparatedMatch) {
-                let candidate = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
-                let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
-                if (!cleanPhoneDigits || candidate !== cleanPhoneDigits) {
-                    detectedRef = candidate;
-                }
             }
         }
 
@@ -1237,7 +1242,7 @@ async function processRefundOCR(fileInput, rowId) {
         } else {
             statusBox.classList.remove('alert-info', 'alert-success');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually in the input field.';
+            statusText.innerHTML = '⚠️ Reference number not automatically detected (avoided mobile number). Please type it manually.';
         }
 
     } catch (error) {

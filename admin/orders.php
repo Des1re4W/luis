@@ -999,7 +999,7 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-// OCR Processing Function para sa Admin Refund Receipt
+// Improved OCR Processing Function para sa Admin Refund Receipt (Na-filter na ang Mobile Number)
 async function processRefundOCR(fileInput) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -1029,46 +1029,49 @@ async function processRefundOCR(fileInput) {
 
         let detectedRef = '';
 
-        // Hanapin ang linya ng mobile number para maiwasan makuhang reference
+        // 1. Hanapin muna ang mobile number sa buong teksto para maiwasang makuha bilang reference
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         for (let i = 0; i < lines.length; i++) {
             let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
             if (pMatch) {
-                foundPhone = pMatch[0].trim();
+                foundPhone = pMatch[0].replace(/\D/g, '').trim();
                 break;
             }
         }
 
-        // Reference Number Regex Extraction
+        // 2. Subukang kunin gamit ang mga kilalang keyword prefixes ng reference code
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
             let cleaned = refMatch[1].trim();
-            let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
             let cleanRefDigits = cleaned.replace(/\D/g, '');
-
-            if (cleaned.length >= 8 && cleaned.length <= 26 && (!cleanPhoneDigits || cleanRefDigits !== cleanPhoneDigits)) {
+            // Siguraduhing hindi ito ang mobile number at saklaw ng tamang haba
+            if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
                 detectedRef = cleaned;
             }
         }
 
-        // Fallbacks kung walang structured match
+        // 3. Fallback: Mag-scan ng mga numerong 10-20 digits pero i-filter out kung mobile number (nagsisimula sa 09 o 639)
+        if (!detectedRef) {
+            const allNumberMatches = text.match(/\b\d{10,20}\b/g);
+            if (allNumberMatches) {
+                for (let num of allNumberMatches) {
+                    let cleanNum = num.trim();
+                    if (foundPhone && cleanNum === foundPhone) continue; // Laktawan kung ito ang mobile number
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Laktawan ang PH mobile prefixes
+                    
+                    detectedRef = cleanNum;
+                    break;
+                }
+            }
+        }
+
+        // 4. Fallback para sa Maya format (spaced hex / alphanumeric codes)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
                 detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
-            }
-        }
-
-        if (!detectedRef) {
-            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
-            if (spaceSeparatedMatch) {
-                let candidate = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
-                let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
-                if (!cleanPhoneDigits || candidate !== cleanPhoneDigits) {
-                    detectedRef = candidate;
-                }
             }
         }
 
@@ -1080,7 +1083,7 @@ async function processRefundOCR(fileInput) {
         } else {
             statusBox.classList.remove('alert-info', 'alert-success');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually in the input field.';
+            statusText.innerHTML = '⚠️ Reference number not automatically detected (mobile numbers excluded). Please type it manually.';
         }
 
     } catch (error) {
