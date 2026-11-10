@@ -1,36 +1,12 @@
 <?php
 session_start();
-require_once __DIR__ . "/config/db.php";
 
-// 1. Load Composer Autoloader
-$autoloader = __DIR__ . '/vendor/autoload.php';
-if (file_exists($autoloader)) {
-    require_once $autoloader;
-} else {
-    die("Error: Vendor autoloader not found. Please run 'composer require resend/resend-php'.");
-}
+// 1. Load Composer Autoloader and Database Connection (handles dotenv and PDO)
+require_once __DIR__ . "/config/db.php";
 
 use Resend\Resend;
 
 date_default_timezone_set('Asia/Manila');
-
-// 2. Automatically load a local .env file if running in local development
-$envFilePath = __DIR__ . '/.env';
-if (file_exists($envFilePath)) {
-    $lines = file($envFilePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if (strpos($line, '#') === 0 || empty($line)) continue;
-        if (strpos($line, '=') !== false) {
-            list($name, $value) = explode('=', $line, 2);
-            $name = trim($name);
-            $value = trim($value, " \t\n\r\0\x0B\"'");
-            putenv("{$name}={$value}");
-            $_ENV[$name] = $value;
-            $_SERVER[$name] = $value;
-        }
-    }
-}
 
 $message = "";
 $messageType = "info";
