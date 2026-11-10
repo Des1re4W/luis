@@ -21,7 +21,6 @@ function sendCustomerRequestEmail(string $toEmail, string $toName, string $subje
         return ['success' => false, 'error' => 'RESEND_API_KEY is missing in environment variables.'];
     }
 
-    // Siguraduhing hindi blangko ang html body para maiwasan ang validation error 422
     if (empty(trim($htmlBody))) {
         $htmlBody = "<p>Hello " . htmlspecialchars($toName) . ", you have a notification regarding your request.</p>";
     }
@@ -234,7 +233,6 @@ if (isset($_POST['update_status'])) {
                     $up_ord->execute([$admin_id, $order_number]);
                 }
 
-                // AUTOMATIC INSERTION SA DAMAGED_ITEMS TABLE KUNG DAMAGED ANG REASON
                 if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
                     $check_dmg = $pdo->prepare("SELECT id FROM damaged_items WHERE order_number = ? AND account = ? LIMIT 1");
                     $check_dmg->execute([$order_number, $ticket_data['account']]);
@@ -314,7 +312,6 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
                     $up_ord->execute([$admin_id, $order_number]);
                 }
 
-                // AUTOMATIC INSERTION SA DAMAGED_ITEMS TABLE KUNG DAMAGED ANG REASON
                 if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
                     $check_dmg = $pdo->prepare("SELECT id FROM damaged_items WHERE order_number = ? AND account = ? LIMIT 1");
                     $check_dmg->execute([$order_number, $ticket_data['account']]);
@@ -366,10 +363,8 @@ if (isset($_POST['submit_refund'])) {
         if (in_array($file_ext, $allowed_exts)) {
             $proof_filename = "refund_req_" . $req_id . "_" . time() . "." . $file_ext;
 
-            // Dedicated Refund Receipt Google Drive Folder ID
             $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
 
-            // 1. Unang subukang i-upload DIREKTA sa Google Drive mula sa PHP Temp File
             try {
                 if (function_exists('uploadProductImageToDrive')) {
                     $file_id = uploadProductImageToDrive($file_tmp, $proof_filename, $REFUND_RECEIPTS_FOLDER_ID);
@@ -381,7 +376,6 @@ if (isset($_POST['submit_refund'])) {
                 error_log("ADMIN REFUND REQUEST GOOGLE DRIVE UPLOAD TIMEOUT/ERROR: " . $e->getMessage());
             }
 
-            // 2. Fallback sa Local Uploads directory kung nag-fail o nag-timeout ang Google Drive
             if (empty($proof_path)) {
                 $target_dir = "../uploads/";
                 if (!is_dir($target_dir)) {
@@ -420,8 +414,15 @@ if (isset($_POST['submit_refund'])) {
                 $ref_amount = $total_amount * 0.5;
             }
 
-            $refundImgSrc = getProductImageSrc($proof_path);
-            $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;'></a></p>";
+            // Fixed Image URL generation for Email client compatibility
+            $refundImgSrc = $proof_path;
+            if (strpos($proof_path, 'drive.google.com') === false && !preg_match('/^https?:\/\//', $proof_path)) {
+                $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+                $host = $_SERVER['HTTP_HOST'];
+                $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($proof_path, '/');
+            }
+
+            $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;' alt='Refund Receipt'></a></p>";
 
             $emailSubject = "Refund Update: Order #$order_number has been refunded";
             $emailBody = "
@@ -454,7 +455,6 @@ if (isset($_POST['submit_refund'])) {
     exit();
 }
 
-// UPDATE QUERIES: Isinama ang o.paid_amount at o.refund_reference
 $cancel_result   = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.paid_amount, o.refund_reference, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type = 'cancel' ORDER BY cr.id DESC");
 $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname, o.contact_number, o.full_address, o.landmark, o.cart, o.payment_method, o.payment_scheme, o.total_amount, o.ref_no, o.paid_amount, o.refund_reference, o.status as order_status FROM customer_requests cr LEFT JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id WHERE cr.request_type IN ('exchange', 'return', 'others') ORDER BY cr.id DESC");
 ?>
@@ -473,7 +473,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
             overflow-x: hidden;
         }
 
-        /* SIDEBAR */
         .sidebar {
             position: fixed;
             top: 0;
@@ -529,7 +528,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
             border-top: 1px solid rgba(255, 255, 255, 0.2);
         }
 
-        /* MAIN CONTENT */
         .main {
             margin-left: 260px;
             padding: 25px;
@@ -652,7 +650,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
 </head>
 <body>
 
-<!-- Mobile Navbar -->
 <nav class="navbar navbar-dark bg-dark d-lg-none px-3">
     <span class="navbar-brand fw-bold fs-6">
         <i class="bi bi-headset"></i> Admin Service Request
@@ -662,7 +659,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     </button>
 </nav>
 
-<!-- Sidebar -->
 <div class="sidebar" id="appSidebar">
     <h2>Admin<br>Dashboard</h2>
     <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
@@ -678,7 +674,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
     </div>
 </div>
 
-<!-- Main Content -->
 <div class="main">
     <div class="card card-custom p-3 p-md-4 bg-white mt-2 mt-md-3">
         <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center border-bottom pb-3 mb-4 gap-2">
@@ -789,12 +784,19 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                         </div>
                                     </td>
                                     <td class="text-center sticky-action">
-                                        <?php if($row['status'] == 'Pending'): ?>
+                                        <?php 
+                                        $ord_status = strtolower($row['order_status'] ?? '');
+                                        $req_status = $row['status'];
+                                        
+                                        if ($ord_status === 'cancelled' || $ord_status === 'completed' || $req_status === 'Completed' || $req_status === 'Declined'): 
+                                        ?>
+                                            <span class="text-muted small"><i class="bi bi-check-circle"></i> Handled</span>
+                                        <?php elseif($req_status == 'Pending'): ?>
                                             <div class="d-flex flex-column gap-1">
                                                 <a href="ItemsRequest.php?id=<?php echo $row['id']; ?>&status=Approved" class="btn btn-sm btn-success px-2 py-1" onclick="return confirm('Approve this cancellation request?')">Approve</a>
                                                 <button type="button" class="btn btn-sm btn-danger px-2 py-1" data-bs-toggle="modal" data-bs-target="#declineModal<?php echo $row['id']; ?>">Decline</button>
                                             </div>
-                                        <?php elseif($row['status'] == 'Approved'): ?>
+                                        <?php elseif($req_status == 'Approved'): ?>
                                             <?php 
                                             $pay_method = strtoupper($row['payment_method']);
                                             $needs_refund = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
@@ -1004,12 +1006,19 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                         </div>
                                     </td>
                                     <td class="text-center sticky-action">
-                                        <?php if($row['status'] == 'Pending'): ?>
+                                        <?php 
+                                        $ord_status = strtolower($row['order_status'] ?? '');
+                                        $req_status = $row['status'];
+                                        
+                                        if ($ord_status === 'cancelled' || $ord_status === 'completed' || $req_status === 'Completed' || $req_status === 'Declined'): 
+                                        ?>
+                                            <span class="text-muted small"><i class="bi bi-check-circle-fill text-primary"></i> Handled</span>
+                                        <?php elseif($req_status == 'Pending'): ?>
                                             <div class="d-flex flex-column gap-1">
                                                 <a href="ItemsRequest.php?id=<?php echo $row['id']; ?>&status=Approved" class="btn btn-sm btn-success px-2 py-1" onclick="return confirm('Approve this request?')">Approve</a>
                                                 <button type="button" class="btn btn-sm btn-danger px-2 py-1" data-bs-toggle="modal" data-bs-target="#declineModalEx<?php echo $row['id']; ?>">Decline</button>
                                             </div>
-                                        <?php elseif($row['status'] == 'Approved'): ?>
+                                        <?php elseif($req_status == 'Approved'): ?>
                                             <a href="ItemsRequest.php?id=<?php echo $row['id']; ?>&status=Completed" class="btn btn-sm btn-primary px-2 py-1 w-100" onclick="return confirm('Mark as Completed?')">Mark Completed</a>
                                         <?php else: ?>
                                             <span class="text-muted small"><i class="bi bi-check-circle-fill text-primary"></i> Completed</span>
@@ -1128,7 +1137,6 @@ document.addEventListener("DOMContentLoaded", function() {
     }
 });
 
-// View Receipt Function — Identical logic to orders.php
 function viewReceipt(data) {
     const orderStatus = (data.status || 'pending').toUpperCase();
 

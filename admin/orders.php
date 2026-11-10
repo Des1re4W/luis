@@ -263,7 +263,16 @@ if (isset($_POST['send_email_update'])) {
             $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
             $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
 
-            $refundImgSrc = getProductImageSrc($order['refund_receipt']);
+            // Fixed Absolute URL generation for Email client compatibility
+            $raw_refund_proof = $order['refund_receipt'];
+            $refundImgSrc = $raw_refund_proof;
+            if (strpos($raw_refund_proof, 'drive.google.com') === false && !preg_match('/^https?:\/\//', $raw_refund_proof)) {
+                $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+                $host = $_SERVER['HTTP_HOST'];
+                $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($raw_refund_proof, '/');
+            } else {
+                $refundImgSrc = getProductImageSrc($raw_refund_proof);
+            }
 
             $refundEmailSection = "
                 <div style='background:#f8f9fa; padding:15px; border-radius:5px; margin:15px 0;'>
@@ -273,7 +282,7 @@ if (isset($_POST['send_email_update'])) {
                     <br>
                     <p style='margin:0 0 5px 0;'><strong>Refund Proof:</strong></p>
                     <a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'>
-                        <img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:250px; border:1px solid #ddd; border-radius:4px;'>
+                        <img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:250px; border:1px solid #ddd; border-radius:4px;' alt='Refund Receipt'>
                     </a>
                 </div>
             ";
@@ -535,6 +544,9 @@ $orders_result = $pdo->query("SELECT * FROM orders ORDER BY id DESC");
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <!-- Tesseract.js OCR Engine for Admin Refund Receipt Scan -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
 <style>
 body{
@@ -840,7 +852,7 @@ body{
     </div>
 </div>
 
-<!-- DECLINE REASON & REFUND MODAL -->
+<!-- DECLINE REASON & REFUND MODAL WITH OCR -->
 <div class="modal fade" id="declineModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -863,15 +875,20 @@ body{
                         <div class="alert alert-warning py-2 small mb-3">
                             <i class="bi bi-info-circle-fill"></i> The mode of payment is <strong id="paymentMethodLabel"></strong>. Please provide the refund details.
                         </div>
+
+                        <!-- OCR Status Message Box -->
+                        <div id="ocr_status" class="alert alert-info py-2 d-none small">
+                            <span id="ocr_status_text">Scanning receipt via OCR...</span>
+                        </div>
                         
                         <div class="mb-3">
-                            <label class="form-label fw-bold small">Refund Reference Number</label>
-                            <input type="text" class="form-control" name="refund_reference" id="refundReferenceInput" placeholder="Reference Number">
+                            <label class="form-label fw-bold small">Refund Reference Number (Auto-detected via OCR or Manual)</label>
+                            <input type="text" class="form-control" name="refund_reference" id="refundReferenceInput" placeholder="Reference Number" required>
                         </div>
 
                         <div class="mb-3">
                             <label class="form-label fw-bold small">Upload Receipt Photo (GCash/Maya)</label>
-                            <input type="file" class="form-control" name="refund_receipt" id="refundReceiptInput" accept=".jpg,.jpeg,.png,.webp">
+                            <input type="file" class="form-control" name="refund_receipt" id="refundReceiptInput" accept=".jpg,.jpeg,.png,.webp" onchange="processRefundOCR(this)" required>
                         </div>
                     </div>
                 </div>
@@ -952,6 +969,11 @@ function openDeclineModal(orderId, paymentMethod) {
     const paymentMethodLabel = document.getElementById('paymentMethodLabel');
     const refInput = document.getElementById('refundReferenceInput');
     const receiptInput = document.getElementById('refundReceiptInput');
+    const statusBox = document.getElementById('ocr_status');
+
+    // Reset OCR status box pag binuksan ang modal
+    if (statusBox) statusBox.classList.add('d-none');
+    refInput.value = '';
 
     if (paymentMethod === 'GCASH' || paymentMethod === 'MAYA') {
         ewalletFields.style.display = 'block';
@@ -962,6 +984,98 @@ function openDeclineModal(orderId, paymentMethod) {
         ewalletFields.style.display = 'none';
         refInput.removeAttribute('required');
         receiptInput.removeAttribute('required');
+    }
+}
+
+// OCR Processing Function para sa Admin Refund Receipt
+async function processRefundOCR(fileInput) {
+    const file = fileInput.files[0];
+    if (!file) return;
+
+    const statusBox = document.getElementById('ocr_status');
+    const statusText = document.getElementById('ocr_status_text');
+    const refInput = document.getElementById('refundReferenceInput');
+
+    refInput.value = "";
+
+    statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    statusBox.classList.add('alert-info');
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning refund receipt via OCR...';
+
+    try {
+        const result = await Tesseract.recognize(file, 'eng', {
+            logger: m => {
+                if (m.status === 'recognizing text') {
+                    let progress = Math.round(m.progress * 100);
+                    statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt text: ${progress}%`;
+                }
+            }
+        });
+
+        const text = result.data.text;
+        console.log("OCR Refund Extracted Text:\n", text);
+
+        let detectedRef = '';
+
+        // Hanapin ang linya ng mobile number para maiwasan makuhang reference
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        let foundPhone = '';
+        for (let i = 0; i < lines.length; i++) {
+            let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
+            if (pMatch) {
+                foundPhone = pMatch[0].trim();
+                break;
+            }
+        }
+
+        // Reference Number Regex Extraction
+        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
+        
+        if (refMatch) {
+            let cleaned = refMatch[1].trim();
+            let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
+            let cleanRefDigits = cleaned.replace(/\D/g, '');
+
+            if (cleaned.length >= 8 && cleaned.length <= 26 && (!cleanPhoneDigits || cleanRefDigits !== cleanPhoneDigits)) {
+                detectedRef = cleaned;
+            }
+        }
+
+        // Fallbacks kung walang structured match
+        if (!detectedRef) {
+            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
+            if (mayaHexMatch) {
+                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
+            }
+        }
+
+        if (!detectedRef) {
+            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
+            if (spaceSeparatedMatch) {
+                let candidate = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
+                let cleanPhoneDigits = foundPhone.replace(/\D/g, '');
+                if (!cleanPhoneDigits || candidate !== cleanPhoneDigits) {
+                    detectedRef = candidate;
+                }
+            }
+        }
+
+        if (detectedRef) {
+            refInput.value = detectedRef;
+            statusBox.classList.remove('alert-info', 'alert-danger');
+            statusBox.classList.add('alert-success');
+            statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
+        } else {
+            statusBox.classList.remove('alert-info', 'alert-success');
+            statusBox.classList.add('alert-warning');
+            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually in the input field.';
+        }
+
+    } catch (error) {
+        console.error("OCR Error:", error);
+        statusBox.classList.remove('alert-info', 'alert-success');
+        statusBox.classList.add('alert-warning');
+        statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
     }
 }
 
