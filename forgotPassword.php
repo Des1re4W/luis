@@ -2,6 +2,13 @@
 session_start();
 require_once __DIR__ . "/config/db.php";
 
+// Siguraduhing naha-hire o nai-load ang Composer Autoloader
+$autoloader = __DIR__ . '/vendor/autoload.php';
+if (file_exists($autoloader)) {
+    require_once $autoloader;
+} else {
+    die("Error: Vendor autoloader not found. Please run 'composer install' or 'composer require phpmailer/phpmailer'.");
+}
 // Standard PHPMailer Autoload / Imports
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
