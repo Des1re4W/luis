@@ -68,12 +68,7 @@ if (isset($_POST['place_order'])) {
             die("<script>alert('Order Failed: Insufficient Payment Amount! Required: ₱{$formatted_req}, but receipt amount detected is only ₱{$formatted_paid}. Please send the complete amount.'); history.back();</script>");
         }
 
-        // BACKEND ANTI-REUSE CHECK: Harangan kung ang Reference Number ay ginamit na sa ibang order
-        $stmt_check_ref = $pdo->prepare("SELECT id FROM orders WHERE ref_no = :ref_no LIMIT 1");
-        $stmt_check_ref->execute([':ref_no' => $ref_no]);
-        if ($stmt_check_ref->fetch()) {
-            die("<script>alert('Order Failed: This Reference Number ($ref_no) has already been used in a previous order. Please upload a fresh receipt.'); history.back();</script>");
-        }
+        // [DISABLED] BACKEND ANTI-REUSE CHECK: Pansamantalang naka-disable ang pagharang sa mga nagamit nang reference numbers.
 
         $paid_amount = $detected_paid_amount;
     } else {
