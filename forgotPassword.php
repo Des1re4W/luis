@@ -31,7 +31,7 @@ function sendResetOtp(string $email, string $otp): array
 
     $url = 'https://api.resend.com/emails';
     $data = [
-        'from'    => 'R. Taipan Hardware <support@r-taipan.onrender.com>',
+        'from'    => 'R. Taipan Hardware <support@r-taipan-hardware.com>',
         'to'      => [$email],
         'subject' => 'Password Reset OTP - R. Taipan Hardware',
         'html'    => "

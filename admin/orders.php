@@ -23,7 +23,7 @@ function sendOrderEmail(string $toEmail, string $toName, string $subject, string
 
     $url = 'https://api.resend.com/emails';
     $data = [
-        'from'    => 'R. Taipan Hardware <support@r-taipan.onrender.com>',
+        'from'    => 'R. Taipan Hardware <support@r-taipan-hardware.com>',
         'to'      => [$toEmail],
         'subject' => $subject,
         'html'    => $htmlBody
