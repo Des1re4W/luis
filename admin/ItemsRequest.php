@@ -160,7 +160,7 @@ if (isset($_POST['send_email_update'])) {
 
         if ($sendResult['success']) {
             $update_mail = $pdo->prepare("UPDATE customer_requests SET email_status = ? WHERE id = ?");
-            $update_mail.execute([$current_status, $req_id]);
+            $update_mail->execute([$current_status, $req_id]);
             $_SESSION['msg'] = "🎉 Email notification successfully sent to $customer_name!";
         } else {
             $_SESSION['msg'] = "❌ Failed to send email: " . $sendResult['error'];
@@ -415,7 +415,6 @@ if (isset($_POST['submit_refund'])) {
             if ($total_amount >= 5000 && (strpos($payment_scheme, '50') !== false || strpos($payment_scheme, 'down') !== false)) {
                 $ref_amount = $paid_amount > 0 ? $paid_amount : ($total_amount * 0.5);
             } else {
-                // Kung full payment online, ang ire-refund ay ang kabuuang binayad
                 $ref_amount = $paid_amount > 0 ? $paid_amount : $total_amount;
             }
 
@@ -821,7 +820,6 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                             </div>
                                         <?php elseif($req_status == 'Approved'): ?>
                                             <?php 
-                                            // Tinitiyak natin na sasailalim sa refund ang GCASH o MAYA kung may bayad na
                                             $needs_refund = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
                                             ?>
                                             <?php if($needs_refund): ?>
