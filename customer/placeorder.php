@@ -46,7 +46,7 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Retrieve OCR Values
+    // Retrieve OCR / AI Extracted Values
     $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $sent_to = !empty($_POST['sent_to']) ? trim($_POST['sent_to']) : null;
@@ -55,7 +55,7 @@ if (isset($_POST['place_order'])) {
     // BACKEND STRICT VALIDATION FOR ONLINE PAYMENTS (GCash / Maya)
     if (in_array($payment_method, ['GCash', 'Maya'])) {
         if (empty($ref_no) || $detected_paid_amount <= 0) {
-            die("<script>alert('Order Failed: Invalid receipt photo. No valid Reference Number or Paid Amount detected by the OCR scanner.'); history.back();</script>");
+            die("<script>alert('Order Failed: Invalid receipt photo. No valid Reference Number or Paid Amount detected by the AI scanner.'); history.back();</script>");
         }
 
         // Compute required payment amount based on payment scheme
@@ -126,7 +126,7 @@ if (isset($_POST['place_order'])) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->beginTransaction();
 
-        // Insert order into database (INCLUDES SENT_TO COLUMN)
+        // Insert order into database (SAVING ALL EXTRACTIONS INCLUDING SENT_TO)
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, sent_to, order_date, status) 
             VALUES 
@@ -221,9 +221,6 @@ if (isset($_POST['place_order'])) {
     <title>Checkout | Hardware System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
-    
-    <!-- Tesseract.js OCR Engine -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body class="bg-light">
 <div class="container py-4">
@@ -339,7 +336,7 @@ if (isset($_POST['place_order'])) {
                             <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
                         </div>
 
-                        <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC OCR EXTRACTOR -->
+                        <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC GEMINI AI EXTRACTOR -->
                         <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
                             <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code / Account Details</a>
                             
@@ -349,9 +346,9 @@ if (isset($_POST['place_order'])) {
                             <input type="hidden" name="receiptdt" id="receiptdt_input">
                             <input type="hidden" name="sent_to" id="sent_to_input">
 
-                            <!-- OCR Status Message Box -->
+                            <!-- AI Status Message Box -->
                             <div id="ocr_status" class="alert alert-info py-2 d-none small">
-                                <span id="ocr_status_text">Reading receipt image...</span>
+                                <span id="ocr_status_text">Reading receipt image via Gemini AI...</span>
                             </div>
 
                             <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya / Bank Transfer Screenshot)</label>
@@ -435,7 +432,6 @@ function updatePaymentDisplay() {
         if (displayDue) displayDue.innerText = "₱" + grandTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
     }
 
-    // Re-validate receipt kung may na-scan na dati bago pinalitan ang scheme
     const proofInput = document.getElementById('proof_of_payment_input');
     if (proofInput && proofInput.files.length > 0) {
         processReceiptOCR(proofInput);
@@ -468,171 +464,51 @@ async function processReceiptOCR(fileInput) {
 
     statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
     statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt image via OCR...';
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt via Gemini AI...';
+
+    const formData = new FormData();
+    formData.append('proof_of_payment', file);
 
     try {
-        const result = await Tesseract.recognize(
-            file,
-            'eng',
-            {
-                logger: m => {
-                    if (m.status === 'recognizing text') {
-                        let progress = Math.round(m.progress * 100);
-                        statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading text: ${progress}%`;
-                    }
-                }
-            }
-        );
+        const response = await fetch('api/scan_receipt.php', {
+            method: 'POST',
+            body: formData
+        });
 
-        const text = result.data.text;
-        console.log("OCR Extracted Raw Text:\n", text);
+        const result = await response.json();
 
-        // -------------------------------------------------------------
-        // 1. STRICT LEGIT RECEIPT VERIFICATION (BRAND / BANK KEYWORD CHECK)
-        // -------------------------------------------------------------
-        const legitBankKeywords = [
-            'gcash', 'g-xchange', 'maya', 'paymaya', 'maribank', 'instapay', 'pesonet',
-            'express send', 'sent money', 'transaction history', 'transfer successful',
-            'payment successful', 'amount sent', 'bdo', 'bpi', 'unionbank', 'gotyme',
-            'landbank', 'seabank', 'maya bank', 'reference id', 'reference no', 'ref no',
-            'created on', 'send money via', 'service fee', 'invoice no'
-        ];
-
-        const lowerText = text.toLowerCase();
-        const hasLegitBrandKeyword = legitBankKeywords.some(keyword => lowerText.includes(keyword));
-
-        if (!hasLegitBrandKeyword) {
+        if (!result.success) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = '❌ <b>Invalid or Fake Receipt Photo!</b> No legitimate GCash, Maya, or Bank transfer keywords detected. Please upload a clear official receipt screenshot.';
+            statusText.innerHTML = `❌ <b>Error:</b> ${result.message}`;
             fileInput.value = "";
             return;
         }
 
-        let detectedRef = '';
-        let detectedAmount = '';
-        let detectedDateTime = '';
-        let detectedSentTo = '';
+        const data = result.data;
 
-        // -------------------------------------------------------------
-        // 2. RECIPIENT (SENT TO) DETECTION (NAME & PHONE NUMBER)
-        // -------------------------------------------------------------
-        // Pattern A: Masked/Full Name followed by +63 / 09 phone number (e.g. MI••••E R. +63 929 575 6385)
-        let sentToMatch = text.match(/([A-Z0-9\s•\.\*]{3,30})\s*(\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/i);
-        
-        if (sentToMatch) {
-            let recipientName = sentToMatch[1].replace(/Sent|via|GCash|Express|Send/gi, '').trim();
-            let recipientPhone = sentToMatch[2].trim();
-            if (recipientName && recipientPhone) {
-                detectedSentTo = `${recipientName} (${recipientPhone})`;
-            } else if (recipientPhone) {
-                detectedSentTo = recipientPhone;
-            }
-        }
-
-        // Pattern B: Labeled recipient (e.g. "To: Raquel Domingo" o "Sent money to: +639682770376")
-        if (!detectedSentTo) {
-            let labeledRecipient = text.match(/(?:Sent\s*(?:money\s*)?to|To)\s*:?\s*([A-Z0-9\s•\.\*\+\-]{4,35})/i);
-            if (labeledRecipient) {
-                let cleanedName = labeledRecipient[1].replace(/G-Xchange|Inc\.|Gcash|Maya|InstaPay/gi, '').trim();
-                if (cleanedName.length >= 4) {
-                    detectedSentTo = cleanedName;
-                }
-            }
-        }
-
-        // -------------------------------------------------------------
-        // 3. REFERENCE NUMBER DETECTION
-        // -------------------------------------------------------------
-        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
-        
-        if (refMatch) {
-            let cleaned = refMatch[1].trim();
-            if (cleaned.length >= 8 && cleaned.length <= 26) {
-                detectedRef = cleaned;
-            }
-        }
-
-        if (!detectedRef) {
-            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
-            if (mayaHexMatch) {
-                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
-            }
-        }
-
-        if (!detectedRef) {
-            let spaceSeparatedMatch = text.match(/\b\d{3,4}\s+\d{3,4}\s+\d{3,4}(?:\s+\d{1,4})?\b/);
-            if (spaceSeparatedMatch) {
-                detectedRef = spaceSeparatedMatch[0].replace(/\s+/g, '').trim();
-            }
-        }
-
-        // -------------------------------------------------------------
-        // 4. ANTI-FAKE & FAKE RECEIPT GENERATOR FILTER
-        // -------------------------------------------------------------
-        const isFakeGeneratorPattern = (ref) => {
-            const cleanRef = ref.toUpperCase().replace(/[\s\-_]/g, '');
-            
-            if (/^G\d{2,4}12345678/i.test(cleanRef) || /^G1709123456/i.test(cleanRef)) return true;
-            if (/12345678|23456789|34567890|98765432|87654321/.test(cleanRef)) return true;
-            if (/(\d)\1{7,}/.test(cleanRef)) return true;
-
-            return false;
-        };
-
-        if (detectedRef && isFakeGeneratorPattern(detectedRef)) {
+        // 1. Valid Receipt Check
+        if (!data.is_legit_receipt || !data.ref_no || data.amount <= 0) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = `❌ <b>Fake Receipt Detected!</b> Reference Number (<b>${detectedRef}</b>) matches a known fake receipt template format. Please upload an actual official receipt screenshot.`;
+            statusText.innerHTML = '❌ <b>Invalid or Fake Receipt Photo!</b> No valid payment transaction details detected. Please upload an official receipt screenshot.';
             fileInput.value = "";
             return;
         }
 
-        // -------------------------------------------------------------
-        // 5. UNIVERSAL AMOUNT DETECTION
-        // -------------------------------------------------------------
-        let amountMatch = text.match(/(?:Total\s*Amount\s*(?:Sent)?|Amount\s*Sent|Sent\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
-        
-        if (amountMatch) {
-            detectedAmount = amountMatch[1].replace(/,/g, '');
-        } else {
-            let currencyMatch = text.match(/(?:PHP|₱)\s*([\d,]+\.\d{2})/i);
-            if (currencyMatch) {
-                detectedAmount = currencyMatch[1].replace(/,/g, '');
-            } else {
-                let fallbackAmount = text.match(/\b[\d,]+\.\d{2}\b/);
-                if (fallbackAmount) {
-                    detectedAmount = fallbackAmount[0].replace(/,/g, '');
-                }
-            }
-        }
-
-        // -------------------------------------------------------------
-        // 6. DATE & TIME DETECTION
-        // -------------------------------------------------------------
-        let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?\b/i);
-        if (!dateTimeMatch) {
-            dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
-        }
-        if (dateTimeMatch) {
-            detectedDateTime = dateTimeMatch[0].trim();
-        }
-
-        // -------------------------------------------------------------
-        // 7. FINAL STRICT VALIDATION & AMOUNT MATCHING (BAWAL KULANG)
-        // -------------------------------------------------------------
-        if (!detectedRef || !detectedAmount) {
+        // 2. Fake Receipt Generator Check
+        if (data.is_fake_generator) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = '❌ <b>Invalid Payment Receipt!</b> No valid Reference Number or Amount detected. Please upload a clear official payment receipt screenshot.';
+            statusText.innerHTML = `❌ <b>Fake Receipt Detected!</b> Reference Number (<b>${data.ref_no}</b>) matches a fake generator template format.`;
             fileInput.value = "";
             return;
         }
 
-        const parsedAmount = parseFloat(detectedAmount);
+        // 3. Amount Matching (Bawal Kulang Check)
+        const parsedAmount = parseFloat(data.amount);
         const requiredAmount = getRequiredPaymentAmount();
 
-        // Check kung KULANG ang bayad sa resibo kumpara sa Total Due Amount
         if (parsedAmount < (requiredAmount - 0.01)) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
@@ -645,35 +521,34 @@ async function processReceiptOCR(fileInput) {
             return;
         }
 
-        refInput.value = detectedRef;
-        paidInput.value = detectedAmount;
-        dtInput.value = detectedDateTime ? detectedDateTime : "N/A";
-        sentToInput.value = detectedSentTo ? detectedSentTo : "N/A";
+        // Set Hidden Inputs for database submission
+        refInput.value = data.ref_no;
+        paidInput.value = parsedAmount;
+        dtInput.value = data.receipt_date ? data.receipt_date : "N/A";
+        sentToInput.value = data.sent_to ? data.sent_to : "N/A";
 
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-success');
         
         let message = `
-            <strong>✓ Legitimate Receipt Scanned Successfully!</strong><br>
-            <small class="text-success">
-                Payment verified! Amount sent matches the total required due.
-            </small><br>
+            <strong>✓ Legitimate Receipt Scanned Successfully via Gemini AI!</strong><br>
+            <small class="text-success">Payment verified! Amount sent matches the total required due.</small><br>
         `;
-        message += `Ref No: <b>${detectedRef}</b>`;
+        message += `Ref No: <b>${data.ref_no}</b>`;
         message += `<br>Amount Sent: <b>₱${parsedAmount.toLocaleString('en-US', {minimumFractionDigits: 2})}</b>`;
-        if (detectedSentTo !== '') {
-            message += `<br>Sent To: <b>${detectedSentTo}</b>`;
+        if (data.sent_to) {
+            message += `<br>Sent To: <b>${data.sent_to}</b>`;
         }
-        if (detectedDateTime !== '') {
-            message += `<br>Date & Time: <b>${detectedDateTime}</b>`;
+        if (data.receipt_date) {
+            message += `<br>Date & Time: <b>${data.receipt_date}</b>`;
         }
         statusText.innerHTML = message;
 
     } catch (error) {
-        console.error("OCR Reading Error:", error);
+        console.error("Gemini API Error:", error);
         statusBox.classList.remove('alert-info');
         statusBox.classList.add('alert-danger');
-        statusText.innerHTML = '❌ Could not process image. Please upload a clear valid payment receipt screenshot.';
+        statusText.innerHTML = '❌ Could not process image via AI scanner. Please try again.';
         fileInput.value = "";
     }
 }
