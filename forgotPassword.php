@@ -18,8 +18,7 @@ function h($value)
 }
 
 /**
- * Sends Reset OTP via Native PHP mail / cURL to avoid class collision errors
- * Returns array: ['success' => bool, 'error' => string]
+ * Sends Reset OTP via Native cURL HTTP API to Resend
  */
 function sendResetOtp(string $email, string $otp): array
 {
@@ -30,7 +29,6 @@ function sendResetOtp(string $email, string $otp): array
         return ['success' => false, 'error' => 'Mail Configuration Error: RESEND_API_KEY is missing in environment variables.'];
     }
 
-    // Direct cURL request sa Resend API para iwasan ang Resend PHP class collision
     $url = 'https://api.resend.com/emails';
     $data = [
         'from'    => 'R. Taipan Hardware <onboarding@resend.dev>',
@@ -190,15 +188,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $password        = $_POST['new_password'] ?? '';
             $confirmPassword = $_POST['confirm_password'] ?? '';
+            $email           = $_SESSION['pw_reset_email'];
 
+            // Kunin ang kasalukuyang password hash sa database para mai-check
+            $stmtUser = $pdo->prepare("SELECT password FROM users WHERE LOWER(email) = LOWER(?) AND status = 'Active' LIMIT 1");
+            $stmtUser->execute([$email]);
+            $currentUser = $stmtUser->fetch(PDO::FETCH_ASSOC);
+
+            // Validations
             if (strlen($password) < 8) {
                 $message = "Password must be at least 8 characters long.";
+                $messageType = "danger";
+            } elseif (!preg_match('/[A-Z]/', $password)) {
+                $message = "Password must contain at least 1 uppercase letter (A–Z).";
+                $messageType = "danger";
+            } elseif (!preg_match('/[a-z]/', $password)) {
+                $message = "Password must contain at least 1 lowercase letter (a–z).";
+                $messageType = "danger";
+            } elseif (!preg_match('/[0-9]/', $password)) {
+                $message = "Password must contain at least 1 number (0–9).";
+                $messageType = "danger";
+            } elseif (!preg_match('/[\W_]/', $password)) { // Special characters
+                $message = "Password must contain at least 1 special character (! @ # $ % ^ & *).";
+                $messageType = "danger";
+            } elseif (preg_match('/\s/', $password)) {
+                $message = "Password cannot contain spaces.";
                 $messageType = "danger";
             } elseif ($password !== $confirmPassword) {
                 $message = "Passwords do not match.";
                 $messageType = "danger";
+            } elseif ($currentUser && password_verify($password, $currentUser['password'])) {
+                $message = "New password must not match the current password.";
+                $messageType = "danger";
             } else {
-                $email          = $_SESSION['pw_reset_email'];
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
                 $stmt = $pdo->prepare("UPDATE users SET password = ? WHERE LOWER(email) = LOWER(?) AND status = 'Active'");
@@ -344,7 +366,9 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                         <input type="password" class="form-control" id="new_password" name="new_password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters">
                         <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword"><i class="bi bi-eye" id="iconNewPassword"></i></button>
                     </div>
+                    <div class="form-text text-muted" style="font-size: 0.78rem;">Must be 8+ chars with uppercase, lowercase, number & special character. No spaces.</div>
                 </div>
+
                 <div class="mb-3">
                     <label for="confirm_password" class="form-label fw-semibold">Confirm New Password</label>
                     <div class="input-group">
@@ -352,6 +376,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                         <button class="btn btn-outline-secondary" type="button" id="toggleConfirmPassword"><i class="bi bi-eye" id="iconConfirmPassword"></i></button>
                     </div>
                 </div>
+
                 <button type="submit" class="btn btn-primary w-100">Change Password</button>
             </form>
         <?php endif; ?>

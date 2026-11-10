@@ -4,13 +4,6 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/google_drive.php';
 require_once __DIR__ . '/../config/image.php';
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-
-require '../libs/src/Exception.php';
-require '../libs/src/PHPMailer.php';
-require '../libs/src/SMTP.php';
-
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
     header("Location: ../login.php");
     exit();
@@ -18,6 +11,48 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== "admin") {
 
 $admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
 $admin_id = $_SESSION['user_id'] ?? ($_SESSION['id'] ?? ($_SESSION['admin_id'] ?? null));
+
+/**
+ * Sends Customer Request Email Update via Resend HTTP API (Bypasses SMTP port 587/465 timeout errors on cloud hosting)
+ */
+function sendCustomerRequestEmail(string $toEmail, string $toName, string $subject, string $htmlBody): array
+{
+    $apiKey = $_ENV['RESEND_API_KEY'] ?? getenv('RESEND_API_KEY');
+
+    if (empty($apiKey)) {
+        error_log("MAILER ERROR: RESEND_API_KEY is not defined.");
+        return ['success' => false, 'error' => 'RESEND_API_KEY is missing in environment variables.'];
+    }
+
+    $url = 'https://api.resend.com/emails';
+    $data = [
+        'from'    => 'R. Taipan Hardware <onboarding@resend.dev>',
+        'to'      => [$toEmail],
+        'subject' => $subject,
+        'html'    => $htmlBody
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $apiKey,
+        'Content-Type: application/json'
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($httpCode >= 200 && $httpCode < 300) {
+        return ['success' => true, 'error' => ''];
+    } else {
+        error_log("Resend API cURL Error: " . $response);
+        return ['success' => false, 'error' => $response ?: $curlError];
+    }
+}
 
 // --- 1. EMAILER ACTION LOGIC ---
 if (isset($_POST['send_email_update'])) {
@@ -42,104 +77,92 @@ if (isset($_POST['send_email_update'])) {
         
         $decline_reason_text = !empty($ticket_data['admin_notes']) ? nl2br(htmlspecialchars($ticket_data['admin_notes'])) : 'No specific reason provided.';
 
-        $mail = new PHPMailer(true);
-        try {
-            $mail->isSMTP();
-            $mail->Host       = 'smtp.gmail.com'; 
-            $mail->SMTPAuth   = true;
-            $mail->Username   = 'rtaipancss@gmail.com'; 
-            $mail->Password   = 'miohifpavqdzvzvn';   
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port       = 587;
-            $mail->Timeout    = 10;
+        $emailSubject = "Customer Service Request Update: Ticket #$req_id";
+        $emailBody = "";
 
-            $mail->setFrom('rtaipancss@gmail.com', 'R. Taipan Construction Supply and Services');
-            $mail->addAddress($customer_email, $customer_name);
-            $mail->isHTML(true);
-            $mail->Subject = "Customer Service Request Update: Ticket #$req_id";
+        if ($request_type == 'cancel') {
+            if ($current_status == 'Approved') {
+                $paymentMethodClean = strtoupper(trim($ticket_data['payment_method']));
 
-            if ($request_type == 'cancel') {
-                if ($current_status == 'Approved') {
-                    $paymentMethodClean = strtoupper(trim($ticket_data['payment_method']));
-
-                    if ($paymentMethodClean === 'CASH ON DELIVERY (COD)' || $paymentMethodClean === 'COD') {
-                        $paymentMessage = "<p>Since your payment method is <strong>Cash on Delivery (COD)</strong>, no payment has been collected for this order. Therefore, no refund is required.</p>";
-                    } else {
-                        $paymentMessage = "<p>Since your payment method is <strong>$payment_method</strong>, the admin will process your refund. You will receive another notification once the refund and its receipt have been sent.</p>";
-                    }
-
-                    $mail->Body = "
-                        <h3>Dear " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Your request to cancel <strong>Order #$order_number</strong> has been approved.</p>
-                        <p>Your order is now cancelled and will no longer be processed for delivery.</p>
-                        <p>
-                            <strong>Order Total:</strong> ₱" . number_format((float)$total_amount, 2) . "<br>
-                            <strong>Mode of Payment:</strong> " . htmlspecialchars($payment_method) . "<br>
-                            <strong>Status:</strong> Approved
-                        </p>
-                        $paymentMessage
-                        <p>Thank you for choosing <strong>R. Taipan Hardware</strong>.</p>
-                        <br>
-                        <p>Sincerely,<br><strong>R. Taipan Hardware Customer Service</strong></p>
-                    ";
-                } elseif ($current_status == 'Completed') {
-                    $mail->Body = "
-                        <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Good day!</p>
-                        <p>All processes for your cancellation and refund request regarding Order Number <strong>#$order_number</strong> have been completed.</p>
-                        <p>Thank you for choosing R. Taipan Construction Supply and Services, OPC.</p>
-                        <br>
-                        <h4>Sincerely,<br>R. Taipan Hardware Customer Service</h4>
-                    ";
-                } elseif ($current_status == 'Declined') {
-                    $mail->Body = "
-                        <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Good day!</p>
-                        <p>We regret to inform you that your <strong>CANCELLATION request</strong> for Order Number <strong>#$order_number</strong> has been <strong>DECLINED</strong>.</p>
-                        <p><strong>Reason:</strong><br>$decline_reason_text</p>
-                        <br>
-                        <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
-                    ";
+                if ($paymentMethodClean === 'CASH ON DELIVERY (COD)' || $paymentMethodClean === 'COD') {
+                    $paymentMessage = "<p>Since your payment method is <strong>Cash on Delivery (COD)</strong>, no payment has been collected for this order. Therefore, no refund is required.</p>";
+                } else {
+                    $paymentMessage = "<p>Since your payment method is <strong>$payment_method</strong>, the admin will process your refund. You will receive another notification once the refund and its receipt have been sent.</p>";
                 }
-            } else {
-                if ($current_status == 'Approved') {
-                    $item_to_replace_text = !empty($ticket_data['item_to_replace']) ? nl2br(htmlspecialchars($ticket_data['item_to_replace'])) : 'N/A';
 
-                    $mail->Body = "
-                        <h3>Dear " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Your exchange item(s) request for <strong>Order #$order_number</strong> has been <strong>APPROVED</strong>.</p>
-                        <p><strong>Item(s) to be Replaced:</strong><br>$item_to_replace_text</p>
-                        <p>You may now bring the approved item to <strong>R. Taipan Hardware</strong> for exchange.</p>
-                        <br>
-                        <p>Sincerely,<br><strong>R. Taipan Hardware Customer Service</strong></p>
-                    ";
-                } elseif ($current_status == 'Completed') {
-                    $mail->Body = "
-                        <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Good day!</p>
-                        <p>Your request regarding Order Number <strong>#$order_number</strong> is now marked as <strong>COMPLETED</strong>.</p>
-                        <br>
-                        <h4>Sincerely,<br>R. Taipan Hardware Customer Service</h4>
-                    ";
-                } elseif ($current_status == 'Declined') {
-                    $mail->Body = "
-                        <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
-                        <p>Good day!</p>
-                        <p>We regret to inform you that your request for Order Number <strong>#$order_number</strong> has been <strong>DECLINED</strong>.</p>
-                        <p><strong>Reason:</strong><br>$decline_reason_text</p>
-                        <br>
-                        <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
-                    ";
-                }
+                $emailBody = "
+                    <h3>Dear " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Your request to cancel <strong>Order #$order_number</strong> has been approved.</p>
+                    <p>Your order is now cancelled and will no longer be processed for delivery.</p>
+                    <p>
+                        <strong>Order Total:</strong> ₱" . number_format((float)$total_amount, 2) . "<br>
+                        <strong>Mode of Payment:</strong> " . htmlspecialchars($payment_method) . "<br>
+                        <strong>Status:</strong> Approved
+                    </p>
+                    $paymentMessage
+                    <p>Thank you for choosing <strong>R. Taipan Hardware</strong>.</p>
+                    <br>
+                    <p>Sincerely,<br><strong>R. Taipan Hardware Customer Service</strong></p>
+                ";
+            } elseif ($current_status == 'Completed') {
+                $emailBody = "
+                    <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Good day!</p>
+                    <p>All processes for your cancellation and refund request regarding Order Number <strong>#$order_number</strong> have been completed.</p>
+                    <p>Thank you for choosing R. Taipan Construction Supply and Services, OPC.</p>
+                    <br>
+                    <h4>Sincerely,<br>R. Taipan Hardware Customer Service</h4>
+                ";
+            } elseif ($current_status == 'Declined') {
+                $emailBody = "
+                    <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Good day!</p>
+                    <p>We regret to inform you that your <strong>CANCELLATION request</strong> for Order Number <strong>#$order_number</strong> has been <strong>DECLINED</strong>.</p>
+                    <p><strong>Reason:</strong><br>$decline_reason_text</p>
+                    <br>
+                    <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
+                ";
             }
+        } else {
+            if ($current_status == 'Approved') {
+                $item_to_replace_text = !empty($ticket_data['item_to_replace']) ? nl2br(htmlspecialchars($ticket_data['item_to_replace'])) : 'N/A';
 
-            $mail->send();
+                $emailBody = "
+                    <h3>Dear " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Your exchange item(s) request for <strong>Order #$order_number</strong> has been <strong>APPROVED</strong>.</p>
+                    <p><strong>Item(s) to be Replaced:</strong><br>$item_to_replace_text</p>
+                    <p>You may now bring the approved item to <strong>R. Taipan Hardware</strong> for exchange.</p>
+                    <br>
+                    <p>Sincerely,<br><strong>R. Taipan Hardware Customer Service</strong></p>
+                ";
+            } elseif ($current_status == 'Completed') {
+                $emailBody = "
+                    <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Good day!</p>
+                    <p>Your request regarding Order Number <strong>#$order_number</strong> is now marked as <strong>COMPLETED</strong>.</p>
+                    <br>
+                    <h4>Sincerely,<br>R. Taipan Hardware Customer Service</h4>
+                ";
+            } elseif ($current_status == 'Declined') {
+                $emailBody = "
+                    <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
+                    <p>Good day!</p>
+                    <p>We regret to inform you that your request for Order Number <strong>#$order_number</strong> has been <strong>DECLINED</strong>.</p>
+                    <p><strong>Reason:</strong><br>$decline_reason_text</p>
+                    <br>
+                    <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
+                ";
+            }
+        }
+
+        $sendResult = sendCustomerRequestEmail($customer_email, $customer_name, $emailSubject, $emailBody);
+
+        if ($sendResult['success']) {
             $update_mail = $pdo->prepare("UPDATE customer_requests SET email_status = ? WHERE id = ?");
-            $update_mail->execute([$current_status, $req_id]);
+            $update_mail.execute([$current_status, $req_id]);
             $_SESSION['msg'] = "🎉 Email notification successfully sent to $customer_name!";
-
-        } catch (Exception $e) {
-            $_SESSION['msg'] = "❌ Failed to send email: {$mail->ErrorInfo}";
+        } else {
+            $_SESSION['msg'] = "❌ Failed to send email: " . $sendResult['error'];
         }
     }
     
@@ -395,43 +418,30 @@ if (isset($_POST['submit_refund'])) {
                 $ref_amount = $total_amount * 0.5;
             }
 
-            $mail = new PHPMailer(true);
-            try {
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com'; 
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'rtaipancss@gmail.com'; 
-                $mail->Password   = 'miohifpavqdzvzvn';   
-                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
-                $mail->Timeout    = 10; 
+            $refundImgSrc = getProductImageSrc($proof_path);
+            $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;'></a></p>";
 
-                $mail->setFrom('rtaipancss@gmail.com', 'R. Taipan Construction Supply and Services');
-                $mail->addAddress($customer_email, $customer_name);
-                $mail->isHTML(true);
-                $mail->Subject = "Refund Update: Order #$order_number has been refunded";
+            $emailSubject = "Refund Update: Order #$order_number has been refunded";
+            $emailBody = "
+                <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
+                <p>Good day!</p>
+                <p>We would like to inform you that your refund for Order Number <strong>#$order_number</strong> has been sent via <strong>$payment_method</strong></p>
+                <p>
+                    <strong>Refund Amount:</strong> ₱" . number_format((float)$ref_amount, 2) . "<br>
+                    <strong>Reference Number:</strong> " . htmlspecialchars($ref_no) . "<br>
+                </p>
+                $proofImgTag
+                <p>Please check your e-wallet account. Thank you for your trust.</p>
+                <br>
+                <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
+            ";
 
-                $refundImgSrc = getProductImageSrc($proof_path);
-                $proofImgTag = "<br><p><strong>Refund Proof (Receipt):</strong><br><a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'><img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:300px; border:1px solid #ddd; border-radius:6px;'></a></p>";
+            $sendResult = sendCustomerRequestEmail($customer_email, $customer_name, $emailSubject, $emailBody);
 
-                $mail->Body = "
-                    <h3>Hi " . htmlspecialchars($customer_name) . ",</h3>
-                    <p>Good day!</p>
-                    <p>We would like to inform you that your refund for Order Number <strong>#$order_number</strong> has been sent via <strong>$payment_method</strong></p>
-                    <p>
-                        <strong>Refund Amount:</strong> ₱" . number_format((float)$ref_amount, 2) . "<br>
-                        <strong>Reference Number:</strong> " . htmlspecialchars($ref_no) . "<br>
-                    </p>
-                    $proofImgTag
-                    <p>Please check your e-wallet account. Thank you for your trust.</p>
-                    <br>
-                    <h4>Sincerely,<br>R. Taipan Construction Supply and Services, OPC</h4>
-                ";
-
-                $mail->send();
+            if ($sendResult['success']) {
                 $_SESSION['msg'] = "🎉 Refund receipt uploaded to Google Drive, email successfully sent, and ticket marked as Completed!";
-            } catch (Exception $e) {
-                $_SESSION['msg'] = "⚠️ Refund receipt saved to Google Drive and completed, but failed to send email: {$mail->ErrorInfo}";
+            } else {
+                $_SESSION['msg'] = "⚠️ Refund receipt saved to Google Drive and completed, but failed to send email: " . $sendResult['error'];
             }
         }
     } else {

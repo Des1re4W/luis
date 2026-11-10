@@ -4,17 +4,51 @@ require_once __DIR__ . '/../config/db.php';
 require_once __DIR__ . '/../config/google_drive.php';
 require_once __DIR__ . '/../config/image.php';
 
-// --- 1. PHPMAILER START ---
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-
-require '../libs/src/Exception.php';
-require '../libs/src/PHPMailer.php';
-require '../libs/src/SMTP.php';
-
 if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     header("Location: ../login.php");
     exit();
+}
+
+/**
+ * Sends Order Email Notification via Resend HTTP API (Bypasses SMTP timeout errors on cloud hosting)
+ */
+function sendOrderEmail(string $toEmail, string $toName, string $subject, string $htmlBody): array
+{
+    $apiKey = $_ENV['RESEND_API_KEY'] ?? getenv('RESEND_API_KEY');
+
+    if (empty($apiKey)) {
+        error_log("MAILER ERROR: RESEND_API_KEY is not defined.");
+        return ['success' => false, 'error' => 'RESEND_API_KEY is missing in environment variables.'];
+    }
+
+    $url = 'https://api.resend.com/emails';
+    $data = [
+        'from'    => 'R. Taipan Hardware <onboarding@resend.dev>',
+        'to'      => [$toEmail],
+        'subject' => $subject,
+        'html'    => $htmlBody
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        'Authorization: Bearer ' . $apiKey,
+        'Content-Type: application/json'
+    ]);
+
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($httpCode >= 200 && $httpCode < 300) {
+        return ['success' => true, 'error' => ''];
+    } else {
+        error_log("Resend API cURL Error: " . $response);
+        return ['success' => false, 'error' => $response ?: $curlError];
+    }
 }
 
 // EMAILER ACTION LOGIC
@@ -31,351 +65,332 @@ if (isset($_POST['send_email_update'])) {
     }
 
     $current_status = $order['status'];
+    $toEmail = $order['email'];
+    $toName = $order['fullname'];
+    $subject = "Order Status Update: #$order_id";
+    $emailBody = "";
 
-    $mail = new PHPMailer(true);
-    
-    try {
-        $mail->isSMTP();
-        $mail->Host       = 'smtp.gmail.com';
-        $mail->SMTPAuth   = true;
-        $mail->Username   = 'rtaipancss@gmail.com';
-        $mail->Password   = 'miohifpavqdzvzvn';
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port       = 587;
+    // APPROVED
+    if ($current_status == 'approved') {
 
-        $mail->setFrom(
-            'rtaipancss@gmail.com',
-            'R. Taipan Construction Supply and Services'
+        $stmt_items = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
+        $stmt_items->execute([$order_id]);
+        $items_query = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
+
+        $totalAmt = (float)$order['total_amount'];
+
+        $paymentMethodName = strtoupper(
+            trim($order['payment_method'] ?? 'COD')
         );
 
-        $mail->addAddress(
-            $order['email'],
-            $order['fullname']
+        $paymentScheme = strtolower(
+            trim($order['payment_scheme'] ?? '')
         );
+        $paymentBreakdownHtml = '';
 
-        $mail->isHTML(true);
-        $mail->Subject = "Order Status Update: #$order_id";
-
-        // APPROVED
-        if ($current_status == 'approved') {
-
-            $stmt_items = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
-            $stmt_items->execute([$order_id]);
-            $items_query = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
-
-            $totalAmt = (float)$order['total_amount'];
-
-            $paymentMethodName = strtoupper(
-                trim($order['payment_method'] ?? 'COD')
-            );
-
-            $paymentScheme = strtolower(
-                trim($order['payment_scheme'] ?? '')
-            );
-            $paymentBreakdownHtml = '';
-
-            // COD
-            if (strpos($paymentMethodName, 'COD') !== false) {
-                $paymentBreakdownHtml = "
-                    <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
-                        <span>TOTAL AMOUNT:</span>
-                        <span>₱" . number_format($totalAmt, 2) . "</span>
-                    </div>
-                    <div style='color:#6c757d;font-size:13px;'>
-                        Cash on Delivery (Pay upon delivery)
-                    </div>
-                ";
-            } 
-            // 50% DOWNPAYMENT
-            elseif (
-                $totalAmt >= 5000 &&
-                (
-                    strpos($paymentScheme, '50') !== false ||
-                    strpos($paymentScheme, 'down') !== false
-                )
-            ) {
-                $downpayment = isset($order['paid_amount'])
-                    ? (float)$order['paid_amount']
-                    : ($totalAmt * 0.5);
-                $balance = $totalAmt - $downpayment;
-                $paymentBreakdownHtml = "
-                    <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
-                        <span>TOTAL AMOUNT:</span>
-                        <span>₱" . number_format($totalAmt, 2) . "</span>
-                    </div>
-                    <div style='display:flex;justify-content:space-between;font-size:14px;color:#198754;font-weight:bold;margin-bottom:5px;'>
-                        <span>PAID VIA {$paymentMethodName}:</span>
-                        <span>₱" . number_format($downpayment, 2) . "</span>
-                    </div>
-                    <div style='border-top:1px dashed #000;margin:8px 0;'></div>
-                    <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;color:#dc3545;'>
-                        <span>PAY UPON DELIVERY:</span>
-                        <span>₱" . number_format($balance, 2) . "</span>
-                    </div>";
-            } 
-            // GCASH / MAYA FULL PAYMENT
-            elseif (
-                $paymentMethodName === 'GCASH' ||
-                $paymentMethodName === 'MAYA'
-            ) {
-                $paidAmount = isset($order['paid_amount'])
-                    ? (float)$order['paid_amount']
-                    : $totalAmt;
-                $paymentBreakdownHtml = "
-                    <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
-                        <span>TOTAL AMOUNT:</span>
-                        <span>₱" . number_format($totalAmt, 2) . "</span>
-                    </div>
-                    <div style='display:flex;justify-content:space-between;font-size:14px;color:#198754;font-weight:bold;margin-bottom:5px;'>
-                        <span>PAID VIA {$paymentMethodName}:</span>
-                        <span>₱" . number_format($paidAmount, 2) . "</span>
-                    </div>
-                ";
-            } else {
-                $paymentBreakdownHtml = "
-                    <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;'>
-                        <span>TOTAL AMOUNT:</span>
-                        <span>₱" . number_format($totalAmt, 2) . "</span>
-                    </div>
-                ";
-            }
-        
-            // RECEIPT HTML
-            ob_start();
-            ?>
-            <div style="
-                border:1px solid #ddd;
-                padding:20px;
-                max-width:600px;
-                margin:0 auto;
-                font-family:'Courier New',Courier,monospace;
-                background:#ffffff;
-                color:#000000;
-            ">
-                <div style="text-align:center;margin-bottom:15px;">
-                    <h3 style="margin:0;text-transform:uppercase;">
-                        R. Taipan Hardware
-                    </h3>
-                    <span style="font-size:12px;">
-                        190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal
-                    </span>
-                    <br>
-                    <span style="font-size:12px;">
-                        Contact: 0907 456 5632
-                    </span>
-                    <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-                    <span style="font-size:12px;">
-                        <b>OFFICIAL RECEIPT (ONLINE ORDER)</b>
-                    </span>
-                    <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+        // COD
+        if (strpos($paymentMethodName, 'COD') !== false) {
+            $paymentBreakdownHtml = "
+                <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱" . number_format($totalAmt, 2) . "</span>
                 </div>
-                <p style="font-size:13px;margin:3px 0;">
-                    <b>Order ID:</b> #<?php echo $order_id; ?>
-                </p>
-                <p style="font-size:13px;margin:3px 0;">
-                    <b>Customer:</b>
-                    <?php echo htmlspecialchars($order['fullname']); ?>
-                </p>
-                <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-                <table style="width:100%;border-collapse:collapse;font-size:13px;">
-                    <tbody>
-                    <?php foreach ($items_query as $item) {
-                        $price = (float)$item['price'];
-                        $qty = (int)$item['qty'];
-                        $subtotal = $price * $qty;
-                    ?>
-                        <tr>
-                            <td style="padding:4px 0;">
-                                <?php echo htmlspecialchars($item['product_name']); ?>
-                                (x<?php echo $qty; ?>)
-                            </td>
-                            <td style="padding:4px 0;text-align:right;">
-                                ₱<?php echo number_format($subtotal, 2); ?>
-                            </td>
-                        </tr>
-                    <?php } ?>
-                    </tbody>
-                </table>
-
-                <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-                <?php echo $paymentBreakdownHtml; ?>
-                <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-                <div style="font-size:13px;">
-                    <b>Mode of Payment:</b>
-                    <?php echo htmlspecialchars($order['payment_method']); ?>
-                </div>
-                <div style="text-align:center;margin-top:15px;font-size:13px;">
-                    <b>STATUS: APPROVED</b>
-                </div>
-            </div>
-            <?php
-            $receiptHtml = ob_get_clean();
-
-            $mail->Body = "
-                <div style='font-family:Arial,sans-serif;'>
-                    <h3>
-                        Hi " . htmlspecialchars($order['fullname']) . ",
-                    </h3>
-                    <p>
-                        Good news! Your order with Order Number
-                        <b>#$order_id</b>
-                        has been <b>APPROVED</b> successfully.
-                    </p>
-                    <p>
-                        Below is your official receipt for this transaction:
-                    </p>
-                    $receiptHtml
-                    <br>
-                    <p>
-                        We are now preparing your items.
-                        We will keep you updated via email!
-                    </p>
-                    <br>
-                    <h4>
-                        Best regards,<br>
-                        R. Taipan Construction Supply and Services, OPC
-                    </h4>
+                <div style='color:#6c757d;font-size:13px;'>
+                    Cash on Delivery (Pay upon delivery)
                 </div>
             ";
-
-        // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
-        } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
-            $decline_reason_text = !empty($order['decline_reason']) ? nl2br(htmlspecialchars($order['decline_reason'])) : 'No specific reason provided.';
-            $pay_method_email = strtoupper(trim($order['payment_method'] ?? 'COD'));
-            
-            $refundEmailSection = "";
-            if ($current_status == 'declined' && ($pay_method_email === 'GCASH' || $pay_method_email === 'MAYA') && !empty($order['refund_receipt'])) {
-                $totalAmtEmail = (float)$order['total_amount'];
-                $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
-                $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
-
-                $refundImgSrc = getProductImageSrc($order['refund_receipt']);
-
-                $refundEmailSection = "
-                    <div style='background:#f8f9fa; padding:15px; border-radius:5px; margin:15px 0;'>
-                        <p style='margin:0 0 10px 0;'><strong>Refund Details:</strong></p>
-                        <p style='margin:3px 0;'><strong>Refund Amount:</strong> ₱" . number_format($refAmtEmail, 2) . "</p>
-                        <p style='margin:3px 0;'><strong>Reference Number:</strong> " . htmlspecialchars($order['refund_reference']) . "</p>
-                        <br>
-                        <p style='margin:0 0 5px 0;'><strong>Refund Proof:</strong></p>
-                        <a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'>
-                            <img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:250px; border:1px solid #ddd; border-radius:4px;'>
-                        </a>
-                    </div>
-                ";
-            }
-
-            $mail->Body = "
-                <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
-                <p>We regret to inform you that your order <b>#$order_id</b> has been <b>" . strtoupper($current_status) . "</b>.</p>
-                <p><strong>Reason:</strong><br>$decline_reason_text</p>
-                $refundEmailSection
-                <p>If you have any questions, please contact us through our Facebook page below:</p>
-                <p>
-                    <a href='https://www.facebook.com/RSRT22' style='background-color:#0d6efd; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>
-                        View Facebook Page
-                    </a>
-                </p>
-                <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
-            ";
-
-        // OUT FOR DELIVERY
-        } elseif ($current_status == 'out_for_delivery') {
-
-            $total = (float)$order['total_amount'];
-            $totalFormatted = number_format($total, 2);
-
-            $payment_method = strtoupper(trim($order['payment_method'] ?? ''));
-            $payment_scheme = strtolower(trim($order['payment_scheme'] ?? ''));
-
-            $paymentReminderHtml = "";
-            if (strpos($payment_method, 'COD') !== false || strpos($payment_method, 'CASH ON DELIVERY') !== false) {
-
-                $paymentReminderHtml = "
-                    <div style='background:#fff3cd; padding:15px; border:1px solid #ffeeba; border-radius:5px; margin:20px 0;'>
-                        <h4 style='margin-top:0; color:#856404;'>💵 Payment Reminder</h4>
-                        <p>Please prepare the <b>EXACT AMOUNT</b> upon delivery.</p>
-                        <p style='font-size:18px;'>
-                            <b>Total Amount to Pay:</b>
-                            <span style='color:#d9534f;'>₱{$totalFormatted}</span>
-                        </p>
-                    </div>
-                ";
-
-            } elseif ($payment_method === 'GCASH' || $payment_method === 'MAYA') {
-
-                if (strpos($payment_scheme, '50') !== false || strpos($payment_scheme, 'down') !== false) {
-
-                    $downPayment = isset($order['paid_amount']) ? (float)$order['paid_amount'] : ($total * 0.50);
-                    $remainingBalance = $total - $downPayment;
-
-                    $downFormatted = number_format($downPayment, 2);
-                    $balanceFormatted = number_format($remainingBalance, 2);
-
-                    $paymentReminderHtml = "
-                        <div style='background:#fff3cd; padding:15px; border:1px solid #ffeeba; border-radius:5px; margin:20px 0;'>
-                            <h4 style='margin-top:0; color:#856404;'>💳 Payment Status</h4>
-                            <p>Your <b>50% down payment</b> through <b>{$payment_method}</b> has been recorded.</p>
-                            <p><b>Total Order Amount:</b> ₱{$totalFormatted}</p>
-                            <p style='color:#198754;'><b>50% Down Payment:</b> ₱{$downFormatted}</p>
-                            <p style='color:#dc3545; font-size:18px; margin-bottom:0;'><b>Remaining Balance:</b> ₱{$balanceFormatted}</p>
-                            <p>Please prepare <b>₱{$balanceFormatted}</b> upon delivery.</p>
-                        </div>
-                    ";
-
-                } else {
-
-                    $paymentReminderHtml = "
-                        <div style='background:#d4edda; padding:15px; border:1px solid #c3e6cb; border-radius:5px; margin:20px 0;'>
-                            <h4 style='margin-top:0; color:#155724;'>✅ Payment Status</h4>
-                            <p style='color:#155724; margin-bottom:0;'>
-                                Your order is <b>FULLY PAID</b> online through <b>{$payment_method}</b>. No payment is required upon delivery.
-                            </p>
-                        </div>
-                    ";
-                }
-            }
-
-            $customer_name = htmlspecialchars($order['fullname']);
-
-            $mail->Body = "
-                <div style='font-family:Arial,sans-serif; color:#333; line-height:1.6;'>
-                    <h3>Hi {$customer_name},</h3>
-                    <p>Your order <b>#{$order_id}</b> is now <b style='color:#d39e00;'>OUT FOR DELIVERY</b>!</p>
-                    <p>Our delivery personnel will contact you shortly. Please keep your phone line available.</p>
-                    {$paymentReminderHtml}
-                    <p>Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC</b>.</p>
-                    <br>
-                    <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+        } 
+        // 50% DOWNPAYMENT
+        elseif (
+            $totalAmt >= 5000 &&
+            (
+                strpos($paymentScheme, '50') !== false ||
+                strpos($paymentScheme, 'down') !== false
+            )
+        ) {
+            $downpayment = isset($order['paid_amount'])
+                ? (float)$order['paid_amount']
+                : ($totalAmt * 0.5);
+            $balance = $totalAmt - $downpayment;
+            $paymentBreakdownHtml = "
+                <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱" . number_format($totalAmt, 2) . "</span>
+                </div>
+                <div style='display:flex;justify-content:space-between;font-size:14px;color:#198754;font-weight:bold;margin-bottom:5px;'>
+                    <span>PAID VIA {$paymentMethodName}:</span>
+                    <span>₱" . number_format($downpayment, 2) . "</span>
+                </div>
+                <div style='border-top:1px dashed #000;margin:8px 0;'></div>
+                <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;color:#dc3545;'>
+                    <span>PAY UPON DELIVERY:</span>
+                    <span>₱" . number_format($balance, 2) . "</span>
+                </div>";
+        } 
+        // GCASH / MAYA FULL PAYMENT
+        elseif (
+            $paymentMethodName === 'GCASH' ||
+            $paymentMethodName === 'MAYA'
+        ) {
+            $paidAmount = isset($order['paid_amount'])
+                ? (float)$order['paid_amount']
+                : $totalAmt;
+            $paymentBreakdownHtml = "
+                <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱" . number_format($totalAmt, 2) . "</span>
+                </div>
+                <div style='display:flex;justify-content:space-between;font-size:14px;color:#198754;font-weight:bold;margin-bottom:5px;'>
+                    <span>PAID VIA {$paymentMethodName}:</span>
+                    <span>₱" . number_format($paidAmount, 2) . "</span>
                 </div>
             ";
-
-        // COMPLETED
-        } elseif ($current_status == 'completed') {
-
-            $mail->Body = "
-                <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
-                <p>Your order <b>#$order_id</b> status has been <b>DELIVERED</b>.</p>
-                <p>
-                    Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC.</b>
-                    We sincerely appreciate your trust and support, and we look forward to serving you again in the future.
-                </p>
-                <br>
-                <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
-            ";
-
         } else {
-
-            $mail->Body = "
-                <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
-                <p>Your order <b>#$order_id</b> status has been updated to <b>" . strtoupper($current_status) . "</b>.</p>
+            $paymentBreakdownHtml = "
+                <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;'>
+                    <span>TOTAL AMOUNT:</span>
+                    <span>₱" . number_format($totalAmt, 2) . "</span>
+                </div>
+            ";
+        }
+    
+        // RECEIPT HTML
+        ob_start();
+        ?>
+        <div style="
+            border:1px solid #ddd;
+            padding:20px;
+            max-width:600px;
+            margin:0 auto;
+            font-family:'Courier New',Courier,monospace;
+            background:#ffffff;
+            color:#000000;
+        ">
+            <div style="text-align:center;margin-bottom:15px;">
+                <h3 style="margin:0;text-transform:uppercase;">
+                    R. Taipan Hardware
+                </h3>
+                <span style="font-size:12px;">
+                    190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal
+                </span>
                 <br>
-                <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+                <span style="font-size:12px;">
+                    Contact: 0907 456 5632
+                </span>
+                <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+                <span style="font-size:12px;">
+                    <b>OFFICIAL RECEIPT (ONLINE ORDER)</b>
+                </span>
+                <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+            </div>
+            <p style="font-size:13px;margin:3px 0;">
+                <b>Order ID:</b> #<?php echo $order_id; ?>
+            </p>
+            <p style="font-size:13px;margin:3px 0;">
+                <b>Customer:</b>
+                <?php echo htmlspecialchars($order['fullname']); ?>
+            </p>
+            <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tbody>
+                <?php foreach ($items_query as $item) {
+                    $price = (float)$item['price'];
+                    $qty = (int)$item['qty'];
+                    $subtotal = $price * $qty;
+                ?>
+                    <tr>
+                        <td style="padding:4px 0;">
+                            <?php echo htmlspecialchars($item['product_name']); ?>
+                            (x<?php echo $qty; ?>)
+                        </td>
+                        <td style="padding:4px 0;text-align:right;">
+                            ₱<?php echo number_format($subtotal, 2); ?>
+                        </td>
+                    </tr>
+                <?php } ?>
+                </tbody>
+            </table>
+
+            <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+            <?php echo $paymentBreakdownHtml; ?>
+            <div style="border-top:1px dashed #000;margin:10px 0;"></div>
+            <div style="font-size:13px;">
+                <b>Mode of Payment:</b>
+                <?php echo htmlspecialchars($order['payment_method']); ?>
+            </div>
+            <div style="text-align:center;margin-top:15px;font-size:13px;">
+                <b>STATUS: APPROVED</b>
+            </div>
+        </div>
+        <?php
+        $receiptHtml = ob_get_clean();
+
+        $emailBody = "
+            <div style='font-family:Arial,sans-serif;'>
+                <h3>
+                    Hi " . htmlspecialchars($order['fullname']) . ",
+                </h3>
+                <p>
+                    Good news! Your order with Order Number
+                    <b>#$order_id</b>
+                    has been <b>APPROVED</b> successfully.
+                </p>
+                <p>
+                    Below is your official receipt for this transaction:
+                </p>
+                $receiptHtml
+                <br>
+                <p>
+                    We are now preparing your items.
+                    We will keep you updated via email!
+                </p>
+                <br>
+                <h4>
+                    Best regards,<br>
+                    R. Taipan Construction Supply and Services, OPC
+                </h4>
+            </div>
+        ";
+
+    // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
+    } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
+        $decline_reason_text = !empty($order['decline_reason']) ? nl2br(htmlspecialchars($order['decline_reason'])) : 'No specific reason provided.';
+        $pay_method_email = strtoupper(trim($order['payment_method'] ?? 'COD'));
+        
+        $refundEmailSection = "";
+        if ($current_status == 'declined' && ($pay_method_email === 'GCASH' || $pay_method_email === 'MAYA') && !empty($order['refund_receipt'])) {
+            $totalAmtEmail = (float)$order['total_amount'];
+            $paymentSchemeEmail = strtolower(trim($order['payment_scheme'] ?? ''));
+            $refAmtEmail = ($totalAmtEmail >= 5000 && strpos($paymentSchemeEmail, '50') !== false) ? ($totalAmtEmail * 0.5) : $totalAmtEmail;
+
+            $refundImgSrc = getProductImageSrc($order['refund_receipt']);
+
+            $refundEmailSection = "
+                <div style='background:#f8f9fa; padding:15px; border-radius:5px; margin:15px 0;'>
+                    <p style='margin:0 0 10px 0;'><strong>Refund Details:</strong></p>
+                    <p style='margin:3px 0;'><strong>Refund Amount:</strong> ₱" . number_format($refAmtEmail, 2) . "</p>
+                    <p style='margin:3px 0;'><strong>Reference Number:</strong> " . htmlspecialchars($order['refund_reference']) . "</p>
+                    <br>
+                    <p style='margin:0 0 5px 0;'><strong>Refund Proof:</strong></p>
+                    <a href='" . htmlspecialchars($refundImgSrc) . "' target='_blank'>
+                        <img src='" . htmlspecialchars($refundImgSrc) . "' style='max-width:250px; border:1px solid #ddd; border-radius:4px;'>
+                    </a>
+                </div>
             ";
         }
 
-        $mail->send();
+        $emailBody = "
+            <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
+            <p>We regret to inform you that your order <b>#$order_id</b> has been <b>" . strtoupper($current_status) . "</b>.</p>
+            <p><strong>Reason:</strong><br>$decline_reason_text</p>
+            $refundEmailSection
+            <p>If you have any questions, please contact us through our Facebook page below:</p>
+            <p>
+                <a href='https://www.facebook.com/RSRT22' style='background-color:#0d6efd; color:white; padding:10px 20px; text-decoration:none; border-radius:5px;'>
+                    View Facebook Page
+                </a>
+            </p>
+            <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+        ";
 
+    // OUT FOR DELIVERY
+    } elseif ($current_status == 'out_for_delivery') {
+
+        $total = (float)$order['total_amount'];
+        $totalFormatted = number_format($total, 2);
+
+        $payment_method = strtoupper(trim($order['payment_method'] ?? ''));
+        $payment_scheme = strtolower(trim($order['payment_scheme'] ?? ''));
+
+        $paymentReminderHtml = "";
+        if (strpos($payment_method, 'COD') !== false || strpos($payment_method, 'CASH ON DELIVERY') !== false) {
+
+            $paymentReminderHtml = "
+                <div style='background:#fff3cd; padding:15px; border:1px solid #ffeeba; border-radius:5px; margin:20px 0;'>
+                    <h4 style='margin-top:0; color:#856404;'>💵 Payment Reminder</h4>
+                    <p>Please prepare the <b>EXACT AMOUNT</b> upon delivery.</p>
+                    <p style='font-size:18px;'>
+                        <b>Total Amount to Pay:</b>
+                        <span style='color:#d9534f;'>₱{$totalFormatted}</span>
+                    </p>
+                </div>
+            ";
+
+        } elseif ($payment_method === 'GCASH' || $payment_method === 'MAYA') {
+
+            if (strpos($payment_scheme, '50') !== false || strpos($payment_scheme, 'down') !== false) {
+
+                $downPayment = isset($order['paid_amount']) ? (float)$order['paid_amount'] : ($total * 0.50);
+                $remainingBalance = $total - $downPayment;
+
+                $downFormatted = number_format($downPayment, 2);
+                $balanceFormatted = number_format($remainingBalance, 2);
+
+                $paymentReminderHtml = "
+                    <div style='background:#fff3cd; padding:15px; border:1px solid #ffeeba; border-radius:5px; margin:20px 0;'>
+                        <h4 style='margin-top:0; color:#856404;'>💳 Payment Status</h4>
+                        <p>Your <b>50% down payment</b> through <b>{$payment_method}</b> has been recorded.</p>
+                        <p><b>Total Order Amount:</b> ₱{$totalFormatted}</p>
+                        <p style='color:#198754;'><b>50% Down Payment:</b> ₱{$downFormatted}</p>
+                        <p style='color:#dc3545; font-size:18px; margin-bottom:0;'><b>Remaining Balance:</b> ₱{$balanceFormatted}</p>
+                        <p>Please prepare <b>₱{$balanceFormatted}</b> upon delivery.</p>
+                    </div>
+                ";
+
+            } else {
+
+                $paymentReminderHtml = "
+                    <div style='background:#d4edda; padding:15px; border:1px solid #c3e6cb; border-radius:5px; margin:20px 0;'>
+                        <h4 style='margin-top:0; color:#155724;'>✅ Payment Status</h4>
+                        <p style='color:#155724; margin-bottom:0;'>
+                            Your order is <b>FULLY PAID</b> online through <b>{$payment_method}</b>. No payment is required upon delivery.
+                        </p>
+                    </div>
+                ";
+            }
+        }
+
+        $customer_name = htmlspecialchars($order['fullname']);
+
+        $emailBody = "
+            <div style='font-family:Arial,sans-serif; color:#333; line-height:1.6;'>
+                <h3>Hi {$customer_name},</h3>
+                <p>Your order <b>#{$order_id}</b> is now <b style='color:#d39e00;'>OUT FOR DELIVERY</b>!</p>
+                <p>Our delivery personnel will contact you shortly. Please keep your phone line available.</p>
+                {$paymentReminderHtml}
+                <p>Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC</b>.</p>
+                <br>
+                <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+            </div>
+        ";
+
+    // COMPLETED
+    } elseif ($current_status == 'completed') {
+
+        $emailBody = "
+            <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
+            <p>Your order <b>#$order_id</b> status has been <b>DELIVERED</b>.</p>
+            <p>
+                Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC.</b>
+                We sincerely appreciate your trust and support, and we look forward to serving you again in the future.
+            </p>
+            <br>
+            <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+        ";
+
+    } else {
+
+        $emailBody = "
+            <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
+            <p>Your order <b>#$order_id</b> status has been updated to <b>" . strtoupper($current_status) . "</b>.</p>
+            <br>
+            <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
+        ";
+    }
+
+    $sendResult = sendOrderEmail($toEmail, $toName, $subject, $emailBody);
+
+    if ($sendResult['success']) {
         $stmt_up = $pdo->prepare("UPDATE orders SET email_status = ? WHERE id = ?");
         $stmt_up->execute([$current_status, $order_id]);
 
@@ -384,10 +399,9 @@ if (isset($_POST['send_email_update'])) {
             window.location.href='orders.php';
         </script>";
         exit();
-
-    } catch (Exception $e) {
+    } else {
         echo "<script>
-            alert('Email failed: " . addslashes($mail->ErrorInfo) . "');
+            alert('Email failed: " . addslashes($sendResult['error']) . "');
             window.location.href='orders.php';
         </script>";
         exit();
