@@ -77,6 +77,18 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
                 $is_cancel_completed = true;
             }
 
+            // CHECK FOR EXISTING PENDING REQUEST (CASE-INSENSITIVE ANTI-SPAM CHECK)
+            $has_pending_request = false;
+            $pending_req_type = '';
+            $stmt_pending = $pdo->prepare("SELECT request_type FROM customer_requests WHERE order_number = :order_id AND (LOWER(TRIM(status)) = 'pending' OR status IS NULL) ORDER BY id DESC LIMIT 1");
+            $stmt_pending->execute([':order_id' => $order_id]);
+            $pending_row = $stmt_pending->fetch();
+
+            if ($pending_row) {
+                $has_pending_request = true;
+                $pending_req_type = strtoupper($pending_row['request_type']);
+            }
+
             // Parse cart items safely
             $items = [];
             $cart_raw = $order_data['cart'] ?? '';
@@ -112,7 +124,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'get_items') {
                     'landmark' => $landmark,
                     'ref_no' => $ref_no,
                     'paid_amount' => $paid_amount,
-                    'is_cancel_completed' => $is_cancel_completed
+                    'is_cancel_completed' => $is_cancel_completed,
+                    'has_pending_request' => $has_pending_request,
+                    'pending_req_type' => $pending_req_type
                 ],
                 'items' => $items
             ]);
@@ -145,125 +159,157 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
         $v_status = strtolower(trim($v_data['status'] ?? ''));
         $v_ord_date_str = $v_data['order_date'] ?? ($v_data['created_at'] ?? 'now');
         
-        // Backend 1-Day (24 Hours) Exchange Limit Validation
-        $order_timestamp = strtotime($v_ord_date_str);
-        $time_passed = time() - $order_timestamp;
-        $is_exceeded_1day = ($time_passed > 86400); // 86400 seconds = 24 hours
+        // Backend Anti-Spam Check: Harangan kapag may PENDING request na ang order
+        $stmt_check_pending = $pdo->prepare("SELECT request_type FROM customer_requests WHERE order_number = :order_id AND (LOWER(TRIM(status)) = 'pending' OR status IS NULL) LIMIT 1");
+        $stmt_check_pending->execute([':order_id' => $order_id]);
+        $existing_pending = $stmt_check_pending->fetch();
 
-        if ($v_status === 'cancelled' || $v_status === 'declined') {
-            $message = "❌ Cannot submit request. This order has already been " . $v_status . ".";
-            $message_type = "danger";
-        }
-        elseif ($request_type === 'exchange' && $v_status !== 'completed') {
-            $message = "❌ Cannot request exchange. Item Exchange is only allowed for COMPLETED orders.";
-            $message_type = "danger";
-        }
-        elseif ($request_type === 'exchange' && $is_exceeded_1day) {
-            $message = "❌ Item Exchange requests are only allowed within 24 hours (1 day) after the order completion/date.";
-            $message_type = "danger";
-        }
-        elseif ($request_type === 'cancel' && in_array($v_status, ['out for delivery', 'out_for_delivery', 'completed', 'delivered'])) {
-            $message = "❌ Cannot request cancellation. Order status is " . strtoupper($v_data['status']) . ".";
-            $message_type = "danger";
-        }
-        elseif (in_array($v_status, ['out for delivery', 'out_for_delivery', 'delivered'])) {
-            $message = "❌ Cannot submit request. Submitting requests for this order status is locked.";
+        if ($existing_pending) {
+            $message = "❌ Submission Blocked: Order #" . htmlspecialchars($order_id) . " already has an active PENDING " . strtoupper($existing_pending['request_type']) . " request under review by the admin.";
             $message_type = "danger";
         } else {
-            $filename = null;
-            if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === UPLOAD_ERR_OK) {
-                $file_tmp = $_FILES['product_image']['tmp_name'];
-                $ext = strtolower(pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION));
-                $new_filename = "REQ_" . $order_id . "_" . time() . "_" . rand(1000, 9999) . "." . $ext;
+            // Backend 1-Day (24 Hours) Exchange Limit Validation
+            $order_timestamp = strtotime($v_ord_date_str);
+            $time_passed = time() - $order_timestamp;
+            $is_exceeded_1day = ($time_passed > 86400); // 86400 seconds = 24 hours
 
-                // Dedicated Customer Service Google Drive Folder ID
-                $CUSTOMER_SERVICE_FOLDER_ID = "1Gu8SOPjnIDEwoMhRFhZkxHqPsUL7MKNS";
+            if ($v_status === 'cancelled' || $v_status === 'declined') {
+                $message = "❌ Cannot submit request. This order has already been " . $v_status . ".";
+                $message_type = "danger";
+            }
+            elseif ($request_type === 'exchange' && $v_status !== 'completed') {
+                $message = "❌ Cannot request exchange. Item Exchange is only allowed for COMPLETED orders.";
+                $message_type = "danger";
+            }
+            elseif ($request_type === 'exchange' && $is_exceeded_1day) {
+                $message = "❌ Item Exchange requests are only allowed within 24 hours (1 day) after the order completion/date.";
+                $message_type = "danger";
+            }
+            elseif ($request_type === 'cancel' && in_array($v_status, ['out for delivery', 'out_for_delivery', 'completed', 'delivered'])) {
+                $message = "❌ Cannot request cancellation. Order status is " . strtoupper($v_data['status']) . ".";
+                $message_type = "danger";
+            }
+            elseif (in_array($v_status, ['out for delivery', 'out_for_delivery', 'delivered'])) {
+                $message = "❌ Cannot submit request. Submitting requests for this order status is locked.";
+                $message_type = "danger";
+            } else {
+                $filename = null;
+                if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === UPLOAD_ERR_OK) {
+                    $file_tmp = $_FILES['product_image']['tmp_name'];
+                    $ext = strtolower(pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION));
+                    $new_filename = "REQ_" . $order_id . "_" . time() . "_" . rand(1000, 9999) . "." . $ext;
 
-                // 1. Unang i-upload sa Google Drive mula sa temporary PHP file
-                try {
-                    if (function_exists('uploadProductImageToDrive')) {
-                        $file_id = uploadProductImageToDrive($file_tmp, $new_filename, $CUSTOMER_SERVICE_FOLDER_ID);
-                        if (!empty($file_id)) {
-                            $filename = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                    // Dedicated Customer Service Google Drive Folder ID
+                    $CUSTOMER_SERVICE_FOLDER_ID = "1Gu8SOPjnIDEwoMhRFhZkxHqPsUL7MKNS";
+
+                    // 1. Unang i-upload sa Google Drive mula sa temporary PHP file
+                    try {
+                        if (function_exists('uploadProductImageToDrive')) {
+                            $file_id = uploadProductImageToDrive($file_tmp, $new_filename, $CUSTOMER_SERVICE_FOLDER_ID);
+                            if (!empty($file_id)) {
+                                $filename = "https://drive.google.com/uc?export=view&id=" . $file_id;
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        error_log("CUSTOMER SERVICE GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
+                    }
+
+                    // 2. Fallback sa Local Uploads directory kung nag-fail o nag-timeout ang Drive upload
+                    if (empty($filename)) {
+                        $target_dir = "../uploads/";
+                        if (!is_dir($target_dir)) {
+                            mkdir($target_dir, 0777, true);
+                        }
+                        if (move_uploaded_file($file_tmp, $target_dir . $new_filename)) {
+                            $filename = $new_filename;
                         }
                     }
-                } catch (Throwable $e) {
-                    error_log("CUSTOMER SERVICE GOOGLE DRIVE UPLOAD ERROR: " . $e->getMessage());
                 }
 
-                // 2. Fallback sa Local Uploads directory kung nag-fail o nag-timeout ang Drive upload
-                if (empty($filename)) {
-                    $target_dir = "../uploads/";
-                    if (!is_dir($target_dir)) {
-                        mkdir($target_dir, 0777, true);
+                $total_ordered_qty_map = [];
+                try {
+                    $cart_raw = $v_data['cart'] ?? '';
+                    $cart_obj = is_string($cart_raw) ? json_decode($cart_raw, true) : $cart_raw;
+                    if (is_array($cart_obj)) {
+                        foreach ($cart_obj as $it) {
+                            $p_name = $it['name'] ?? ($it['product_name'] ?? 'Item');
+                            $p_qty = intval($it['qty'] ?? 1);
+                            $total_ordered_qty_map[$p_name] = $p_qty;
+                        }
                     }
-                    if (move_uploaded_file($file_tmp, $target_dir . $new_filename)) {
-                        $filename = $new_filename;
-                    }
-                }
-            }
+                } catch (Exception $e) {}
 
-            $total_ordered_qty_map = [];
-            try {
-                $cart_raw = $v_data['cart'] ?? '';
-                $cart_obj = is_string($cart_raw) ? json_decode($cart_raw, true) : $cart_raw;
-                if (is_array($cart_obj)) {
-                    foreach ($cart_obj as $it) {
-                        $p_name = $it['name'] ?? ($it['product_name'] ?? 'Item');
-                        $p_qty = intval($it['qty'] ?? 1);
-                        $total_ordered_qty_map[$p_name] = $p_qty;
-                    }
-                }
-            } catch (Exception $e) {}
+                if ($request_type === 'exchange') {
+                    $exchange_items = $_POST['exchange_items'] ?? [];
+                    $exchange_qtys = $_POST['exchange_qtys'] ?? [];
+                    $is_valid_qty = true;
+                    $submitted_counts = [];
 
-            if ($request_type === 'exchange') {
-                $exchange_items = $_POST['exchange_items'] ?? [];
-                $exchange_qtys = $_POST['exchange_qtys'] ?? [];
-                $is_valid_qty = true;
-                $submitted_counts = [];
-
-                for ($i = 0; $i < count($exchange_items); $i++) {
-                    $item_name = $exchange_items[$i];
-                    $item_qty = intval($exchange_qtys[$i] ?? 1);
-                    
-                    if (!isset($total_ordered_qty_map[$item_name])) {
-                        $is_valid_qty = false;
-                        break;
-                    }
-                    
-                    $submitted_counts[$item_name] = ($submitted_counts[$item_name] ?? 0) + $item_qty;
-                    if ($submitted_counts[$item_name] > $total_ordered_qty_map[$item_name]) {
-                        $is_valid_qty = false;
-                        break;
-                    }
-                }
-
-                if (!$is_valid_qty) {
-                    $message = "❌ Security Error: The quantity of items requested for exchange exceeds your original order.";
-                    $message_type = "danger";
-                } else {
-                    $readable_items_list = "";
                     for ($i = 0; $i < count($exchange_items); $i++) {
                         $item_name = $exchange_items[$i];
                         $item_qty = intval($exchange_qtys[$i] ?? 1);
-                        $readable_items_list .= "• {$item_name} (Qty: {$item_qty}x)\n";
+                        
+                        if (!isset($total_ordered_qty_map[$item_name])) {
+                            $is_valid_qty = false;
+                            break;
+                        }
+                        
+                        $submitted_counts[$item_name] = ($submitted_counts[$item_name] ?? 0) + $item_qty;
+                        if ($submitted_counts[$item_name] > $total_ordered_qty_map[$item_name]) {
+                            $is_valid_qty = false;
+                            break;
+                        }
                     }
-                    
-                    $stmt_ins = $pdo->prepare("INSERT INTO customer_requests 
-                    (order_number, account, request_type, reason, details, item_to_replace, product_image, status) 
-                    VALUES 
-                    (:order_id, :email, :request_type, :reason, :details, :item_to_replace, :product_image, 'Pending')");
-                    
+
+                    if (!$is_valid_qty) {
+                        $message = "❌ Security Error: The quantity of items requested for exchange exceeds your original order.";
+                        $message_type = "danger";
+                    } else {
+                        $readable_items_list = "";
+                        for ($i = 0; $i < count($exchange_items); $i++) {
+                            $item_name = $exchange_items[$i];
+                            $item_qty = intval($exchange_qtys[$i] ?? 1);
+                            $readable_items_list .= "• {$item_name} (Qty: {$item_qty}x)\n";
+                        }
+                        
+                        $stmt_ins = $pdo->prepare("INSERT INTO customer_requests 
+                        (order_number, account, request_type, reason, details, item_to_replace, product_image, status) 
+                        VALUES 
+                        (:order_id, :email, :request_type, :reason, :details, :item_to_replace, :product_image, 'Pending')");
+                        
+                        $ins = $stmt_ins->execute([
+                            ':order_id' => $order_id,
+                            ':email' => $email,
+                            ':request_type' => $request_type,
+                            ':reason' => $reason,
+                            ':details' => $user_comments,
+                            ':item_to_replace' => trim($readable_items_list),
+                            ':product_image' => $filename
+                        ]);
+                        
+                        if ($ins) {
+                            $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
+                            $message_type = "success";
+                        } else {
+                            $message = "❌ Failed to submit request. Please try again.";
+                            $message_type = "danger";
+                        }
+                    }
+                } else {
+                    $stmt_ins = $pdo->prepare("INSERT INTO customer_requests
+                    (order_number, account, request_type, reason, details, item_to_replace, product_image, status)
+                    VALUES
+                    (:order_id, :email, :request_type, :reason, :details, NULL, :product_image, 'Pending')");
+
                     $ins = $stmt_ins->execute([
                         ':order_id' => $order_id,
                         ':email' => $email,
                         ':request_type' => $request_type,
                         ':reason' => $reason,
                         ':details' => $user_comments,
-                        ':item_to_replace' => trim($readable_items_list),
                         ':product_image' => $filename
                     ]);
-                    
+
                     if ($ins) {
                         $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
                         $message_type = "success";
@@ -271,28 +317,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                         $message = "❌ Failed to submit request. Please try again.";
                         $message_type = "danger";
                     }
-                }
-            } else {
-                $stmt_ins = $pdo->prepare("INSERT INTO customer_requests
-                (order_number, account, request_type, reason, details, item_to_replace, product_image, status)
-                VALUES
-                (:order_id, :email, :request_type, :reason, :details, NULL, :product_image, 'Pending')");
-
-                $ins = $stmt_ins->execute([
-                    ':order_id' => $order_id,
-                    ':email' => $email,
-                    ':request_type' => $request_type,
-                    ':reason' => $reason,
-                    ':details' => $user_comments,
-                    ':product_image' => $filename
-                ]);
-
-                if ($ins) {
-                    $message = "🎉 Your ticket request (" . strtoupper($request_type) . ") has been submitted successfully! Admin will review it.";
-                    $message_type = "success";
-                } else {
-                    $message = "❌ Failed to submit request. Please try again.";
-                    $message_type = "danger";
                 }
             }
         }
@@ -385,7 +409,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                             </div>
                         </div>
 
-                        <div class="border-top pt-4 mb-4">
+                        <div id="requestActionsBox" class="border-top pt-4 mb-4">
                             <label class="form-label fw-bold fs-5 text-dark">Select Request Action</label>
                             <div class="row g-2">
                                 <div class="col-md-4">
@@ -403,36 +427,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
                             </div>
                         </div>
 
-                        <div class="mb-4" id="reasonFieldWrapper">
-                            <label class="form-label fw-semibold">Reason for Request</label>
-                            <select name="reason" id="requestReason" class="form-select"></select>
-                        </div>
-
-                        <div id="exchangeCalculatorWrapper" class="card p-3 bg-light card-custom mb-4 d-none">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="fw-bold text-dark m-0"><i class="bi bi-arrow-repeat"></i> Same Item Exchange Policy</h6>
-                                <button type="button" id="btnAddExchangeItem" class="btn btn-sm btn-primary d-none"><i class="bi bi-plus-circle"></i> Add More Item</button>
+                        <div id="formFieldsContainer">
+                            <div class="mb-4" id="reasonFieldWrapper">
+                                <label class="form-label fw-semibold">Reason for Request</label>
+                                <select name="reason" id="requestReason" class="form-select"></select>
                             </div>
-                            
-                            <div id="exchangeItemsContainer"></div>
 
-                            <div class="alert alert-warning small mb-0 mt-3">
-                                ℹ️ <strong>Same Item Exchange Only:</strong> Exchanges are only allowed for the same item. Replacement with a different item is not permitted.
+                            <div id="exchangeCalculatorWrapper" class="card p-3 bg-light card-custom mb-4 d-none">
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 class="fw-bold text-dark m-0"><i class="bi bi-arrow-repeat"></i> Same Item Exchange Policy</h6>
+                                    <button type="button" id="btnAddExchangeItem" class="btn btn-sm btn-primary d-none"><i class="bi bi-plus-circle"></i> Add More Item</button>
+                                </div>
+                                
+                                <div id="exchangeItemsContainer"></div>
+
+                                <div class="alert alert-warning small mb-0 mt-3">
+                                    ℹ️ <strong>Same Item Exchange Only:</strong> Exchanges are only allowed for the same item. Replacement with a different item is not permitted.
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="mb-4 d-none" id="photoUploadSection">
-                            <label class="form-label fw-semibold">Upload Image Proof / Photo of the Item(s)</label>
-                            <input type="file" name="product_image" id="product_image" class="form-control" accept="image/*">
-                        </div>
+                            <div class="mb-4 d-none" id="photoUploadSection">
+                                <label class="form-label fw-semibold">Upload Image Proof / Photo of the Item(s)</label>
+                                <input type="file" name="product_image" id="product_image" class="form-control" accept="image/*">
+                            </div>
 
-                        <div class="mb-4">
-                            <label class="form-label fw-semibold" id="lbl_details_desc">Additional Comments / Specific Details</label>
-                            <textarea name="details" id="requestDetails" class="form-control" rows="4" placeholder="Explain your concern comprehensively..."></textarea>
-                        </div>
+                            <div class="mb-4">
+                                <label class="form-label fw-semibold" id="lbl_details_desc">Additional Comments / Specific Details</label>
+                                <textarea name="details" id="requestDetails" class="form-control" rows="4" placeholder="Explain your concern comprehensively..."></textarea>
+                            </div>
 
-                        <div class="text-end">
-                            <button type="submit" name="submit_request" id="btnSubmitForm" class="btn btn-success px-5 fw-semibold py-2">Submit Ticket Request</button>
+                            <div class="text-end">
+                                <button type="submit" name="submit_request" id="btnSubmitForm" class="btn btn-success px-5 fw-semibold py-2">Submit Ticket Request</button>
+                            </div>
                         </div>
 
                     </div>
@@ -626,10 +652,39 @@ function handleFormTypeSetup(status) {
     const lblCancel = document.getElementById('lbl_req_cancel');
     const errorWrapper = document.getElementById('errorWrapper');
     const btnSubmitForm = document.getElementById('btnSubmitForm');
+    const requestActionsBox = document.getElementById('requestActionsBox');
+    const formFieldsContainer = document.getElementById('formFieldsContainer');
     
     errorWrapper.classList.add('d-none');
     errorWrapper.innerHTML = '';
     
+    // Default reset states
+    btnSubmitForm.disabled = false;
+    btnSubmitForm.classList.remove('d-none');
+    requestActionsBox.classList.remove('d-none');
+    formFieldsContainer.classList.remove('d-none');
+    reqCancel.disabled = false;
+    reqExchange.disabled = false;
+    lblCancel.classList.remove('disabled', 'btn-outline-secondary');
+    lblCancel.classList.add('btn-outline-dark');
+    lblExchange.classList.remove('disabled', 'btn-outline-secondary');
+    lblExchange.classList.add('btn-outline-primary');
+
+    // 1. STRICT ANTI-SPAM LOCK: Kapag may umiiral na PENDING request, I-HIDE ANG BUONG ACTION & FORM FIELDS
+    if (currentOrderInfo.has_pending_request) {
+        reqCancel.disabled = true;
+        reqExchange.disabled = true;
+        btnSubmitForm.disabled = true;
+        
+        // Itago ang mismong selector at form inputs para hindi makapag-submit si customer
+        requestActionsBox.classList.add('d-none');
+        formFieldsContainer.classList.add('d-none');
+
+        errorWrapper.classList.remove('d-none');
+        errorWrapper.innerHTML = `⚠️ <strong>Pending Request Exists:</strong> Order #${currentOrderInfo.id} already has an active <strong>${currentOrderInfo.pending_req_type}</strong> request under review by the admin. You cannot submit another request until it is processed.`;
+        return;
+    }
+
     // Check if order date exceeds 24 hours (1 day)
     let isExceeded1Day = false;
     if (currentOrderInfo.order_date) {
@@ -641,25 +696,19 @@ function handleFormTypeSetup(status) {
         }
     }
 
-    // Default reset states
-    btnSubmitForm.disabled = false;
-    btnSubmitForm.classList.remove('d-none');
-    reqCancel.disabled = false;
-    lblCancel.classList.remove('disabled', 'btn-outline-secondary');
-    lblCancel.classList.add('btn-outline-dark');
-
-    // 1. If order is already cancelled/declined
+    // 2. If order is already cancelled/declined
     if (currentStatus === 'cancelled' || currentStatus === 'declined' || currentOrderInfo.is_cancel_completed) {
         reqCancel.disabled = true;
         lblCancel.classList.add('disabled', 'btn-outline-secondary');
         lblCancel.classList.remove('btn-outline-dark');
         btnSubmitForm.disabled = true;
+        formFieldsContainer.classList.add('d-none');
         
         errorWrapper.classList.remove('d-none');
         errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> This order has already been <strong>${currentStatus.toUpperCase()}</strong> or has a completed cancellation request. Submitting a new ticket is disabled.`;
     }
 
-    // 2. Lock Cancellation for Delivery/Delivered/Completed states
+    // 3. Lock Cancellation for Delivery/Delivered/Completed states
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered' || currentStatus === 'completed') {
         reqCancel.disabled = true;
         lblCancel.classList.add('disabled', 'btn-outline-secondary');
@@ -678,17 +727,18 @@ function handleFormTypeSetup(status) {
         }
     }
 
-    // 3. Lock whole form if status is Out for Delivery or Delivered
+    // 4. Lock whole form if status is Out for Delivery or Delivered
     if (currentStatus === 'out for delivery' || currentStatus === 'out_for_delivery' || currentStatus === 'delivered') {
         btnSubmitForm.disabled = true;
         reqExchange.disabled = true;
         lblExchange.classList.add('disabled', 'btn-outline-secondary');
         lblExchange.classList.remove('btn-outline-primary');
+        formFieldsContainer.classList.add('d-none');
         
         errorWrapper.classList.remove('d-none');
         errorWrapper.innerHTML = `⚠️ <strong>Note:</strong> Order status is <strong>${status.toUpperCase()}</strong>. Ticket submission is currently locked for this status.`;
     }
-    // 4. Exchange Policy (Completed Status + 1-Day Limit Validation)
+    // 5. Exchange Policy (Completed Status + 1-Day Limit Validation)
     else if (currentStatus === 'completed' && !currentOrderInfo.is_cancel_completed && currentStatus !== 'cancelled' && currentStatus !== 'declined') {
         if (isExceeded1Day) {
             // EXCEEDED 1 DAY: Disable exchange and form submission with English note
@@ -697,6 +747,7 @@ function handleFormTypeSetup(status) {
             lblExchange.classList.remove('btn-outline-primary');
             reqExchange.checked = false;
             btnSubmitForm.disabled = true;
+            formFieldsContainer.classList.add('d-none');
 
             errorWrapper.classList.remove('d-none');
             errorWrapper.innerHTML = `⚠️ <strong>Notice:</strong> Item exchange requests are strictly allowed within <strong>1 day (24 hours)</strong> after order completion. Since 24 hours have already passed, submitting an exchange ticket is now disabled.`;
