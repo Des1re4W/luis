@@ -46,8 +46,8 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Retrieve OCR Extracted Values
-    $ref_no = !empty($_POST['ref_no']) ? trim($_POST['ref_no']) : null;
+    // Retrieve OCR Extracted Values (Nilagyan ng substr para limitahan sa 50 characters at maiwasan ang DB truncation error)
+    $ref_no = !empty($_POST['ref_no']) ? substr(trim($_POST['ref_no']), 0, 50) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $sent_to = !empty($_POST['sent_to']) ? trim($_POST['sent_to']) : null;
     $detected_paid_amount = !empty($_POST['paid_amount']) ? (float)$_POST['paid_amount'] : 0;
@@ -68,8 +68,6 @@ if (isset($_POST['place_order'])) {
             die("<script>alert('Order Failed: Insufficient Payment Amount! Required: ₱{$formatted_req}, but receipt amount detected is only ₱{$formatted_paid}. Please send the complete amount.'); history.back();</script>");
         }
 
-        // [DISABLED] BACKEND ANTI-REUSE CHECK: Pansamantalang naka-disable ang pagharang sa mga nagamit nang reference numbers.
-
         $paid_amount = $detected_paid_amount;
     } else {
         $paid_amount = 0;
@@ -89,7 +87,7 @@ if (isset($_POST['place_order'])) {
                     $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
                     $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
 
-                    // Dedicated Folder ID para sa Customer Receipt
+                    // Dedicated Folder ID para sa Customer Receipt[cite: 10]
                     $customerFolderId = "1K63T1f7Z2JucT5lgyBuNobLIRJZFYNno";
 
                     try {
@@ -481,9 +479,6 @@ async function processReceiptOCR(fileInput) {
         const text = result.data.text;
         console.log("OCR Extracted Raw Text:\n", text);
 
-        // -------------------------------------------------------------
-        // 1. STRICT LEGIT RECEIPT VERIFICATION (ONLY GCASH, MAYA, BANKS)
-        // -------------------------------------------------------------
         const legitBankKeywords = [
             'gcash', 'g-xchange', 'maya', 'paymaya', 'maribank', 'instapay', 'pesonet',
             'express send', 'sent money', 'transaction history', 'transfer successful',
@@ -508,14 +503,10 @@ async function processReceiptOCR(fileInput) {
         let detectedDateTime = '';
         let detectedSentTo = '';
 
-        // -------------------------------------------------------------
-        // 2. ACCURATE RECIPIENT ("SENT TO") DETECTION
-        // -------------------------------------------------------------
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         let phoneLineIndex = -1;
 
-        // Step A: Hanapin ang linya ng Mobile Number (+63 9xx... / 09xx...)
         for (let i = 0; i < lines.length; i++) {
             let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
             if (pMatch) {
@@ -525,7 +516,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // Step B: Kunin ang name mula sa linya sa itaas ng phone number
         if (phoneLineIndex > 0) {
             let potentialName = lines[phoneLineIndex - 1];
             potentialName = potentialName.replace(/Express\s*Send|Sent\s*via\s*GCash|GCash|Amount/gi, '').trim();
@@ -539,7 +529,6 @@ async function processReceiptOCR(fileInput) {
             detectedSentTo = foundPhone;
         }
 
-        // Fallback: Labeled recipient (hal. "To: Name")
         if (!detectedSentTo) {
             let labeledRecipient = text.match(/(?:Sent\s*(?:money\s*)?to|To)\s*:?\s*([A-Z0-9\s•\.\*\+\-]{4,35})/i);
             if (labeledRecipient) {
@@ -550,9 +539,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // -------------------------------------------------------------
-        // 3. REFERENCE NUMBER EXTRACTION (PREVENT PHONE NUMBER CONFUSION)
-        // -------------------------------------------------------------
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
@@ -583,9 +569,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // -------------------------------------------------------------
-        // 4. STRICT ANTI-FAKE RECEIPT GENERATOR FILTER
-        // -------------------------------------------------------------
         const isFakeGeneratorPattern = (ref) => {
             const cleanRef = ref.toUpperCase().replace(/[\s\-_]/g, '');
             if (/^G\d{2,4}12345678/i.test(cleanRef) || /^G1709123456/i.test(cleanRef)) return true;
@@ -602,9 +585,6 @@ async function processReceiptOCR(fileInput) {
             return;
         }
 
-        // -------------------------------------------------------------
-        // 5. AMOUNT DETECTION
-        // -------------------------------------------------------------
         let amountMatch = text.match(/(?:Total\s*Amount\s*(?:Sent)?|Amount\s*Sent|Sent\s*Amount|Amount|Sent|Paid)\s*:?\s*[-–]?\s*(?:PHP|₱)?\s*([\d,]+\.\d{2})/i);
         
         if (amountMatch) {
@@ -621,9 +601,6 @@ async function processReceiptOCR(fileInput) {
             }
         }
 
-        // -------------------------------------------------------------
-        // 6. DATE & TIME DETECTION
-        // -------------------------------------------------------------
         let dateTimeMatch = text.match(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4}(?:\s*,?\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?\b/i);
         if (!dateTimeMatch) {
             dateTimeMatch = text.match(/(?:\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s*(?:\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?)?/i);
@@ -632,9 +609,6 @@ async function processReceiptOCR(fileInput) {
             detectedDateTime = dateTimeMatch[0].trim();
         }
 
-        // -------------------------------------------------------------
-        // 7. STRICT AMOUNT MATCHING VALIDATION
-        // -------------------------------------------------------------
         if (!detectedRef || !detectedAmount) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
@@ -658,7 +632,6 @@ async function processReceiptOCR(fileInput) {
             return;
         }
 
-        // Populate hidden inputs for database submission
         refInput.value = detectedRef;
         paidInput.value = detectedAmount;
         dtInput.value = detectedDateTime ? detectedDateTime : "N/A";
