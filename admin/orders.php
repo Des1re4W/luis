@@ -9,8 +9,35 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] != "admin") {
     exit();
 }
 
+$admin_name = isset($_SESSION['username']) ? $_SESSION['username'] : "Admin";
+$admin_id = $_SESSION['user_id'] ?? ($_SESSION['id'] ?? ($_SESSION['admin_id'] ?? 0));
+
 /**
- * Sends Order Email Notification via Resend HTTP API (Bypasses SMTP timeout errors on cloud hosting)
+ * Audit trail logging function para mairehistro ang mga aksyon ng admin sa sistema
+ */
+function logAdminAction($conn, $user_id, $username, $role, $action, $details)
+{
+    try {
+        $sql = "INSERT INTO audit_log
+                (user_id, username, role, action, details, ip_address)
+                VALUES (:user_id, :username, :role, :action, :details, :ip)";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->execute([
+            ':user_id' => (int) $user_id,
+            ':username' => $username ?? 'Admin',
+            ':role' => $role ?? 'admin',
+            ':action' => $action,
+            ':details' => $details,
+            ':ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown'
+        ]);
+    } catch (PDOException $e) {
+        error_log('Audit log error: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Sends Order Email Notification via Resend HTTP API (Bypasses SMTP timeout errors on cloud hosting)[cite: 9]
  */
 function sendOrderEmail(string $toEmail, string $toName, string $subject, string $htmlBody): array
 {
@@ -51,7 +78,7 @@ function sendOrderEmail(string $toEmail, string $toName, string $subject, string
     }
 }
 
-// EMAILER ACTION LOGIC
+// EMAILER ACTION LOGIC[cite: 9]
 if (isset($_POST['send_email_update'])) {
     $order_id = filter_var($_POST['order_id'] ?? 0, FILTER_VALIDATE_INT);
 
@@ -70,47 +97,26 @@ if (isset($_POST['send_email_update'])) {
     $subject = "Order Status Update: #$order_id";
     $emailBody = "";
 
-    // APPROVED
     if ($current_status == 'approved') {
-
         $stmt_items = $pdo->prepare("SELECT * FROM order_items WHERE order_id = ?");
         $stmt_items->execute([$order_id]);
         $items_query = $stmt_items->fetchAll(PDO::FETCH_ASSOC);
 
         $totalAmt = (float)$order['total_amount'];
-
-        $paymentMethodName = strtoupper(
-            trim($order['payment_method'] ?? 'COD')
-        );
-
-        $paymentScheme = strtolower(
-            trim($order['payment_scheme'] ?? '')
-        );
+        $paymentMethodName = strtoupper(trim($order['payment_method'] ?? 'COD'));
+        $paymentScheme = strtolower(trim($order['payment_scheme'] ?? ''));
         $paymentBreakdownHtml = '';
 
-        // COD
         if (strpos($paymentMethodName, 'COD') !== false) {
             $paymentBreakdownHtml = "
                 <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
                     <span>TOTAL AMOUNT:</span>
                     <span>₱" . number_format($totalAmt, 2) . "</span>
                 </div>
-                <div style='color:#6c757d;font-size:13px;'>
-                    Cash on Delivery (Pay upon delivery)
-                </div>
+                <div style='color:#6c757d;font-size:13px;'>Cash on Delivery (Pay upon delivery)</div>
             ";
-        } 
-        // 50% DOWNPAYMENT
-        elseif (
-            $totalAmt >= 5000 &&
-            (
-                strpos($paymentScheme, '50') !== false ||
-                strpos($paymentScheme, 'down') !== false
-            )
-        ) {
-            $downpayment = isset($order['paid_amount'])
-                ? (float)$order['paid_amount']
-                : ($totalAmt * 0.5);
+        } elseif ($totalAmt >= 5000 && (strpos($paymentScheme, '50') !== false || strpos($paymentScheme, 'down') !== false)) {
+            $downpayment = isset($order['paid_amount']) ? (float)$order['paid_amount'] : ($totalAmt * 0.5);
             $balance = $totalAmt - $downpayment;
             $paymentBreakdownHtml = "
                 <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
@@ -126,15 +132,8 @@ if (isset($_POST['send_email_update'])) {
                     <span>PAY UPON DELIVERY:</span>
                     <span>₱" . number_format($balance, 2) . "</span>
                 </div>";
-        } 
-        // GCASH / MAYA FULL PAYMENT
-        elseif (
-            $paymentMethodName === 'GCASH' ||
-            $paymentMethodName === 'MAYA'
-        ) {
-            $paidAmount = isset($order['paid_amount'])
-                ? (float)$order['paid_amount']
-                : $totalAmt;
+        } elseif ($paymentMethodName === 'GCASH' || $paymentMethodName === 'MAYA') {
+            $paidAmount = isset($order['paid_amount']) ? (float)$order['paid_amount'] : $totalAmt;
             $paymentBreakdownHtml = "
                 <div style='display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-bottom:5px;'>
                     <span>TOTAL AMOUNT:</span>
@@ -154,42 +153,19 @@ if (isset($_POST['send_email_update'])) {
             ";
         }
     
-        // RECEIPT HTML
         ob_start();
         ?>
-        <div style="
-            border:1px solid #ddd;
-            padding:20px;
-            max-width:600px;
-            margin:0 auto;
-            font-family:'Courier New',Courier,monospace;
-            background:#ffffff;
-            color:#000000;
-        ">
+        <div style="border:1px solid #ddd;padding:20px;max-width:600px;margin:0 auto;font-family:'Courier New',Courier,monospace;background:#ffffff;color:#000000;">
             <div style="text-align:center;margin-bottom:15px;">
-                <h3 style="margin:0;text-transform:uppercase;">
-                    R. Taipan Hardware
-                </h3>
-                <span style="font-size:12px;">
-                    190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal
-                </span>
-                <br>
-                <span style="font-size:12px;">
-                    Contact: 0907 456 5632
-                </span>
+                <h3 style="margin:0;text-transform:uppercase;">R. Taipan Hardware</h3>
+                <span style="font-size:12px;">190 Cabrera Rd. Sitio Burol Brgy. San Juan Taytay, Rizal</span><br>
+                <span style="font-size:12px;">Contact: 0907 456 5632</span>
                 <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-                <span style="font-size:12px;">
-                    <b>OFFICIAL RECEIPT (ONLINE ORDER)</b>
-                </span>
+                <span style="font-size:12px;"><b>OFFICIAL RECEIPT (ONLINE ORDER)</b></span>
                 <div style="border-top:1px dashed #000;margin:10px 0;"></div>
             </div>
-            <p style="font-size:13px;margin:3px 0;">
-                <b>Order ID:</b> #<?php echo $order_id; ?>
-            </p>
-            <p style="font-size:13px;margin:3px 0;">
-                <b>Customer:</b>
-                <?php echo htmlspecialchars($order['fullname']); ?>
-            </p>
+            <p style="font-size:13px;margin:3px 0;"><b>Order ID:</b> #<?php echo $order_id; ?></p>
+            <p style="font-size:13px;margin:3px 0;"><b>Customer:</b> <?php echo htmlspecialchars($order['fullname']); ?></p>
             <div style="border-top:1px dashed #000;margin:10px 0;"></div>
             <table style="width:100%;border-collapse:collapse;font-size:13px;">
                 <tbody>
@@ -199,60 +175,33 @@ if (isset($_POST['send_email_update'])) {
                     $subtotal = $price * $qty;
                 ?>
                     <tr>
-                        <td style="padding:4px 0;">
-                            <?php echo htmlspecialchars($item['product_name']); ?>
-                            (x<?php echo $qty; ?>)
-                        </td>
-                        <td style="padding:4px 0;text-align:right;">
-                            ₱<?php echo number_format($subtotal, 2); ?>
-                        </td>
+                        <td style="padding:4px 0;"><?php echo htmlspecialchars($item['product_name']); ?> (x<?php echo $qty; ?>)</td>
+                        <td style="padding:4px 0;text-align:right;">₱<?php echo number_format($subtotal, 2); ?></td>
                     </tr>
                 <?php } ?>
                 </tbody>
             </table>
-
             <div style="border-top:1px dashed #000;margin:10px 0;"></div>
             <?php echo $paymentBreakdownHtml; ?>
             <div style="border-top:1px dashed #000;margin:10px 0;"></div>
-            <div style="font-size:13px;">
-                <b>Mode of Payment:</b>
-                <?php echo htmlspecialchars($order['payment_method']); ?>
-            </div>
-            <div style="text-align:center;margin-top:15px;font-size:13px;">
-                <b>STATUS: APPROVED</b>
-            </div>
+            <div style="font-size:13px;"><b>Mode of Payment:</b> <?php echo htmlspecialchars($order['payment_method']); ?></div>
+            <div style="text-align:center;margin-top:15px;font-size:13px;"><b>STATUS: APPROVED</b></div>
         </div>
         <?php
         $receiptHtml = ob_get_clean();
 
         $emailBody = "
             <div style='font-family:Arial,sans-serif;'>
-                <h3>
-                    Hi " . htmlspecialchars($order['fullname']) . ",
-                </h3>
-                <p>
-                    Good news! Your order with Order Number
-                    <b>#$order_id</b>
-                    has been <b>APPROVED</b> successfully.
-                </p>
-                <p>
-                    Below is your official receipt for this transaction:
-                </p>
+                <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
+                <p>Good news! Your order with Order Number <b>#$order_id</b> has been <b>APPROVED</b> successfully.</p>
+                <p>Below is your official receipt for this transaction:</p>
                 $receiptHtml
                 <br>
-                <p>
-                    We are now preparing your items.
-                    We will keep you updated via email!
-                </p>
+                <p>We are now preparing your items. We will keep you updated via email!</p>
                 <br>
-                <h4>
-                    Best regards,<br>
-                    R. Taipan Construction Supply and Services, OPC
-                </h4>
+                <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
             </div>
         ";
-
-  // DECLINED / CANCELLED WITH GOOGLE DRIVE REFUND PROOF IN EMAIL
     } elseif ($current_status == 'declined' || $current_status == 'cancelled') {
         $decline_reason_text = !empty($order['decline_reason']) ? nl2br(htmlspecialchars($order['decline_reason'])) : 'No specific reason provided.';
         $pay_method_email = strtoupper(trim($order['payment_method'] ?? 'COD'));
@@ -265,8 +214,6 @@ if (isset($_POST['send_email_update'])) {
 
             $raw_refund_proof = trim($order['refund_receipt']);
             $refundImgSrc = $raw_refund_proof;
-
-            // Kunin ang tamang Google Drive file ID kung naka-save man bilang Drive link o file ID
             $driveFileId = '';
             if (strpos($raw_refund_proof, 'drive.google.com') !== false || strpos($raw_refund_proof, 'id=') !== false) {
                 if (preg_match('/[?&]id=([a-zA-Z0-9_-]+)/', $raw_refund_proof, $match)) {
@@ -277,10 +224,8 @@ if (isset($_POST['send_email_update'])) {
             }
 
             if (!empty($driveFileId)) {
-                // Gamitin ang direct Google Drive export link para lumitaw nang tuwiran sa Gmail
                 $refundImgSrc = "https://drive.google.com/uc?export=view&id=" . $driveFileId;
             } elseif (!preg_match('/^https?:\/\//', $raw_refund_proof)) {
-                // Kung nasa local server nakatago, gawan ng absolute URL
                 $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
                 $host = $_SERVER['HTTP_HOST'];
                 $refundImgSrc = $protocol . "://" . $host . "/" . ltrim($raw_refund_proof, '/');
@@ -313,37 +258,25 @@ if (isset($_POST['send_email_update'])) {
             </p>
             <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
         ";
-
-    // OUT FOR DELIVERY
     } elseif ($current_status == 'out_for_delivery') {
-
         $total = (float)$order['total_amount'];
         $totalFormatted = number_format($total, 2);
-
         $payment_method = strtoupper(trim($order['payment_method'] ?? ''));
         $payment_scheme = strtolower(trim($order['payment_scheme'] ?? ''));
 
         $paymentReminderHtml = "";
         if (strpos($payment_method, 'COD') !== false || strpos($payment_method, 'CASH ON DELIVERY') !== false) {
-
             $paymentReminderHtml = "
                 <div style='background:#fff3cd; padding:15px; border:1px solid #ffeeba; border-radius:5px; margin:20px 0;'>
                     <h4 style='margin-top:0; color:#856404;'>💵 Payment Reminder</h4>
                     <p>Please prepare the <b>EXACT AMOUNT</b> upon delivery.</p>
-                    <p style='font-size:18px;'>
-                        <b>Total Amount to Pay:</b>
-                        <span style='color:#d9534f;'>₱{$totalFormatted}</span>
-                    </p>
+                    <p style='font-size:18px;'><b>Total Amount to Pay:</b> <span style='color:#d9534f;'>₱{$totalFormatted}</span></p>
                 </div>
             ";
-
         } elseif ($payment_method === 'GCASH' || $payment_method === 'MAYA') {
-
             if (strpos($payment_scheme, '50') !== false || strpos($payment_scheme, 'down') !== false) {
-
                 $downPayment = isset($order['paid_amount']) ? (float)$order['paid_amount'] : ($total * 0.50);
                 $remainingBalance = $total - $downPayment;
-
                 $downFormatted = number_format($downPayment, 2);
                 $balanceFormatted = number_format($remainingBalance, 2);
 
@@ -357,22 +290,17 @@ if (isset($_POST['send_email_update'])) {
                         <p>Please prepare <b>₱{$balanceFormatted}</b> upon delivery.</p>
                     </div>
                 ";
-
             } else {
-
                 $paymentReminderHtml = "
                     <div style='background:#d4edda; padding:15px; border:1px solid #c3e6cb; border-radius:5px; margin:20px 0;'>
                         <h4 style='margin-top:0; color:#155724;'>✅ Payment Status</h4>
-                        <p style='color:#155724; margin-bottom:0;'>
-                            Your order is <b>FULLY PAID</b> online through <b>{$payment_method}</b>. No payment is required upon delivery.
-                        </p>
+                        <p style='color:#155724; margin-bottom:0;'>Your order is <b>FULLY PAID</b> online through <b>{$payment_method}</b>. No payment is required upon delivery.</p>
                     </div>
                 ";
             }
         }
 
         $customer_name = htmlspecialchars($order['fullname']);
-
         $emailBody = "
             <div style='font-family:Arial,sans-serif; color:#333; line-height:1.6;'>
                 <h3>Hi {$customer_name},</h3>
@@ -384,23 +312,15 @@ if (isset($_POST['send_email_update'])) {
                 <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
             </div>
         ";
-
-    // COMPLETED
     } elseif ($current_status == 'completed') {
-
         $emailBody = "
             <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
             <p>Your order <b>#$order_id</b> status has been <b>DELIVERED</b>.</p>
-            <p>
-                Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC.</b>
-                We sincerely appreciate your trust and support, and we look forward to serving you again in the future.
-            </p>
+            <p>Thank you for choosing <b>R. Taipan Construction Supply and Services, OPC.</b> We sincerely appreciate your trust and support, and we look forward to serving you again in the future.</p>
             <br>
             <h4>Best regards,<br>R. Taipan Construction Supply and Services, OPC</h4>
         ";
-
     } else {
-
         $emailBody = "
             <h3>Hi " . htmlspecialchars($order['fullname']) . ",</h3>
             <p>Your order <b>#$order_id</b> status has been updated to <b>" . strtoupper($current_status) . "</b>.</p>
@@ -415,25 +335,18 @@ if (isset($_POST['send_email_update'])) {
         $stmt_up = $pdo->prepare("UPDATE orders SET email_status = ? WHERE id = ?");
         $stmt_up->execute([$current_status, $order_id]);
 
-        echo "<script>
-            alert('Email notification sent!');
-            window.location.href='orders.php';
-        </script>";
+        echo "<script>alert('Email notification sent!'); window.location.href='orders.php';</script>";
         exit();
     } else {
-        echo "<script>
-            alert('Email failed: " . addslashes($sendResult['error']) . "');
-            window.location.href='orders.php';
-        </script>";
+        echo "<script>alert('Email failed: " . addslashes($sendResult['error']) . "'); window.location.href='orders.php';</script>";
         exit();
     }
 }
 
-// STATUS UPDATE (WITH GOOGLE DRIVE UPLOAD FOR ADMIN REFUND RECEIPT)
+// STATUS UPDATE (WITH GOOGLE DRIVE UPLOAD FOR ADMIN REFUND RECEIPT & AUDIT LOGGING)
 if (isset($_POST['update_status'])) {
     $order_id = (int) $_POST['order_id'];
     $new_status = $_POST['status'];
-    $admin_id = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
     $decline_reason = $_POST['decline_reason'] ?? '';
 
     $stmt = $pdo->prepare("SELECT status, cart, payment_method FROM orders WHERE id = ?");
@@ -455,7 +368,6 @@ if (isset($_POST['update_status'])) {
             $allowed_exts = ['jpg', 'jpeg', 'png', 'webp'];
             if (in_array($file_ext, $allowed_exts)) {
                 $new_filename = "refund_" . $order_id . "_" . time() . "." . $file_ext;
-                
                 $REFUND_RECEIPTS_FOLDER_ID = "1642n4cVALweG7FmYxn3Yq5ATYyO-tluX";
 
                 try {
@@ -483,6 +395,9 @@ if (isset($_POST['update_status'])) {
     if ($new_status == 'approved' && $old_status != 'approved') {
         $stmt = $pdo->prepare("UPDATE orders SET status = ?, approved_by = ? WHERE id = ?");
         $stmt->execute([$new_status, $admin_id, $order_id]);
+        
+        // I-log sa Audit Trail
+        logAdminAction($pdo, $admin_id, $admin_name, 'admin', 'Order Approved', "Approved Order #$order_id");
     } elseif ($new_status == 'declined' && $old_status != 'declined') {
         if (!empty($proof_path)) {
             $stmt = $pdo->prepare("UPDATE orders SET status = ?, declined_by = ?, decline_reason = ?, refund_receipt = ?, refund_reference = ? WHERE id = ?");
@@ -491,9 +406,20 @@ if (isset($_POST['update_status'])) {
             $stmt = $pdo->prepare("UPDATE orders SET status = ?, declined_by = ?, decline_reason = ? WHERE id = ?");
             $stmt->execute([$new_status, $admin_id, $decline_reason, $order_id]);
         }
+        
+        // I-log sa Audit Trail
+        logAdminAction($pdo, $admin_id, $admin_name, 'admin', 'Order Declined', "Declined Order #$order_id. Reason: $decline_reason");
     } else {
         $stmt = $pdo->prepare("UPDATE orders SET status = ? WHERE id = ?");
         $stmt->execute([$new_status, $order_id]);
+
+        // I-log sa Audit Trail ang iba pang status updates (Preparing, Out for Delivery, Completed)
+        $actionTitle = 'Order Status Update';
+        if ($new_status === 'preparing') $actionTitle = 'Order Preparing';
+        elseif ($new_status === 'out_for_delivery') $actionTitle = 'Order Out for Delivery';
+        elseif ($new_status === 'completed') $actionTitle = 'Order Completed';
+
+        logAdminAction($pdo, $admin_id, $admin_name, 'admin', $actionTitle, "Updated Order #$order_id status to " . strtoupper($new_status));
     }
 
     // Restore stock if declined or cancelled
@@ -537,6 +463,9 @@ if (isset($_POST['send_to_cashier'])) {
     } else {
         $stmtUpdate = $pdo->prepare("UPDATE orders SET sent_to_cashier = 1 WHERE id = ?");
         if($stmtUpdate->execute([$order_id])) {
+            // I-log sa Audit Trail
+            logAdminAction($pdo, $admin_id, $admin_name, 'admin', 'Sent to Cashier', "Sent Order #$order_id receipt to cashier");
+
             echo "<script>alert('Receipt successfully sent to cashier!'); window.location.href='orders.php';</script>";
             exit();
         }
@@ -683,30 +612,17 @@ body{
 </nav>
 
 <div class="sidebar" id="appSidebar">
-    <h2>
-        Admin<br>
-        Dashboard
-    </h2>
+    <h2>Admin<br>Dashboard</h2>
 
-    <a href="dashboard.php">
-        <i class="bi bi-grid"></i> Dashboard
-    </a>
-    <a href="products.php">
-        <i class="bi bi-box-seam"></i> Inventory
-    </a>
-    <a href="orders.php" class="active">
-        <i class="bi bi-receipt"></i> Orders
-    </a>
-    <a href="ItemsRequest.php">
-        <i class="bi bi-arrow-return-left"></i> Customer Service request
-    </a>
+    <a href="dashboard.php"><i class="bi bi-grid"></i> Dashboard</a>
+    <a href="products.php"><i class="bi bi-box-seam"></i> Inventory</a>
+    <a href="orders.php" class="active"><i class="bi bi-receipt"></i> Orders</a>
+    <a href="ItemsRequest.php"><i class="bi bi-arrow-return-left"></i> Customer Service request</a>
     <a href="damageItems.php"><i class="bi bi-exclamation-triangle"></i> Damaged Items</a>
     <a href="profile.php" class="sidebar-link"><i class="bi bi-person-badge"></i> My Profile</a>
 
     <div class="logout-section">
-        <a href="../logout.php"
-           class="text-danger"
-           onclick="return confirm('Are you sure you want to logout?')">
+        <a href="../logout.php" class="text-danger" onclick="return confirm('Are you sure you want to logout?')">
             <i class="bi bi-box-arrow-right"></i> Logout
         </a>
     </div>
@@ -767,8 +683,7 @@ body{
                         <?php echo date('M d, Y', strtotime($row['order_date'])); ?>
                     </td>
                     <td class="text-center">
-                        <button type="button" class="btn btn-sm btn-outline-primary" 
-                                onclick='viewCustomer(<?php echo json_encode($row); ?>)'>
+                        <button type="button" class="btn btn-sm btn-outline-primary" onclick='viewCustomer(<?php echo json_encode($row); ?>)'>
                             <i class="bi bi-person-lines-fill"></i> Details
                         </button>
                     </td>
@@ -888,7 +803,6 @@ body{
                             <i class="bi bi-info-circle-fill"></i> The mode of payment is <strong id="paymentMethodLabel"></strong>. Please provide the refund details.
                         </div>
 
-                        <!-- OCR Status Message Box -->
                         <div id="ocr_status" class="alert alert-info py-2 d-none small">
                             <span id="ocr_status_text">Scanning receipt via OCR...</span>
                         </div>
@@ -983,7 +897,6 @@ function openDeclineModal(orderId, paymentMethod) {
     const receiptInput = document.getElementById('refundReceiptInput');
     const statusBox = document.getElementById('ocr_status');
 
-    // Reset OCR status box pag binuksan ang modal
     if (statusBox) statusBox.classList.add('d-none');
     refInput.value = '';
 
@@ -999,7 +912,6 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-// Improved OCR Processing Function para sa Admin Refund Receipt (Na-filter na ang Mobile Number)
 async function processRefundOCR(fileInput) {
     const file = fileInput.files[0];
     if (!file) return;
@@ -1025,11 +937,8 @@ async function processRefundOCR(fileInput) {
         });
 
         const text = result.data.text;
-        console.log("OCR Refund Extracted Text:\n", text);
-
         let detectedRef = '';
 
-        // 1. Hanapin muna ang mobile number sa buong teksto para maiwasang makuha bilang reference
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         for (let i = 0; i < lines.length; i++) {
@@ -1040,26 +949,23 @@ async function processRefundOCR(fileInput) {
             }
         }
 
-        // 2. Subukang kunin gamit ang mga kilalang keyword prefixes ng reference code
         let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
             let cleaned = refMatch[1].trim();
             let cleanRefDigits = cleaned.replace(/\D/g, '');
-            // Siguraduhing hindi ito ang mobile number at saklaw ng tamang haba
             if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
                 detectedRef = cleaned;
             }
         }
 
-        // 3. Fallback: Mag-scan ng mga numerong 10-20 digits pero i-filter out kung mobile number (nagsisimula sa 09 o 639)
         if (!detectedRef) {
             const allNumberMatches = text.match(/\b\d{10,20}\b/g);
             if (allNumberMatches) {
                 for (let num of allNumberMatches) {
                     let cleanNum = num.trim();
-                    if (foundPhone && cleanNum === foundPhone) continue; // Laktawan kung ito ang mobile number
-                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Laktawan ang PH mobile prefixes
+                    if (foundPhone && cleanNum === foundPhone) continue;
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
                     
                     detectedRef = cleanNum;
                     break;
@@ -1067,7 +973,6 @@ async function processRefundOCR(fileInput) {
             }
         }
 
-        // 4. Fallback para sa Maya format (spaced hex / alphanumeric codes)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
@@ -1083,11 +988,10 @@ async function processRefundOCR(fileInput) {
         } else {
             statusBox.classList.remove('alert-info', 'alert-success');
             statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Reference number not automatically detected (mobile numbers excluded). Please type it manually.';
+            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
         }
 
     } catch (error) {
-        console.error("OCR Error:", error);
         statusBox.classList.remove('alert-info', 'alert-success');
         statusBox.classList.add('alert-warning');
         statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
@@ -1098,30 +1002,19 @@ function resolveImageSrc(path) {
     if (!path) return '';
     let proofPath = path.trim();
     
-    if (proofPath.startsWith('data:image/')) {
-        return proofPath;
-    }
+    if (proofPath.startsWith('data:image/')) return proofPath;
     
     let fileId = '';
     if (proofPath.includes('drive.google.com') || proofPath.includes('id=')) {
         let match = proofPath.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-        if (match && match[1]) {
-            fileId = match[1];
-        }
+        if (match && match[1]) fileId = match[1];
     } else if (/^[A-Za-z0-9_-]{20,}$/.test(proofPath) && !proofPath.includes('/')) {
         fileId = proofPath;
     }
 
-    if (fileId) {
-        return '../drive-image.php?id=' + encodeURIComponent(fileId);
-    }
-
-    if (proofPath.startsWith('http://') || proofPath.startsWith('https://')) {
-        return proofPath;
-    }
-    if (proofPath.startsWith('../')) {
-        return proofPath;
-    }
+    if (fileId) return '../drive-image.php?id=' + encodeURIComponent(fileId);
+    if (proofPath.startsWith('http://') || proofPath.startsWith('https://')) return proofPath;
+    if (proofPath.startsWith('../')) return proofPath;
     return '../' + proofPath.replace(/^\/+/, '');
 }
 
@@ -1138,7 +1031,6 @@ function viewCustomer(data) {
     const refundSection = document.getElementById('refund-proof-section');
 
     let currentMOP = data.payment_method ? data.payment_method.toUpperCase() : "COD";
-    
     let htmlContent = "";
     if (currentMOP === "GCASH" || currentMOP === "MAYA") {
         let referenceNumber = data.ref_no ? data.ref_no : "Not Provided";
@@ -1162,7 +1054,6 @@ function viewCustomer(data) {
     let customerProofPath = data.proof_of_payment_resolved || data.proof_of_payment;
     if (customerProofPath && customerProofPath.trim() !== "" && currentMOP !== "COD") {
         let finalSrc = resolveImageSrc(customerProofPath);
-
         htmlContent += `
             <div class="text-center">
                 <a href="${finalSrc}" target="_blank" title="Click to view full image">
@@ -1209,19 +1100,15 @@ function viewReceipt(data) {
 
     const orderStatus = (data.status || 'pending').toUpperCase();
 
-   let items = [];
+    let items = [];
     try {
-        let cartObj = (typeof data.cart === "string")
-            ? JSON.parse(data.cart)
-            : data.cart;
-            
+        let cartObj = (typeof data.cart === "string") ? JSON.parse(data.cart) : data.cart;
         if (Array.isArray(cartObj)) {
             items = cartObj;
         } else if (cartObj && typeof cartObj === 'object') {
             items = Object.values(cartObj);
         }
     } catch (e) {
-        console.error("Cart parsing error:", e);
         items = [];
     }
 
@@ -1242,7 +1129,6 @@ function viewReceipt(data) {
     let paymentMethodName = (data.payment_method || 'COD').toUpperCase();
     let paymentScheme = (data.payment_scheme || '').toLowerCase();
     let totalAmt = parseFloat(data.total_amount || 0);
-
     let paymentBreakdownHtml = '';
 
     if (paymentMethodName === 'COD') {
@@ -1251,12 +1137,9 @@ function viewReceipt(data) {
                 <span>TOTAL AMOUNT:</span>
                 <span>₱${totalAmt.toFixed(2)}</span>
             </div>
-            <div class="text-muted small">
-                Cash on Delivery (Pay upon delivery)
-            </div>
+            <div class="text-muted small">Cash on Delivery (Pay upon delivery)</div>
         `;
-    }
-    else if (totalAmt >= 5000 && paymentScheme.includes('50')) {
+    } else if (totalAmt >= 5000 && paymentScheme.includes('50')) {
         let downpayment = parseFloat(data.paid_amount || (totalAmt * 0.5));
         let balance = totalAmt - downpayment;
 
@@ -1275,8 +1158,7 @@ function viewReceipt(data) {
                 <span>₱${balance.toFixed(2)}</span>
             </div>
         `;
-    }
-    else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
+    } else if (paymentMethodName === 'GCASH' || paymentMethodName === 'MAYA') {
         let paidAmount = parseFloat(data.paid_amount || totalAmt);
         let refNoField = data.refund_reference ? data.refund_reference : (data.ref_no ? data.ref_no : '');
 
@@ -1292,14 +1174,9 @@ function viewReceipt(data) {
         `;
 
         if (refNoField) {
-            paymentBreakdownHtml += `
-                <div class="small text-muted">
-                    Reference No: ${refNoField}
-                </div>
-            `;
+            paymentBreakdownHtml += `<div class="small text-muted">Reference No: ${refNoField}</div>`;
         }
-    }
-    else {
+    } else {
         paymentBreakdownHtml = `
             <div class="d-flex justify-content-between small fw-bold">
                 <span>TOTAL AMOUNT:</span>
@@ -1337,9 +1214,7 @@ function viewReceipt(data) {
 
         <div class="line mt-2"></div>
 
-        <div class="text-start small">
-            <b>Mode of Payment:</b> ${paymentMethodName}
-        </div>
+        <div class="text-start small"><b>Mode of Payment:</b> ${paymentMethodName}</div>
 
         <div class="text-center mt-2">
             <small class="fw-bold">STATUS: ${orderStatus}</small>
@@ -1347,10 +1222,8 @@ function viewReceipt(data) {
     `;
 
     document.getElementById('receiptContent').innerHTML = fullReceiptHtml;
-
     let receiptModal = new bootstrap.Modal(document.getElementById('receiptModal'));
     receiptModal.show();
-
     document.activeElement.blur();
 }
 

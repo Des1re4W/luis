@@ -190,6 +190,8 @@ if (isset($_POST['update_status'])) {
             $request_type = $ticket_data['request_type'];
             $order_number = $ticket_data['order_number'];
             $cart_array = json_decode($ticket_data['cart'], true);
+            $pay_method_check = strtoupper(trim($ticket_data['payment_method'] ?? ''));
+            $is_ewallet = ($pay_method_check === 'GCASH' || $pay_method_check === 'MAYA');
 
             try {
                 $pdo->beginTransaction();
@@ -229,8 +231,12 @@ if (isset($_POST['update_status'])) {
                             }
                         }
                     }
-                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
-                    $up_ord->execute([$admin_id, $order_number]);
+                    
+                    // Kapag E-Wallet at in-approve, huwag munang i-set sa 'cancelled' ang order status sa orders table kung kailangan pa ng refund proof; para sa COD o kung tapos na, pwede nang cancelled.
+                    if (!$is_ewallet || $status === 'Completed') {
+                        $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
+                        $up_ord->execute([$admin_id, $order_number]);
+                    }
                 }
 
                 if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
@@ -285,6 +291,8 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
             $request_type = $ticket_data['request_type'];
             $order_number = $ticket_data['order_number'];
             $cart_array = json_decode($ticket_data['cart'], true);
+            $pay_method_check = strtoupper(trim($ticket_data['payment_method'] ?? ''));
+            $is_ewallet = ($pay_method_check === 'GCASH' || $pay_method_check === 'MAYA');
 
             try {
                 $pdo->beginTransaction();
@@ -308,8 +316,11 @@ if (isset($_GET['id']) && isset($_GET['status'])) {
                             }
                         }
                     }
-                    $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
-                    $up_ord->execute([$admin_id, $order_number]);
+                    
+                    if (!$is_ewallet || $status === 'Completed') {
+                        $up_ord = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
+                        $up_ord->execute([$admin_id, $order_number]);
+                    }
                 }
 
                 if (in_array($status, ['Approved', 'Completed']) && strpos(strtolower($ticket_data['reason']), 'damaged') !== false) {
@@ -394,6 +405,7 @@ if (isset($_POST['submit_refund'])) {
         $up_ref = $pdo->prepare("UPDATE customer_requests SET status = 'Completed', refund_status = 'Refunded', refund_receipt = ?, refund_reference = ?, email_status = 'Completed' WHERE id = ?");
         $up_ref->execute([$proof_path, $ref_no, $req_id]);
 
+        // Kunin din ang order_number para mai-update ang orders table status to 'cancelled' tuwing makukumpleto ang refund
         $get_info = $pdo->prepare("SELECT cr.*, o.email, o.fullname, o.surname, o.total_amount, o.payment_method, o.payment_scheme, o.paid_amount 
                                    FROM customer_requests cr 
                                    JOIN orders o ON CAST(cr.order_number AS INTEGER) = o.id 
@@ -402,9 +414,14 @@ if (isset($_POST['submit_refund'])) {
         
         if ($get_info->rowCount() > 0) {
             $t_data = $get_info->fetch(PDO::FETCH_ASSOC);
+            $order_number = $t_data['order_number'];
+            
+            // I-update na sa cancelled ang orders table kapag na-refund na nang tuluyan
+            $up_ord_cancel = $pdo->prepare("UPDATE orders SET status = 'cancelled', sent_to_cashier = 0, cancelled_by = ? WHERE id = ?");
+            $up_ord_cancel->execute([$admin_id, $order_number]);
+
             $customer_email = $t_data['email'];
             $customer_name = $t_data['fullname'] . ' ' . $t_data['surname'];
-            $order_number = $t_data['order_number'];
             $total_amount = (float)$t_data['total_amount'];
             $payment_method = strtoupper($t_data['payment_method']);
             $payment_scheme = strtolower($t_data['payment_scheme']);
@@ -418,7 +435,6 @@ if (isset($_POST['submit_refund'])) {
                 $ref_amount = $paid_amount > 0 ? $paid_amount : $total_amount;
             }
 
-            // Fixed Image URL generation for Email client compatibility
             $raw_refund_proof = trim($proof_path);
             $refundImgSrc = $raw_refund_proof;
             $driveFileId = '';
@@ -809,8 +825,9 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                         <?php 
                                         $ord_status = strtolower($row['order_status'] ?? '');
                                         $req_status = $row['status'];
+                                        $is_ewallet = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
                                         
-                                        if ($ord_status === 'cancelled' || $ord_status === 'completed' || $req_status === 'Completed' || $req_status === 'Declined'): 
+                                        if ($req_status === 'Completed' || $req_status === 'Declined' || ($ord_status === 'completed' && !$is_ewallet)): 
                                         ?>
                                             <span class="text-muted small"><i class="bi bi-check-circle"></i> Handled</span>
                                         <?php elseif($req_status == 'Pending'): ?>
@@ -819,10 +836,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                                 <button type="button" class="btn btn-sm btn-danger px-2 py-1" data-bs-toggle="modal" data-bs-target="#declineModal<?php echo $row['id']; ?>">Decline</button>
                                             </div>
                                         <?php elseif($req_status == 'Approved'): ?>
-                                            <?php 
-                                            $needs_refund = ($pay_method === 'GCASH' || $pay_method === 'MAYA');
-                                            ?>
-                                            <?php if($needs_refund): ?>
+                                            <?php if($is_ewallet): ?>
                                                 <button class="btn btn-sm btn-warning px-2 py-1 w-100" data-bs-toggle="modal" data-bs-target="#refundModal<?php echo $row['id']; ?>">
                                                     <i class="bi bi-cash-coin"></i> Refund Payment
                                                 </button>
@@ -884,7 +898,7 @@ $exchange_result = $pdo->query("SELECT cr.*, o.order_date, o.fullname, o.surname
                                 <?php endif; ?>
 
                                 <!-- REFUND PAYMENT MODAL WITH OCR -->
-                                <?php if($row['status'] == 'Approved' && ($pay_method === 'GCASH' || $pay_method === 'MAYA')): ?>
+                                <?php if($row['status'] == 'Approved' && $is_ewallet): ?>
                                 <div class="modal fade" id="refundModal<?php echo $row['id']; ?>" tabindex="-1">
                                     <div class="modal-dialog">
                                         <div class="modal-content">
