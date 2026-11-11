@@ -374,6 +374,23 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <title>Manage Product Variants</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        .description-scroll-box {
+            max-height: 120px;
+            overflow-y: auto;
+            display: block;
+            word-break: break-word;
+            padding-right: 4px;
+        }
+        /* Custom thin scrollbar para sa description */
+        .description-scroll-box::-webkit-scrollbar {
+            width: 4px;
+        }
+        .description-scroll-box::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
 </head>
 
 <body class="bg-light py-3 py-md-4">
@@ -450,7 +467,7 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <tr>
                                     <th class="text-center" style="width: 60px;">Photo</th>
                                     <th style="width: 150px;">Variant Name</th>
-                                    <th>Description</th>
+                                    <th style="min-width: 250px;">Description</th>
                                     <th style="width: 100px;">Cost Price</th>
                                     <th style="width: 100px;">Selling Price</th>
                                     <th style="width: 70px;">Stock</th>
@@ -517,13 +534,13 @@ $variants_res = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                             </td>
 
                                             <td>
-                                                <span class="text-muted small">
+                                                <div class="description-scroll-box text-muted small">
                                                     <?php
                                                     echo !empty($v['variant_description'])
                                                         ? nl2br(htmlspecialchars($v['variant_description']))
                                                         : '<i class="text-danger">No description configured.</i>';
                                                     ?>
-                                                </span>
+                                                </div>
                                             </td>
 
                                             <td class="text-secondary fw-bold">
