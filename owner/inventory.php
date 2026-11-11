@@ -1,119 +1,84 @@
 <?php
 session_start();
 require_once __DIR__ . '/../config/db.php';
-require_once __DIR__ . '/../config/image.php'; // Idinagdag para sa tamang image resolution kung kinakailangan
 
-if (!isset($_SESSION['role'] ) || $_SESSION['role'] !== 'owner') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'owner') {
     header("Location: ../login.php");
     exit();
 }
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
-$filter = $_GET['filter'] ?? 'all';
-$date_selected = $_GET['date'] ?? "";
-$type_filter = $_GET['type'] ?? 'all';
+$low_stock_threshold = 10;
 
-function getCleanWhere($filter, $date_selected, $date_column) {
-    $where = " WHERE 1=1 ";
-    if (!empty($date_selected)) {
-        $where .= " AND DATE($date_column) = '$date_selected'";
-    } else {
-        if ($filter == 'daily') { 
-            $where .= " AND DATE($date_column) = CURRENT_DATE"; 
-        }
-        elseif ($filter == 'weekly') { 
-            $where .= " AND DATE_TRUNC('week', $date_column) = DATE_TRUNC('week', CURRENT_DATE)"; 
-        }
-        elseif ($filter == 'monthly') { 
-            $where .= " AND EXTRACT(MONTH FROM $date_column) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM $date_column) = EXTRACT(YEAR FROM CURRENT_DATE)"; 
-        }
-        elseif ($filter == 'yearly') { 
-            $where .= " AND EXTRACT(YEAR FROM $date_column) = EXTRACT(YEAR FROM CURRENT_DATE)"; 
-        }
-    }
-    return $where;
-}
-
-$where_orders = getCleanWhere($filter, $date_selected, 'o.order_date');
-$where_pos = getCleanWhere($filter, $date_selected, 'pt.transaction_date');
-
-$grand_total_sales = 0;
-$grand_total_profit = 0;
-$sales_ledger_data = [];
-
-// A. Online Orders (Optimized single query with SUM and JOIN)
-if ($type_filter == 'all' || $type_filter == 'online') {
-    $orders_query = $pdo->query("
-        SELECT o.id,
-               CONCAT(o.fullname, ' ', o.surname) AS name,
-               o.total_amount,
-               o.order_date,
-               SUM(
-                   COALESCE(NULLIF(oi.cost_price, 0), pv.cost_price, p.cost_price, 0) * oi.qty
-               ) AS total_cost
-        FROM orders o
-        JOIN order_items oi ON o.id = oi.order_id
-        LEFT JOIN products p ON oi.product_id = p.id
-        LEFT JOIN product_variants pv ON oi.variant_id = pv.id
-        $where_orders
-        AND o.status = 'completed'
-        GROUP BY o.id, o.fullname, o.surname, o.total_amount, o.order_date
-    ");
-
-    while ($ord = $orders_query->fetch(PDO::FETCH_ASSOC)) {
-        $total_cost = (float)($ord['total_cost'] ?? 0);
-        $profit = (float)$ord['total_amount'] - $total_cost;
-
-        $grand_total_sales += (float)$ord['total_amount'];
-        $grand_total_profit += $profit;
-
-        $sales_ledger_data[] = [
-            'id'       => $ord['id'],
-            'customer' => $ord['name'],
-            'type'     => 'Online',
-            'sales'    => $ord['total_amount'],
-            'profit'   => $profit,
-            'date'     => $ord['order_date']
-        ];
-    }
-}
-
-// B. POS Walk-in Calculation (Optimized single query with SUM and JOIN)
-if ($type_filter == 'all' || $type_filter == 'walkin') {
-    $pos_query = $pdo->query("
-        SELECT pt.id,
-               pt.cashier_name,
-               pt.total_amount,
-               pt.transaction_date,
-               SUM(
-                   COALESCE(pv.cost_price, p.cost_price, 0) * pti.qty
-               ) AS total_cost
-        FROM pos_transaction pt
-        JOIN pos_transaction_items pti ON pt.id = pti.transaction_id
-        LEFT JOIN products p ON pti.product_id = p.id
-        LEFT JOIN product_variants pv ON pti.variant_id = pv.id
-        $where_pos
-        GROUP BY pt.id, pt.cashier_name, pt.total_amount, pt.transaction_date
-    ");
-
-    while ($pos = $pos_query->fetch(PDO::FETCH_ASSOC)) {
-        $total_cost = (float)($pos['total_cost'] ?? 0);
-        $profit = (float)$pos['total_amount'] - $total_cost;
+// Dynamic Image Resolver Function
+function resolveProductImage($raw_image) {
+    $img_src = '../assets/images/no-image.png';
+    if (!empty($raw_image)) {
+        $image_value = trim($raw_image);
         
-        $grand_total_sales += (float)$pos['total_amount'];
-        $grand_total_profit += $profit;
-        
-        $sales_ledger_data[] = [
-            'id'       => $pos['id'], 
-            'customer' => $pos['cashier_name'], 
-            'type'     => 'Walk-in', 
-            'sales'    => $pos['total_amount'], 
-            'profit'   => $profit, 
-            'date'     => $pos['transaction_date']
-        ];
+        if (stripos($image_value, 'data:image/') === 0) {
+            $img_src = $image_value;
+        } elseif (filter_var($image_value, FILTER_VALIDATE_URL)) {
+            $parsed_url = parse_url($image_value);
+            $host = strtolower($parsed_url['host'] ?? '');
+            
+            if ($host === 'drive.google.com' || $host === 'docs.google.com') {
+                parse_str($parsed_url['query'] ?? '', $query_params);
+                $file_id = '';
+                if (!empty($query_params['id'])) {
+                    $file_id = $query_params['id'];
+                } elseif (preg_match('#/file/d/([A-Za-z0-9_-]+)#', $parsed_url['path'] ?? '', $matches)) {
+                    $file_id = $matches[1];
+                }
+                if ($file_id !== '') {
+                    $img_src = '../drive-image.php?id=' . urlencode($file_id);
+                }
+            } else {
+                $img_src = $image_value;
+            }
+        } elseif (preg_match('/^[A-Za-z0-9_-]{20,}$/', $image_value) && !str_contains($image_value, '/')) {
+            $img_src = '../drive-image.php?id=' . urlencode($image_value);
+        } else {
+            $clean_path = ltrim($image_value, '/');
+            if (str_starts_with($clean_path, '../')) {
+                $img_src = $clean_path;
+            } else {
+                $img_src = '../' . $clean_path;
+            }
+        }
     }
+    return $img_src;
 }
 
-usort($sales_ledger_data, fn($a, $b) => strtotime($b['date']) - strtotime($a['date']));
+// ==========================================
+// 1. SUMMARY CARDS DATA FETCHING
+// ==========================================
+$count_query = $pdo->query("SELECT COUNT(*) as total FROM products UNION ALL SELECT COUNT(*) as total FROM product_variants");
+$total_products = 0; 
+while($cq = $count_query->fetch(PDO::FETCH_ASSOC)) { $total_products += $cq['total']; }
+
+$stock_query = $pdo->query("SELECT SUM(stock) as total_stock FROM products UNION ALL SELECT SUM(stock) as total_stock FROM product_variants");
+$total_stock = 0; 
+while($sq = $stock_query->fetch(PDO::FETCH_ASSOC)) { $total_stock += $sq['total_stock']; }
+
+$low_query = $pdo->query("SELECT COUNT(*) as total FROM products WHERE stock <= $low_stock_threshold AND stock > 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock <= $low_stock_threshold AND stock > 0");
+$low_stock_count = 0; 
+while($lq = $low_query->fetch(PDO::FETCH_ASSOC)) { $low_stock_count += $lq['total']; }
+
+$out_query = $pdo->query("SELECT COUNT(*) as total FROM products WHERE stock = 0 UNION ALL SELECT COUNT(*) as total FROM product_variants WHERE stock = 0");
+$out_of_stock_count = 0; 
+while($oq = $out_query->fetch(PDO::FETCH_ASSOC)) { $out_of_stock_count += $oq['total']; }
+
+// ==========================================
+// 2. MAIN PRODUCTS & VARIANTS QUERY (KASAMA ANG IMAGE AT IS_ARCHIVED)
+// ==========================================
+$inventory_query = $pdo->query("
+    SELECT id, product_name, price, stock, image, is_archived, 'Main Product' AS item_type FROM products
+    UNION ALL
+    SELECT v.id, v.variant_name AS product_name, v.price, v.stock, COALESCE(NULLIF(v.variant_image, ''), p.image) AS image, p.is_archived, 'Variant Item' AS item_type 
+    FROM product_variants v
+    JOIN products p ON v.product_id = p.id
+    ORDER BY product_name ASC
+");
 ?>
 
 <!DOCTYPE html>
@@ -121,118 +86,157 @@ usort($sales_ledger_data, fn($a, $b) => strtotime($b['date']) - strtotime($a['da
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales & Profit Report</title>
+    <title>Inventory Report | Management</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    
     <style>
-body{
-    margin:0;
-    overflow-x:hidden;
-    background:#f8f9fa;
-}
+    body { 
+        background-color: #f8fafc; 
+        font-family: 'Segoe UI', system-ui, sans-serif; 
+        overflow-x: hidden;
+        padding-top: 56px;
+    }
 
-.navbar{
-    height:56px;
-    z-index:1100;
-    position:fixed;
-    top:0;
-    left:0;
-    right:0;
-}
+    .wrapper {
+        display: flex;
+        width: 100%;
+        min-height: calc(100vh - 56px);
+    }
 
-.sidebar{
-    position:fixed;
-    top:56px;
-    left:0;
-    width:260px;
-    height:calc(100vh - 56px);
-    background:#001f4d;
-    padding:20px;
-    overflow-y:auto;
-    display:flex;
-    flex-direction:column;
-    box-shadow:4px 0 15px rgba(0,0,0,0.15);
-    transition: transform 0.3s ease;
-    z-index: 1040;
-}
+    nav.navbar {
+        height: 56px;
+        z-index: 1100;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+    }
 
-.sidebar-link{
-    color:#adb5bd;
-    text-decoration:none;
-    padding:12px 14px;
-    border-radius:8px;
-    margin-bottom:8px;
-    font-size:15px;
-    font-weight:500;
-    display:block;
-    transition:0.3s;
-}
-
-.sidebar-link i{
-    margin-right:8px;
-}
-
-.sidebar-link:hover{
-    background:#0d6efd;
-    color:#fff;
-    padding-left:20px;
-}
-
-.sidebar-link.active{
-    background:#0d6efd;
-    color:#fff;
-}
-
-.logout-section{
-    margin-top:auto;
-    padding-top:15px;
-    border-top:1px solid rgba(255,255,255,0.2);
-}
-
-.main-content{
-    margin-left:260px;
-    margin-top:56px;
-    padding:20px;
-    min-height:100vh;
-    transition: margin 0.3s ease;
-}
-
-.sidebar::-webkit-scrollbar{
-    width:5px;
-}
-
-.sidebar::-webkit-scrollbar-thumb{
-    background:#0d6efd;
-    border-radius:10px;
-}
-
-/* Image Zoom Modal Fixes */
-.table img {
-    cursor: zoom-in;
-    transition: transform 0.2s ease, opacity 0.2s ease;
-}
-.table img:hover {
-    transform: scale(1.05);
-    opacity: 0.9;
-}
-#imageZoomModal {
-    z-index: 2050 !important;
-}
-#imageZoomModal .modal-backdrop {
-    z-index: 2040 !important;
-}
-
-@media (max-width: 991.98px) {
     .sidebar {
-        transform: translateX(-100%);
+        position: fixed;
+        top: 56px; 
+        left: 0;
+        width: 260px;
+        height: calc(100vh - 56px);
+        background: #001f4d;
+        padding: 20px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 4px 0 15px rgba(0,0,0,0.15);
+        transition: transform 0.3s ease;
+        z-index: 1040;
     }
-    .sidebar.show {
-        transform: translateX(0);
+
+    .sidebar-link {
+        color: #adb5bd;
+        text-decoration: none;
+        padding: 12px 14px;
+        margin-bottom: 8px;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        transition: all 0.25s ease;
     }
+
+    .sidebar-link i {
+        margin-right: 10px;
+    }
+    .sidebar-link:hover {
+        background: #0d6efd;
+        color: #fff;
+        transform: translateX(4px);
+    }
+
+    .sidebar-link.active {
+        background: #0d6efd;
+        color: #fff;
+    }
+
+    .logout-section {
+        margin-top: auto;
+        padding-top: 15px;
+        border-top: 1px solid rgba(255,255,255,0.2);
+    }
+
     .main-content {
-        margin-left: 0;
+        flex: 1;
+        margin-left: 260px;   
+        padding: 20px;
+        background: #f8f9fa;
+        min-height: calc(100vh - 56px);
+        overflow-x: hidden;
+        transition: margin 0.3s ease;
     }
-}
+
+    .item-img {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid #dee2e6;
+        background-color: #f1f5f9;
+        cursor: zoom-in;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    
+    .item-img:hover {
+        transform: scale(1.05);
+        opacity: 0.9;
+    }
+
+    #imageZoomModal {
+        z-index: 2050 !important;
+    }
+
+    #imageZoomModal .modal-backdrop {
+        z-index: 2040 !important;
+    }
+
+    .sidebar::-webkit-scrollbar {
+        width: 5px;
+    }
+
+    .sidebar::-webkit-scrollbar-thumb {
+        background: #0d6efd;
+        border-radius: 10px;
+    }
+
+    /* MOBILE RESPONSIVENESS */
+    @media (max-width: 991.98px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+        .sidebar.show {
+            transform: translateX(0);
+        }
+        .main-content {
+            margin-left: 0;
+        }
+    }
+
+    @media print {
+        body {
+            background: #fff;
+            padding-top: 0;
+        }
+
+        .sidebar,
+        nav,
+        .btn,
+        .filter-box {
+            display: none !important;
+        }
+
+        .main-content {
+            margin: 0;
+            padding: 0;
+            height: auto;
+        }
+    }
     </style>
 </head>
 <body>
@@ -253,97 +257,142 @@ body{
     </div>
 </nav>
 
-<div class="sidebar" id="appSidebar">
-    <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
-    <a href="sales.php" class="sidebar-link active"><i class="bi bi-cash-stack"></i> Sales</a>
-    <a href="inventory.php" class="sidebar-link"><i class="bi bi-box-seam"></i> Inventory</a>
-    <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
-    <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
-    <a href="auditTrail.php" class="sidebar-link"><i class="bi bi-shield-lock"></i> Audit Trail</a>
-    <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
-    <div class="logout-section">
-        <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
-            <i class="bi bi-box-arrow-right"></i> Logout
-        </a>
-    </div>
-</div>
+<div class="wrapper">
 
-<div class="main-content">
-    <h3 class="mb-4">Sales & Profit Report</h3>
-    
-    <form method="GET" class="row g-3 mb-4 mt-2">
-        <div class="col-12 col-md-auto">
-            <select name="type" class="form-select">
-                <option value="all" <?=$type_filter=='all'?'selected':''?>>All Channels</option>
-                <option value="online" <?=$type_filter=='online'?'selected':''?>>Online</option>
-                <option value="walkin" <?=$type_filter=='walkin'?'selected':''?>>Walk-in</option>
-            </select>
-        </div>
-        <div class="col-12 col-md-auto">
-            <select name="filter" class="form-select">
-                <option value="all" <?= $filter == 'all' ? 'selected' : '' ?>>All Time</option>
-                <option value="daily" <?= $filter == 'daily' ? 'selected' : '' ?>>Today (Daily)</option>
-                <option value="weekly" <?= $filter == 'weekly' ? 'selected' : '' ?>>This Week (Weekly)</option>
-                <option value="monthly" <?= $filter == 'monthly' ? 'selected' : '' ?>>This Month (Monthly)</option>
-                <option value="yearly" <?= $filter == 'yearly' ? 'selected' : '' ?>>This Year (Yearly)</option>
-            </select>
-        </div>
-        <div class="col-12 col-md-auto">
-            <input type="date" name="date" class="form-control" value="<?=$date_selected?>">
-        </div>
-        <div class="col-12 col-md-auto">
-            <button type="submit" class="btn btn-primary">Filter</button>
-            <a href="sales.php" class="btn btn-secondary">Clear</a>
-        </div>
-    </form>
-
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3">
-            <div class="card card-counter bg-white p-3 border-start border-primary border-4 h-100">
-                <div class="text-muted small fw-bold text-uppercase">Total Sales</div>
-                <div class="fs-4 fw-bold text-primary mt-1">₱<?=number_format($grand_total_sales, 2)?></div>
-            </div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card card-counter bg-white p-3 border-start border-success border-4 h-100">
-                <div class="text-muted small fw-bold text-uppercase">Total Profit</div>
-                <div class="fs-4 fw-bold text-success mt-1">₱<?=number_format($grand_total_profit, 2)?></div>
-            </div>
+    <div class="sidebar" id="appSidebar">
+        <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
+        <a href="sales.php" class="sidebar-link"><i class="bi bi-cash-stack"></i> Sales</a>
+        <a href="inventory.php" class="sidebar-link active"><i class="bi bi-box-seam"></i> Inventory Report</a>
+        <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
+        <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
+        <a href="auditTrail.php" class="sidebar-link"><i class="bi bi-shield-lock"></i> Audit Trail</a>
+         <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
+        <div class="logout-section">
+            <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
         </div>
     </div>
-    
-    <div class="card shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th>ID</th>
-                        <th>Customer/Cashier</th>
-                        <th>Channel</th>
-                        <th>Sales</th>
-                        <th>Profit</th>
-                        <th>Date</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if (empty($sales_ledger_data)): ?>
-                        <tr>
-                            <td colspan="6" class="text-center py-4 text-muted">No records found for the selected filter.</td>
-                        </tr>
-                    <?php else: ?>
-                        <?php foreach ($sales_ledger_data as $row) { ?>
-                        <tr>
-                            <td>#<?=$row['id']?></td>
-                            <td><?=htmlspecialchars($row['customer'])?></td>
-                            <td><?=$row['type']?></td>
-                            <td>₱<?=number_format($row['sales'], 2)?></td>
-                            <td class="text-success fw-bold">₱<?=number_format($row['profit'], 2)?></td>
-                            <td><?=date('M d, Y h:i A', strtotime($row['date']))?></td>
-                        </tr>
-                        <?php } ?>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+
+    <div class="main-content">
+        <div class="container-fluid p-0">
+            
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+                <div>
+                    <h2 class="fw-bold text-dark m-0">Inventory Report</h2>
+                    <small class="text-muted">Real-time stock level monitoring for both Main Products and Variant Items.</small>
+                </div>
+                <div class="d-flex gap-2">
+                    <button onclick="triggerPrint()" class="btn btn-outline-secondary btn-sm fw-bold"><i class="bi bi-printer"></i> Print / PDF</button>
+                    <button onclick="exportExcel()" class="btn btn-success btn-sm fw-bold"><i class="bi bi-file-earmark-excel"></i> Export Excel</button>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-lg-3">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-primary border-4 h-100">
+                        <div class="text-muted small fw-bold text-uppercase">Total Items</div>
+                        <div class="fs-3 fw-bold text-dark mt-1"><?php echo number_format($total_products); ?></div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-success border-4 h-100">
+                        <div class="text-muted small fw-bold text-uppercase">Quantity On Hand</div>
+                        <div class="fs-3 fw-bold text-dark mt-1"><?php echo number_format($total_stock); ?> Pcs</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-warning border-4 h-100">
+                        <div class="text-muted small fw-bold text-uppercase">Low Stock Warnings</div>
+                        <div class="fs-3 fw-bold text-warning mt-1"><?php echo number_format($low_stock_count); ?> Items</div>
+                    </div>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <div class="card card-counter shadow-sm bg-white p-3 border-start border-danger border-4 h-100">
+                        <div class="text-muted small fw-bold text-uppercase">Out Of Stock</div>
+                        <div class="fs-3 fw-bold text-danger mt-1"><?php echo number_format($out_of_stock_count); ?> Items</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card p-3 mb-4 shadow-sm border-0 filter-box">
+                <div class="row align-items-center">
+                    <div class="col-12">
+                        <div class="input-group input-group-sm">
+                            <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                            <input type="text" id="liveSearch" onkeyup="filterInventory()" class="form-control border-start-0" placeholder="Type product or variant name to search instantly...">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card table-card shadow-sm bg-white overflow-hidden">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0" id="inventoryTable">
+                        <thead class="table-light text-secondary small text-uppercase">
+                            <tr>
+                                <th class="ps-4 py-3" style="width: 10%;">Item ID</th>
+                                <th style="width: 10%;">Image</th>
+                                <th style="width: 20%;">Products</th>
+                                <th style="width: 12%;">Type</th>
+                                <th style="width: 13%;">Price</th>
+                                <th style="width: 10%;">Stock Qty</th>
+                                <th class="text-center" style="width: 12%;">Stock Status</th>
+                                <th class="pe-4 text-center" style="width: 13%;">Item Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php 
+                            $rows = $inventory_query->fetchAll(PDO::FETCH_ASSOC);
+                            if (count($rows) > 0) {
+                                foreach($rows as $row) { 
+                                    // Stock Level Status Badge
+                                    if ($row['stock'] == 0) {
+                                        $stock_status_badge = '<span class="badge bg-danger-subtle text-danger px-2 py-1 rounded">Out of Stock</span>';
+                                    } elseif ($row['stock'] <= $low_stock_threshold) {
+                                        $stock_status_badge = '<span class="badge bg-warning-subtle text-warning px-2 py-1 rounded">Low Stock</span>';
+                                    } else {
+                                        $stock_status_badge = '<span class="badge bg-success-subtle text-success px-2 py-1 rounded">Good Stock</span>';
+                                    }
+
+                                    // Active vs Archived Badge (Green = Active, Red = Archived)
+                                    $item_status_badge = ($row['is_archived'] == 1)
+                                        ? '<span class="badge bg-danger text-white px-2 py-1 rounded"><i class="bi bi-archive-fill me-1"></i> Archived</span>'
+                                        : '<span class="badge bg-success text-white px-2 py-1 rounded"><i class="bi bi-check-circle-fill me-1"></i> Active</span>';
+
+                                    $type_badge = ($row['item_type'] == 'Variant Item') 
+                                        ? '<span class="text-purple fw-semibold small"><i class="bi bi-layers-half"></i> Variant</span>' 
+                                        : '<span class="text-primary fw-semibold small"><i class="bi bi-box"></i> Main</span>';
+
+                                    $image_path = resolveProductImage($row['image']);
+                                    ?>
+                                    <tr class="inventory-row" data-name="<?php echo strtolower($row['product_name']); ?>">
+                                        <td class="ps-4 text-muted font-monospace">#<?php echo $row['id']; ?></td>
+                                        <td>
+                                            <img src="<?php echo htmlspecialchars($image_path, ENT_QUOTES, 'UTF-8'); ?>" 
+                                                 class="item-img" 
+                                                 alt="<?php echo htmlspecialchars($row['product_name']); ?>"
+                                                 onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                                                 loading="lazy"
+                                                 onclick="openProductImageZoom(this.src)" 
+                                                 title="Click to zoom image">
+                                        </td>
+                                        <td class="fw-bold text-dark"><?php echo htmlspecialchars($row['product_name']); ?></td>
+                                        <td><?php echo $type_badge; ?></td>
+                                        <td class="fw-semibold">₱<?php echo number_format($row['price'], 2); ?></td>
+                                        <td class="fw-bold"><?php echo $row['stock']; ?></td>
+                                        <td class="text-center"><?php echo $stock_status_badge; ?></td>
+                                        <td class="pe-4 text-center"><?php echo $item_status_badge; ?></td>
+                                    </tr>
+                                <?php } 
+                            } else { ?>
+                                <tr><td colspan="8" class="text-center py-5 text-muted">No operational inventory records found.</td></tr>
+                            <?php } ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -393,7 +442,39 @@ document.addEventListener("DOMContentLoaded", function() {
         });
     }
 });
+
+// 1. LIVE SEARCH FILTER SYSTEM
+function filterInventory() {
+    let input = document.getElementById("liveSearch").value.toLowerCase();
+    let rows = document.querySelectorAll(".inventory-row");
+    rows.forEach(row => {
+        let textContent = row.getAttribute("data-name");
+        if (textContent.includes(input)) {
+            row.style.display = "";
+        } else {
+            row.style.display = "none";
+        }
+    });
+}
+
+// 2. NATIVE PRINT UTILITY
+function triggerPrint() { window.print(); }
+
+// 3. EXPORT FILE TO EXCEL LOGIC
+function exportExcel() {
+    let table = document.getElementById("inventoryTable");
+    let html = table.outerHTML;
+    let url = 'data:application/vnd.ms-excel,' + encodeURIComponent(html);
+    let downloadLink = document.createElement("a");
+    document.body.appendChild(downloadLink);
+    let today = new Date().toISOString().slice(0, 10);
+    downloadLink.download = 'Master_Inventory_Report_' + today + '.xls';
+    downloadLink.href = url;
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+}
 </script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
