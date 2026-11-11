@@ -427,7 +427,7 @@ $inventory_query = $pdo->query($final_query_sql);
                                         </td>
                                         <td class="fw-bold text-dark"><?php echo htmlspecialchars($row['product_name']); ?></td>
                                         <td><?php echo $type_badge; ?></td>
-                                        <td class="fw-semibold">₱<?php echo number_format($row['price'], 2); ?></td>
+                                        <td class="fw-semibold" data-raw-price="<?php echo $row['price']; ?>">₱<?php echo number_format($row['price'], 2); ?></td>
                                         <td class="fw-bold"><?php echo $row['stock']; ?></td>
                                         <td class="text-center"><?php echo $stock_status_badge; ?></td>
                                         <td class="pe-4 text-center"><?php echo $item_status_badge; ?></td>
@@ -508,11 +508,43 @@ function filterInventory() {
 // 2. NATIVE PRINT UTILITY
 function triggerPrint() { window.print(); }
 
-// 3. EXPORT FILE TO EXCEL LOGIC
+// 3. EXPORT FILE TO EXCEL LOGIC (NA-FIX NA: TANGGAL ANG IMAGE AT ACCURATE NA ANG PRICE)
 function exportExcel() {
-    let table = document.getElementById("inventoryTable");
-    let html = table.outerHTML;
-    let url = 'data:application/vnd.ms-excel,' + encodeURIComponent(html);
+    let originalTable = document.getElementById("inventoryTable");
+    let cloneTable = originalTable.cloneNode(true);
+    
+    // Alisin ang Image column header (index 1)
+    let headerRow = cloneTable.querySelector("thead tr");
+    if (headerRow && headerRow.cells[1]) {
+        headerRow.deleteCell(1);
+    }
+    
+    // Alisin ang mga image cell sa bawat row at ayusin ang presyo para maging numeric value sa Excel
+    let rows = cloneTable.querySelectorAll("tbody tr");
+    rows.forEach(row => {
+        if (row.cells.length > 1) {
+            // Tanggalin ang image cell (index 1)
+            row.deleteCell(1);
+            
+            // Hanapin ang price cell at gawing purong numero nang walang "₱" o sirang characters
+            let priceCell = row.cells[3]; // Dahil nabura na ang image, lumipat ang index ng Price sa 3
+            if (priceCell) {
+                let rawPrice = priceCell.getAttribute("data-raw-price");
+                if (rawPrice !== null) {
+                    priceCell.innerText = parseFloat(rawPrice).toFixed(2);
+                } else {
+                    let cleaned = priceCell.innerText.replace(/[^\d.-]/g, '');
+                    priceCell.innerText = cleaned ? parseFloat(cleaned).toFixed(2) : '0.00';
+                }
+            }
+        }
+    });
+    
+    let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+    html += '<head><meta charset="utf-8"></head>';
+    html += '<body>' + cloneTable.outerHTML + '</body></html>';
+
+    let url = 'data:application/vnd.ms-excel;charset=utf-8,' + encodeURIComponent(html);
     let downloadLink = document.createElement("a");
     document.body.appendChild(downloadLink);
     let today = new Date().toISOString().slice(0, 10);
