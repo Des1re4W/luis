@@ -606,10 +606,6 @@ function viewPOSitems(data) {
 
             <div class="receipt-line mt-2"></div>
 
-            <div class="text-start small mb-2">
-                <b>Mode of Payment:</b> CASH
-            </div>
-
             <div class="text-center mt-3">
                 <small class="fw-bold d-block">Thank you for your purchase!</small>
                 <small class="text-muted d-block">Please come again.</small>

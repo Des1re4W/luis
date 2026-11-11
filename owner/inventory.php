@@ -9,6 +9,10 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'owner') {
 $owner_name = isset($_SESSION['username']) ? $_SESSION['username'] : "owner";
 $low_stock_threshold = 10;
 
+// Kunin ang napiling filter o sort mula sa GET request
+$filter_mode = $_GET['filter_mode'] ?? 'all';
+$search_query = trim($_GET['search'] ?? '');
+
 // Dynamic Image Resolver Function
 function resolveProductImage($raw_image) {
     $img_src = '../assets/images/no-image.png';
@@ -69,16 +73,48 @@ $out_of_stock_count = 0;
 while($oq = $out_query->fetch(PDO::FETCH_ASSOC)) { $out_of_stock_count += $oq['total']; }
 
 // ==========================================
-// 2. MAIN PRODUCTS & VARIANTS QUERY (KASAMA ANG IMAGE AT IS_ARCHIVED)
+// 2. MAIN PRODUCTS & VARIANTS QUERY WITH FILTERS & SORTS
 // ==========================================
-$inventory_query = $pdo->query("
+$base_sql = "
     SELECT id, product_name, price, stock, image, is_archived, 'Main Product' AS item_type FROM products
     UNION ALL
     SELECT v.id, v.variant_name AS product_name, v.price, v.stock, COALESCE(NULLIF(v.variant_image, ''), p.image) AS image, p.is_archived, 'Variant Item' AS item_type 
     FROM product_variants v
     JOIN products p ON v.product_id = p.id
-    ORDER BY product_name ASC
-");
+";
+
+// Pagbuo ng WHERE conditions batay sa napiling filter
+$where_clauses = [];
+if ($filter_mode === 'main_items') {
+    $where_clauses[] = "item_type = 'Main Product'";
+} elseif ($filter_mode === 'variant_items') {
+    $where_clauses[] = "item_type = 'Variant Item'";
+} elseif ($filter_mode === 'active_items') {
+    $where_clauses[] = "is_archived = 0";
+} elseif ($filter_mode === 'archive_items') {
+    $where_clauses[] = "is_archived = 1";
+} elseif ($filter_mode === 'low_stocks') {
+    $where_clauses[] = "stock <= $low_stock_threshold AND stock > 0";
+} elseif ($filter_mode === 'out_of_stocks') {
+    $where_clauses[] = "stock = 0";
+}
+
+$final_query_sql = "SELECT * FROM ($base_sql) AS inventory_combined";
+if (!empty($where_clauses)) {
+    $final_query_sql .= " WHERE " . implode(" AND ", $where_clauses);
+}
+
+// Pagbuo ng ORDER BY batay sa sorting option
+if ($filter_mode === 'az') {
+    $final_query_sql .= " ORDER BY product_name ASC";
+} elseif ($filter_mode === 'za') {
+    $final_query_sql .= " ORDER BY product_name DESC";
+} else {
+    // Default or sort by item id
+    $final_query_sql .= " ORDER BY id DESC";
+}
+
+$inventory_query = $pdo->query($final_query_sql);
 ?>
 
 <!DOCTYPE html>
@@ -205,7 +241,6 @@ $inventory_query = $pdo->query("
         border-radius: 10px;
     }
 
-    /* MOBILE RESPONSIVENESS */
     @media (max-width: 991.98px) {
         .sidebar {
             transform: translateX(-100%);
@@ -223,14 +258,9 @@ $inventory_query = $pdo->query("
             background: #fff;
             padding-top: 0;
         }
-
-        .sidebar,
-        nav,
-        .btn,
-        .filter-box {
+        .sidebar, nav, .btn, .filter-box {
             display: none !important;
         }
-
         .main-content {
             margin: 0;
             padding: 0;
@@ -315,15 +345,33 @@ $inventory_query = $pdo->query("
                 </div>
             </div>
 
+            <!-- SEARCH AND FILTER BAR -->
             <div class="card p-3 mb-4 shadow-sm border-0 filter-box">
-                <div class="row align-items-center">
-                    <div class="col-12">
+                <form method="GET" action="inventory.php" class="row g-2 align-items-center">
+                    <div class="col-12 col-md-6">
                         <div class="input-group input-group-sm">
                             <span class="input-group-text bg-white border-end-0 text-muted"><i class="bi bi-search"></i></span>
-                            <input type="text" id="liveSearch" onkeyup="filterInventory()" class="form-control border-start-0" placeholder="Type product or variant name to search instantly...">
+                            <input type="text" id="liveSearch" name="search" value="<?php echo htmlspecialchars($search_query); ?>" onkeyup="filterInventory()" class="form-control border-start-0" placeholder="Type product or variant name to search instantly...">
                         </div>
                     </div>
-                </div>
+                    <div class="col-12 col-md-4">
+                        <select name="filter_mode" class="form-select form-select-sm" onchange="this.form.submit()">
+                            <option value="all" <?php echo ($filter_mode === 'all') ? 'selected' : ''; ?>>All Items (Default)</option>
+                            <option value="item_id" <?php echo ($filter_mode === 'item_id') ? 'selected' : ''; ?>>Sort by: Item ID (Newest)</option>
+                            <option value="az" <?php echo ($filter_mode === 'az') ? 'selected' : ''; ?>>Sort by: A-Z</option>
+                            <option value="za" <?php echo ($filter_mode === 'za') ? 'selected' : ''; ?>>Sort by: Z-A</option>
+                            <option value="main_items" <?php echo ($filter_mode === 'main_items') ? 'selected' : ''; ?>>Only Main Items</option>
+                            <option value="variant_items" <?php echo ($filter_mode === 'variant_items') ? 'selected' : ''; ?>>Only Variant Items</option>
+                            <option value="active_items" <?php echo ($filter_mode === 'active_items') ? 'selected' : ''; ?>>Only Active Items</option>
+                            <option value="archive_items" <?php echo ($filter_mode === 'archive_items') ? 'selected' : ''; ?>>Only Archive Items</option>
+                            <option value="low_stocks" <?php echo ($filter_mode === 'low_stocks') ? 'selected' : ''; ?>>Only Low Stocks</option>
+                            <option value="out_of_stocks" <?php echo ($filter_mode === 'out_of_stocks') ? 'selected' : ''; ?>>Only Out of Stocks</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-2">
+                        <a href="inventory.php" class="btn btn-outline-secondary btn-sm w-100 fw-bold">Reset Filters</a>
+                    </div>
+                </form>
             </div>
 
             <div class="card table-card shadow-sm bg-white overflow-hidden">
