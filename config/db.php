@@ -1,13 +1,10 @@
-
 <?php
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Load .env from hardwareSystem root
 $dotenv = Dotenv\Dotenv::createImmutable(dirname(__DIR__));
 $dotenv->load();
 
-// Database credentials
 $host = $_ENV['DB_HOST'];
 $port = $_ENV['DB_PORT'] ?? '5432';
 $db   = $_ENV['DB_NAME'];

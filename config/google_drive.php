@@ -4,11 +4,9 @@ require_once __DIR__ . '/../vendor/autoload.php';
 function getGoogleDriveClient(): Google\Client
 {
     $client = new Google\Client();
-
     $client->setClientId(getenv('GOOGLE_CLIENT_ID'));
     $client->setClientSecret(getenv('GOOGLE_CLIENT_SECRET'));
     $client->setRedirectUri(getenv('GOOGLE_REDIRECT_URI'));
-
     $client->setAccessType('offline');
     $client->setScopes([
         Google\Service\Drive::DRIVE_FILE
@@ -19,7 +17,10 @@ function getGoogleDriveClient(): Google\Client
 
 function uploadProductImageToDrive(string $filePath, string $fileName, ?string $targetFolderId = null): string
 {
-    $refreshToken = getenv('GOOGLE_REFRESH_TOKEN');
+    $refreshToken = $_ENV['GOOGLE_REFRESH_TOKEN']
+        ?? $_SERVER['GOOGLE_REFRESH_TOKEN']
+        ?? getenv('GOOGLE_REFRESH_TOKEN')
+        ?: null;
 
     if (!$refreshToken) {
         throw new Exception('GOOGLE_REFRESH_TOKEN is missing in Render.');
