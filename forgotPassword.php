@@ -297,6 +297,29 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
         .alert { border-radius: 8px; font-size: 0.88rem; word-wrap: break-word; }
         .back-link { display: inline-block; width: 100%; text-align: center; margin-top: 18px; color: var(--navy); text-decoration: none; font-weight: 600; font-size: 0.9rem; }
         .back-link:hover { text-decoration: underline; }
+
+        /* Checklist Styles */
+        .password-checklist {
+            font-size: 0.8rem;
+            margin-top: 6px;
+            padding-left: 0;
+            list-style: none;
+        }
+        .password-checklist li {
+            color: #6c757d;
+            margin-bottom: 3px;
+            transition: color 0.2s ease;
+        }
+        .password-checklist li.valid {
+            color: #198754;
+            font-weight: 600;
+        }
+        .password-checklist li.valid::before {
+            content: "✓ ";
+        }
+        .password-checklist li::before {
+            content: "• ";
+        }
     </style>
 </head>
 <body>
@@ -366,7 +389,16 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                         <input type="password" class="form-control" id="new_password" name="new_password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters">
                         <button class="btn btn-outline-secondary" type="button" id="toggleNewPassword"><i class="bi bi-eye" id="iconNewPassword"></i></button>
                     </div>
-                    <div class="form-text text-muted" style="font-size: 0.78rem;">Must be 8+ chars with uppercase, lowercase, number & special character. No spaces.</div>
+                    
+                    <!-- Real-time Checklist Validation -->
+                    <ul class="password-checklist" id="passwordChecklist">
+                        <li id="lengthReq">At least 8 characters</li>
+                        <li id="upperReq">At least 1 uppercase letter (A–Z)</li>
+                        <li id="lowerReq">At least 1 lowercase letter (a–z)</li>
+                        <li id="numberReq">At least 1 number (0–9)</li>
+                        <li id="specialReq">At least 1 special character (!@#$%^&*)</li>
+                        <li id="spaceReq">No spaces allowed</li>
+                    </ul>
                 </div>
 
                 <div class="mb-3">
@@ -392,6 +424,7 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
                 btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...';
             }
         }
+
         <?php if ($showPasswordForm): ?>
             function setupPasswordToggle(toggleBtnId, fieldId, iconId) {
                 const btn = document.getElementById(toggleBtnId);
@@ -408,6 +441,63 @@ if (!empty($_SESSION['pw_reset_account']['email'])) {
             }
             setupPasswordToggle('toggleNewPassword', 'new_password', 'iconNewPassword');
             setupPasswordToggle('toggleConfirmPassword', 'confirm_password', 'iconConfirmPassword');
+
+            // Real-time Checklist Validation Script
+            const newPasswordInput = document.getElementById('new_password');
+            const lengthReq = document.getElementById('lengthReq');
+            const upperReq = document.getElementById('upperReq');
+            const lowerReq = document.getElementById('lowerReq');
+            const numberReq = document.getElementById('numberReq');
+            const specialReq = document.getElementById('specialReq');
+            const spaceReq = document.getElementById('spaceReq');
+
+            if (newPasswordInput) {
+                newPasswordInput.addEventListener('input', function() {
+                    const val = newPasswordInput.value;
+
+                    // 1. Length check (8+ chars)
+                    if (val.length >= 8) {
+                        lengthReq.classList.add('valid');
+                    } else {
+                        lengthReq.classList.remove('valid');
+                    }
+
+                    // 2. Uppercase check
+                    if (/[A-Z]/.test(val)) {
+                        upperReq.classList.add('valid');
+                    } else {
+                        upperReq.classList.remove('valid');
+                    }
+
+                    // 3. Lowercase check
+                    if (/[a-z]/.test(val)) {
+                        lowerReq.classList.add('valid');
+                    } else {
+                        lowerReq.classList.remove('valid');
+                    }
+
+                    // 4. Number check
+                    if (/[0-9]/.test(val)) {
+                        numberReq.classList.add('valid');
+                    } else {
+                        numberReq.classList.remove('valid');
+                    }
+
+                    // 5. Special character check
+                    if (/[\W_]/.test(val)) {
+                        specialReq.classList.add('valid');
+                    } else {
+                        specialReq.classList.remove('valid');
+                    }
+
+                    // 6. No spaces check
+                    if (val.length > 0 && !/\s/.test(val)) {
+                        spaceReq.classList.add('valid');
+                    } else {
+                        spaceReq.classList.remove('valid');
+                    }
+                });
+            }
         <?php endif; ?>
     </script>
 </body>

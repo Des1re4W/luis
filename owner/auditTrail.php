@@ -21,8 +21,20 @@ if ($role_filter !== 'all') {
 }
 
 if ($action_filter !== 'all') {
-    $where_clauses[] = "action LIKE ?";
-    $params[] = '%' . $action_filter . '%';
+    if ($action_filter === 'Order') {
+        // Sinasama ang lahat ng kauri o keyword ng order monitoring actions
+        $where_clauses[] = "(action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ? OR action LIKE ?)";
+        $params[] = '%Order%';
+        $params[] = '%Approve%';
+        $params[] = '%Decline%';
+        $params[] = '%Cancel%';
+        $params[] = '%Preparing%';
+        $params[] = '%Delivery%';
+        $params[] = '%Completed%';
+    } else {
+        $where_clauses[] = "action LIKE ?";
+        $params[] = '%' . $action_filter . '%';
+    }
 }
 
 if (!empty($date_filter)) {
@@ -172,7 +184,7 @@ body{
     <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
     <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
     <a href="auditTrail.php" class="sidebar-link active"><i class="bi bi-shield-lock"></i> Audit Trail</a>
-     <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
+    <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
     <div class="logout-section">
         <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
             <i class="bi bi-box-arrow-right"></i> Logout
@@ -206,15 +218,15 @@ body{
                 </div>
 
                 <div class="col-12 col-md-3">
-    <label class="form-label small fw-bold text-muted">Action</label>
-    <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
-        <option value="all" <?= $action_filter=='all'?'selected':'' ?>>All Actions</option>
-        <option value="Login" <?= $action_filter=='Login'?'selected':'' ?>>Login / Logout</option>
-        <option value="Product" <?= $action_filter=='Product'?'selected':'' ?>>Inventory / Product Updates</option>
-        <option value="Checkout" <?= $action_filter=='Checkout'?'selected':'' ?>>Checkout</option>
-        <option value="Order" <?= $action_filter=='Order'?'selected':'' ?>>Order</option>
-    </select>
-</div>
+                    <label class="form-label small fw-bold text-muted">Action</label>
+                    <select name="action_filter" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="all" <?= $action_filter=='all'?'selected':'' ?>>All Actions</option>
+                        <option value="Login" <?= $action_filter=='Login'?'selected':'' ?>>Login / Logout</option>
+                        <option value="Product" <?= $action_filter=='Product'?'selected':'' ?>>Inventory / Product Updates</option>
+                        <option value="Checkout" <?= $action_filter=='Checkout'?'selected':'' ?>>Checkout</option>
+                        <option value="Order" <?= $action_filter=='Order'?'selected':'' ?>>Orders Monitoring (All)</option>
+                    </select>
+                </div>
 
                 <div class="col-12 col-md-3">
                     <label class="form-label small fw-bold text-muted">Date</label>
