@@ -16,84 +16,50 @@ function getCleanWhere($filter, $date_selected, $date_column) {
     if (!empty($date_selected)) {
         $where .= " AND DATE($date_column) = '$date_selected'";
     } else {
-        if ($filter == 'daily') { $where .= " AND DATE($date_column) = CURDATE()"; }
-        elseif ($filter == 'weekly') { $where .= " AND YEARWEEK($date_column, 1) = YEARWEEK(CURDATE(), 1)"; }
-        elseif ($filter == 'monthly') { $where .= " AND MONTH($date_column) = MONTH(CURDATE()) AND YEAR($date_column) = YEAR(CURDATE())"; }
-        elseif ($filter == 'yearly') { $where .= " AND YEAR($date_column) = YEAR(CURDATE())"; }
+        if ($filter == 'daily') { 
+            $where .= " AND DATE($date_column) = CURRENT_DATE"; 
+        }
+        elseif ($filter == 'weekly') { 
+            $where .= " AND DATE_TRUNC('week', $date_column) = DATE_TRUNC('week', CURRENT_DATE)"; 
+        }
+        elseif ($filter == 'monthly') { 
+            $where .= " AND EXTRACT(MONTH FROM $date_column) = EXTRACT(MONTH FROM CURRENT_DATE) AND EXTRACT(YEAR FROM $date_column) = EXTRACT(YEAR FROM CURRENT_DATE)"; 
+        }
+        elseif ($filter == 'yearly') { 
+            $where .= " AND EXTRACT(YEAR FROM $date_column) = EXTRACT(YEAR FROM CURRENT_DATE)"; 
+        }
     }
     return $where;
 }
 
-$where_orders = getCleanWhere($filter, $date_selected, 'order_date');
-$where_pos = getCleanWhere($filter, $date_selected, 'transaction_date');
+$where_orders = getCleanWhere($filter, $date_selected, 'o.order_date');
+$where_pos = getCleanWhere($filter, $date_selected, 'pt.transaction_date');
 
 $grand_total_sales = 0;
 $grand_total_profit = 0;
 $sales_ledger_data = [];
 
-// A. Online Orders (Only 'completed')
+// A. Online Orders (Optimized single query with SUM and JOIN)
 if ($type_filter == 'all' || $type_filter == 'online') {
-
     $orders_query = $pdo->query("
-        SELECT id,
-               CONCAT(fullname, ' ', surname) AS name,
-               total_amount,
-               order_date
-        FROM orders
+        SELECT o.id,
+               CONCAT(o.fullname, ' ', o.surname) AS name,
+               o.total_amount,
+               o.order_date,
+               SUM(
+                   COALESCE(NULLIF(oi.cost_price, 0), pv.cost_price, p.cost_price, 0) * oi.qty
+               ) AS total_cost
+        FROM orders o
+        JOIN order_items oi ON o.id = oi.order_id
+        LEFT JOIN products p ON oi.product_id = p.id
+        LEFT JOIN product_variants pv ON oi.variant_id = pv.id
         $where_orders
-        AND status = 'completed'
+        AND o.status = 'completed'
+        GROUP BY o.id, o.fullname, o.surname, o.total_amount, o.order_date
     ");
 
     while ($ord = $orders_query->fetch(PDO::FETCH_ASSOC)) {
-
-        $total_cost = 0;
-
-        $items_q = $pdo->query("
-            SELECT product_id,
-                   variant_id,
-                   qty,
-                   cost_price
-            FROM order_items
-            WHERE order_id = " . (int)$ord['id']
-        );
-
-        while ($item = $items_q->fetch(PDO::FETCH_ASSOC)) {
-
-            $item_cost = 0;
-
-            // Use saved cost_price if available
-            if (!empty($item['cost_price']) && $item['cost_price'] > 0) {
-                $item_cost = (float)$item['cost_price'];
-            } else {
-                // Variant item
-                if (!empty($item['variant_id'])) {
-                    $variant_q = $pdo->query(
-                        "SELECT cost_price
-                         FROM product_variants
-                         WHERE id = " . (int)$item['variant_id']
-                    );
-                    $variant = $variant_q->fetch(PDO::FETCH_ASSOC);
-                    if ($variant) {
-                        $item_cost = (float)($variant['cost_price'] ?? 0);
-                    }
-                }
-                // Regular product
-                else {
-                    $product_q = $pdo->query(
-                        "SELECT cost_price
-                         FROM products
-                         WHERE id = " . (int)$item['product_id']
-                    );
-                    $product = $product_q->fetch(PDO::FETCH_ASSOC);
-                    if ($product) {
-                        $item_cost = (float)($product['cost_price'] ?? 0);
-                    }
-                }
-            }
-
-            $total_cost += ($item_cost * (int)$item['qty']);
-        }
-
+        $total_cost = (float)($ord['total_cost'] ?? 0);
         $profit = (float)$ord['total_amount'] - $total_cost;
 
         $grand_total_sales += (float)$ord['total_amount'];
@@ -110,27 +76,39 @@ if ($type_filter == 'all' || $type_filter == 'online') {
     }
 }
 
-// B. POS Walk-in Calculation
+// B. POS Walk-in Calculation (Optimized single query with SUM and JOIN)
 if ($type_filter == 'all' || $type_filter == 'walkin') {
-    $pos_query = $pdo->query("SELECT id, cashier_name, total_amount, transaction_date FROM pos_transaction $where_pos");
+    $pos_query = $pdo->query("
+        SELECT pt.id,
+               pt.cashier_name,
+               pt.total_amount,
+               pt.transaction_date,
+               SUM(
+                   COALESCE(pv.cost_price, p.cost_price, 0) * pti.qty
+               ) AS total_cost
+        FROM pos_transaction pt
+        JOIN pos_transaction_items pti ON pt.id = pti.transaction_id
+        LEFT JOIN products p ON pti.product_id = p.id
+        LEFT JOIN product_variants pv ON pti.variant_id = pv.id
+        $where_pos
+        GROUP BY pt.id, pt.cashier_name, pt.total_amount, pt.transaction_date
+    ");
+
     while ($pos = $pos_query->fetch(PDO::FETCH_ASSOC)) {
-        $total_cost = 0;
-        $items_q = $pdo->query("SELECT product_id, variant_id, qty FROM pos_transaction_items WHERE transaction_id = " . (int)$pos['id']);
-        while ($item = $items_q->fetch(PDO::FETCH_ASSOC)) {
-            if ($item['variant_id'] > 0) {
-                $v_q = $pdo->query("SELECT cost_price FROM product_variants WHERE id = " . (int)$item['variant_id']);
-                $v = $v_q->fetch(PDO::FETCH_ASSOC);
-                $total_cost += ($v['cost_price'] ?? 0) * $item['qty'];
-            } elseif (!empty($item['product_id'])) {
-                $p_q = $pdo->query("SELECT cost_price FROM products WHERE id = " . (int)$item['product_id']);
-                $p = $p_q->fetch(PDO::FETCH_ASSOC);
-                $total_cost += ($p['cost_price'] ?? 0) * $item['qty'];
-            }
-        }
+        $total_cost = (float)($pos['total_cost'] ?? 0);
         $profit = (float)$pos['total_amount'] - $total_cost;
+        
         $grand_total_sales += (float)$pos['total_amount'];
         $grand_total_profit += $profit;
-        $sales_ledger_data[] = ['id' => $pos['id'], 'customer' => $pos['cashier_name'], 'type' => 'Walk-in', 'sales' => $pos['total_amount'], 'profit' => $profit, 'date' => $pos['transaction_date']];
+        
+        $sales_ledger_data[] = [
+            'id'       => $pos['id'], 
+            'customer' => $pos['cashier_name'], 
+            'type'     => 'Walk-in', 
+            'sales'    => $pos['total_amount'], 
+            'profit'   => $profit, 
+            'date'     => $pos['transaction_date']
+        ];
     }
 }
 
@@ -177,7 +155,6 @@ body{
     z-index: 1040;
 }
 
-/* LINKS */
 .sidebar-link{
     color:#adb5bd;
     text-decoration:none;
@@ -228,7 +205,6 @@ body{
     border-radius:10px;
 }
 
-/* MOBILE RESPONSIVENESS */
 @media (max-width: 991.98px) {
     .sidebar {
         transform: translateX(-100%);
@@ -244,13 +220,11 @@ body{
 </head>
 <body>
 
-<!-- NAVBAR -->
 <nav class="navbar navbar-dark px-3" style="background-color:#051c3c;">
     <div class="d-flex align-items-center w-100 justify-content-between">
         <div class="d-flex align-items-center gap-2">
             <span class="navbar-brand fw-bold mb-0">Owner Panel</span>
         </div>
-        <!-- KANANG ITAAS (TOP RIGHT) - Welcome message at Burger Menu (Visible lang sa mobile gamit ang d-lg-none) -->
         <div class="d-flex align-items-center text-white gap-3">
             <span>
                 Welcome, <strong><?= htmlspecialchars($owner_name); ?></strong>
@@ -262,7 +236,6 @@ body{
     </div>
 </nav>
 
-<!-- SIDEBAR -->
 <div class="sidebar" id="appSidebar">
     <a href="dashboard.php" class="sidebar-link"><i class="bi bi-graph-up-arrow"></i> Dashboard</a>
     <a href="sales.php" class="sidebar-link active"><i class="bi bi-cash-stack"></i> Sales</a>
@@ -270,7 +243,7 @@ body{
     <a href="orders.php" class="sidebar-link"><i class="bi bi-clipboard-check"></i> Order Mgt. Monitoring</a>
     <a href="history.php" class="sidebar-link"><i class="bi bi-clock-history"></i> History</a>
     <a href="auditTrail.php" class="sidebar-link"><i class="bi bi-shield-lock"></i> Audit Trail</a>
-     <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
+    <a href="accountManagement.php" class="sidebar-link"><i class="bi bi-person-gear"></i> Account Management</a>
     <div class="logout-section">
         <a href="../logout.php" class="sidebar-link text-danger" onclick="return confirm('Are you sure you want to log out?')">
             <i class="bi bi-box-arrow-right"></i> Logout
@@ -278,7 +251,6 @@ body{
     </div>
 </div>
 
-<!-- MAIN CONTENT -->
 <div class="main-content">
     <h3 class="mb-4">Sales & Profit Report</h3>
     
@@ -360,7 +332,6 @@ body{
 </div>
 
 <script>
-// Mobile Sidebar Toggle Script
 document.addEventListener("DOMContentLoaded", function() {
     const sidebarToggle = document.getElementById('sidebarToggle');
     const appSidebar = document.getElementById('appSidebar');
@@ -369,7 +340,6 @@ document.addEventListener("DOMContentLoaded", function() {
             appSidebar.classList.toggle('show');
         });
         
-        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             if (window.innerWidth < 992) {
                 if (!appSidebar.contains(event.target) && !sidebarToggle.contains(event.target)) {
