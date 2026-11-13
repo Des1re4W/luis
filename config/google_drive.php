@@ -10,16 +10,22 @@ function getGoogleDriveClient(): Google\Client
     $client->setRedirectUri(getenv('GOOGLE_REDIRECT_URI'));
 
     $client->setAccessType('offline');
+    $client->setPrompt('consent');
+
     $client->setScopes([
-        Google\Service\Drive::DRIVE_FILE
+        Google\Service\Drive::DRIVE
     ]);
 
     return $client;
 }
 
+
 function uploadProductImageToDrive(string $filePath, string $fileName, ?string $targetFolderId = null): string
 {
-    $refreshToken = getenv('GOOGLE_REFRESH_TOKEN');
+    $refreshToken = $_ENV['GOOGLE_REFRESH_TOKEN']
+        ?? $_SERVER['GOOGLE_REFRESH_TOKEN']
+        ?? getenv('GOOGLE_REFRESH_TOKEN')
+        ?: null;
 
     if (!$refreshToken) {
         throw new Exception('GOOGLE_REFRESH_TOKEN is missing in Render.');

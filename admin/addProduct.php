@@ -89,7 +89,6 @@ if (isset($_POST['submit'])) {
                                     ':description' => $description
                                 ]);
 
-                                // Audit trail
                                 $username = $_SESSION['username'] ?? 'Admin';
                                 $role = $_SESSION['role'] ?? 'admin';
                                 $user_id = $_SESSION['user_id'] ?? null;
