@@ -146,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['pw_reset_attempts']  = 0;
                 $_SESSION['pw_reset_last_sent'] = time();
 
-               $message = "An OTP code has been sent to your email.<br> Your OTP will expire in <b>5 minutes</b>.";
+               $message = "An OTP code has been sent to your email. Your OTP will expire in 5 minutes.";
                 $messageType = "success";
             } else {
                 $message = "Unable to send the OTP email: " . h($sendResult['error']);
