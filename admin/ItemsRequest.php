@@ -1179,7 +1179,6 @@ async function processRefundOCR(fileInput, rowId = '') {
     const file = fileInput.files[0];
     if (!file) return;
 
-    // Kunin ang mga tamang element IDs base sa kung may rowId o wala (para sa ItemsRequest vs Orders page)
     const suffix = rowId ? '_' + rowId : '';
     const statusBox = document.getElementById('ocr_status' + suffix);
     const statusText = document.getElementById('ocr_status_text' + suffix);
@@ -1206,57 +1205,27 @@ async function processRefundOCR(fileInput, rowId = '') {
         });
 
         const text = result.data.text;
+        console.log("Tesseract Raw Text Output:", text; // I-check ito sa F12 Console mo
+
         let detectedRef = '';
 
-        // 1. Hanapin muna ang mga numero ng telepono para maiwasang mapagkamalang reference number
-        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-        let foundPhone = '';
-        for (let i = 0; i < lines.length; i++) {
-            let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
-            if (pMatch) {
-                foundPhone = pMatch[0].replace(/\D/g, '').trim();
+        // Maghanap ng anumang 10 hanggang 20-digit na sunud-sunod na numero sa buong resibo
+        const allNumberMatches = text.match(/\b\d{10,20}\b/g);
+        if (allNumberMatches) {
+            for (let num of allNumberMatches) {
+                let cleanNum = num.trim();
+                // Siguraduhing hindi ito cellphone number na nagsisimula sa 09 o 639
+                if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
+                detectedRef = cleanNum;
                 break;
             }
         }
 
-        // 2. Unang Subok: Maghanap gamit ang mga karaniwang salita na sinundan ng reference code
-        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?|Code)|Trace\s*No\.?|InstaPay\s*Ref|Control\s*No\.?)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
-        
-        if (refMatch) {
-            let cleaned = refMatch[1].trim();
-            let cleanRefDigits = cleaned.replace(/\D/g, '');
-            if (cleaned.length >= 8 && cleaned.length <= 30 && (!foundPhone || cleanRefDigits !== foundPhone)) {
-                detectedRef = cleaned;
-            }
-        }
-
-        // 3. Pangalawang Subok: Kung walang nakita, hanapin ang anumang sunud-sunod na 10 hanggang 20 digit numbers na madalas gamiting Ref No.
-        if (!detectedRef) {
-            const allNumberMatches = text.match(/\b\d{10,20}\b/g);
-            if (allNumberMatches) {
-                for (let num of allNumberMatches) {
-                    let cleanNum = num.trim();
-                    if (foundPhone && cleanNum === foundPhone) continue;
-                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Iwasan ang mobile numbers
-                    detectedRef = cleanNum;
-                    break;
-                }
-            }
-        }
-
-        // 4. Pangatlong Subok: Para sa Maya o iba pang 12-character alphanumeric codes na may spaces (hal. A1B2 C3D4 E5F6)
-        if (!detectedRef) {
-            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
-            if (mayaHexMatch) {
-                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
-            }
-        }
-
-        // Ilagay ang nahanap o mag-abiso kung nabigo
+        // Kung sakaling may nakita kang partikular na format, ilagay rito
         if (detectedRef && refInput) {
             refInput.value = detectedRef;
             if (statusBox) {
-                statusBox.classList.remove('info', 'alert-info', 'alert-warning', 'alert-danger');
+                statusBox.classList.remove('alert-info', 'alert-warning', 'alert-danger');
                 statusBox.classList.add('alert-success');
             }
             if (statusText) {
