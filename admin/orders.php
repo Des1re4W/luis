@@ -912,29 +912,24 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-async function processRefundOCR(fileInput, rowId = '') {
+async function processRefundOCR(fileInput) {
     const file = fileInput.files[0];
     if (!file) return;
 
-    const suffix = rowId ? '_' + rowId : '';
-    const statusBox = document.getElementById('ocr_status' + suffix);
-    const statusText = document.getElementById('ocr_status_text' + suffix);
-    const refInput = document.getElementById('refundReferenceInput' + suffix);
+    const statusBox = document.getElementById('ocr_status');
+    const statusText = document.getElementById('ocr_status_text');
+    const refInput = document.getElementById('refundReferenceInput');
 
-    if (refInput) refInput.value = "";
+    refInput.value = "";
 
-    if (statusBox) {
-        statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
-        statusBox.classList.add('alert-info');
-    }
-    if (statusText) {
-        statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt via OCR...';
-    }
+    statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    statusBox.classList.add('alert-info');
+    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning refund receipt via OCR...';
 
     try {
         const result = await Tesseract.recognize(file, 'eng', {
             logger: m => {
-                if (m.status === 'recognizing text' && statusText) {
+                if (m.status === 'recognizing text') {
                     let progress = Math.round(m.progress * 100);
                     statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt text: ${progress}%`;
                 }
@@ -942,50 +937,64 @@ async function processRefundOCR(fileInput, rowId = '') {
         });
 
         const text = result.data.text;
-        console.log("Tesseract Raw Text Output:", text; // I-check ito sa F12 Console mo
-
         let detectedRef = '';
 
-        // Maghanap ng anumang 10 hanggang 20-digit na sunud-sunod na numero sa buong resibo
-        const allNumberMatches = text.match(/\b\d{10,20}\b/g);
-        if (allNumberMatches) {
-            for (let num of allNumberMatches) {
-                let cleanNum = num.trim();
-                // Siguraduhing hindi ito cellphone number na nagsisimula sa 09 o 639
-                if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
-                detectedRef = cleanNum;
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        let foundPhone = '';
+        for (let i = 0; i < lines.length; i++) {
+            let pMatch = lines[i].match(/(?:\+?63\s*9\d{2}[\s\-]?\d{3}[\s\-]?\d{4}|09\d{2}[\s\-]?\d{3}[\s\-]?\d{4})/);
+            if (pMatch) {
+                foundPhone = pMatch[0].replace(/\D/g, '').trim();
                 break;
             }
         }
 
-        // Kung sakaling may nakita kang partikular na format, ilagay rito
-        if (detectedRef && refInput) {
-            refInput.value = detectedRef;
-            if (statusBox) {
-                statusBox.classList.remove('alert-info', 'alert-warning', 'alert-danger');
-                statusBox.classList.add('alert-success');
-            }
-            if (statusText) {
-                statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
-            }
-        } else {
-            if (statusBox) {
-                statusBox.classList.remove('alert-info', 'alert-success');
-                statusBox.classList.add('alert-warning');
-            }
-            if (statusText) {
-                statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
+        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
+        
+        if (refMatch) {
+            let cleaned = refMatch[1].trim();
+            let cleanRefDigits = cleaned.replace(/\D/g, '');
+            if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
+                detectedRef = cleaned;
             }
         }
 
-    } catch (error) {
-        if (statusBox) {
+        if (!detectedRef) {
+            const allNumberMatches = text.match(/\b\d{10,20}\b/g);
+            if (allNumberMatches) {
+                for (let num of allNumberMatches) {
+                    let cleanNum = num.trim();
+                    if (foundPhone && cleanNum === foundPhone) continue;
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
+                    
+                    detectedRef = cleanNum;
+                    break;
+                }
+            }
+        }
+
+        if (!detectedRef) {
+            let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
+            if (mayaHexMatch) {
+                detectedRef = mayaHexMatch[1].replace(/\s+/g, '').trim();
+            }
+        }
+
+        if (detectedRef) {
+            refInput.value = detectedRef;
+            statusBox.classList.remove('alert-info', 'alert-danger');
+            statusBox.classList.add('alert-success');
+            statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
+        } else {
             statusBox.classList.remove('alert-info', 'alert-success');
             statusBox.classList.add('alert-warning');
+            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
         }
-        if (statusText) {
-            statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
-        }
+
+    } catch (error) {
+        statusBox.classList.remove('alert-info', 'alert-success');
+        statusBox.classList.add('alert-warning');
+        statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
     }
 }
 
