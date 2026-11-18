@@ -912,24 +912,30 @@ function openDeclineModal(orderId, paymentMethod) {
     }
 }
 
-async function processRefundOCR(fileInput) {
+async function processRefundOCR(fileInput, rowId = '') {
     const file = fileInput.files[0];
     if (!file) return;
 
-    const statusBox = document.getElementById('ocr_status');
-    const statusText = document.getElementById('ocr_status_text');
-    const refInput = document.getElementById('refundReferenceInput');
+    // Kunin ang mga tamang element IDs base sa kung may rowId o wala (para sa ItemsRequest vs Orders page)
+    const suffix = rowId ? '_' + rowId : '';
+    const statusBox = document.getElementById('ocr_status' + suffix);
+    const statusText = document.getElementById('ocr_status_text' + suffix);
+    const refInput = document.getElementById('refundReferenceInput' + suffix);
 
-    refInput.value = "";
+    if (refInput) refInput.value = "";
 
-    statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
-    statusBox.classList.add('alert-info');
-    statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning refund receipt via OCR...';
+    if (statusBox) {
+        statusBox.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+        statusBox.classList.add('alert-info');
+    }
+    if (statusText) {
+        statusText.innerHTML = '<div class="spinner-border spinner-border-sm me-1" role="status"></div> Scanning receipt via OCR...';
+    }
 
     try {
         const result = await Tesseract.recognize(file, 'eng', {
             logger: m => {
-                if (m.status === 'recognizing text') {
+                if (m.status === 'recognizing text' && statusText) {
                     let progress = Math.round(m.progress * 100);
                     statusText.innerHTML = `<div class="spinner-border spinner-border-sm me-1" role="status"></div> Reading receipt text: ${progress}%`;
                 }
@@ -939,6 +945,7 @@ async function processRefundOCR(fileInput) {
         const text = result.data.text;
         let detectedRef = '';
 
+        // 1. Hanapin muna ang mga numero ng telepono para maiwasang mapagkamalang reference number
         const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
         let foundPhone = '';
         for (let i = 0; i < lines.length; i++) {
@@ -949,30 +956,32 @@ async function processRefundOCR(fileInput) {
             }
         }
 
-        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?)|Trace\s*No\.?|InstaPay\s*Ref)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
+        // 2. Unang Subok: Maghanap gamit ang mga karaniwang salita na sinundan ng reference code
+        let refMatch = text.match(/(?:Reference\s*(?:ID|No\.?|Num(?:ber)?)|Ref\.?\s*(?:No\.?|ID|Num(?:ber)?)?|Transaction\s*(?:ID|No\.?|Code)|Trace\s*No\.?|InstaPay\s*Ref|Control\s*No\.?)\s*:?\s*([A-Z0-9\-_]{8,30})/i);
         
         if (refMatch) {
             let cleaned = refMatch[1].trim();
             let cleanRefDigits = cleaned.replace(/\D/g, '');
-            if (cleaned.length >= 8 && cleaned.length <= 26 && (!foundPhone || cleanRefDigits !== foundPhone)) {
+            if (cleaned.length >= 8 && cleaned.length <= 30 && (!foundPhone || cleanRefDigits !== foundPhone)) {
                 detectedRef = cleaned;
             }
         }
 
+        // 3. Pangalawang Subok: Kung walang nakita, hanapin ang anumang sunud-sunod na 10 hanggang 20 digit numbers na madalas gamiting Ref No.
         if (!detectedRef) {
             const allNumberMatches = text.match(/\b\d{10,20}\b/g);
             if (allNumberMatches) {
                 for (let num of allNumberMatches) {
                     let cleanNum = num.trim();
                     if (foundPhone && cleanNum === foundPhone) continue;
-                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue;
-                    
+                    if (cleanNum.startsWith('09') || cleanNum.startsWith('639')) continue; // Iwasan ang mobile numbers
                     detectedRef = cleanNum;
                     break;
                 }
             }
         }
 
+        // 4. Pangatlong Subok: Para sa Maya o iba pang 12-character alphanumeric codes na may spaces (hal. A1B2 C3D4 E5F6)
         if (!detectedRef) {
             let mayaHexMatch = text.match(/\b([A-Z0-9]{4}\s+[A-Z0-9]{4}\s+[A-Z0-9]{4})\b/i);
             if (mayaHexMatch) {
@@ -980,21 +989,34 @@ async function processRefundOCR(fileInput) {
             }
         }
 
-        if (detectedRef) {
+        // Ilagay ang nahanap o mag-abiso kung nabigo
+        if (detectedRef && refInput) {
             refInput.value = detectedRef;
-            statusBox.classList.remove('alert-info', 'alert-danger');
-            statusBox.classList.add('alert-success');
-            statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
+            if (statusBox) {
+                statusBox.classList.remove('info', 'alert-info', 'alert-warning', 'alert-danger');
+                statusBox.classList.add('alert-success');
+            }
+            if (statusText) {
+                statusText.innerHTML = `✓ Reference Number successfully detected: <b>${detectedRef}</b>`;
+            }
         } else {
-            statusBox.classList.remove('alert-info', 'alert-success');
-            statusBox.classList.add('alert-warning');
-            statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
+            if (statusBox) {
+                statusBox.classList.remove('alert-info', 'alert-success');
+                statusBox.classList.add('alert-warning');
+            }
+            if (statusText) {
+                statusText.innerHTML = '⚠️ Reference number not automatically detected. Please type it manually.';
+            }
         }
 
     } catch (error) {
-        statusBox.classList.remove('alert-info', 'alert-success');
-        statusBox.classList.add('alert-warning');
-        statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
+        if (statusBox) {
+            statusBox.classList.remove('alert-info', 'alert-success');
+            statusBox.classList.add('alert-warning');
+        }
+        if (statusText) {
+            statusText.innerHTML = '⚠️ OCR scanning failed. Please enter the reference number manually.';
+        }
     }
 }
 
