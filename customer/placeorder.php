@@ -221,7 +221,6 @@ if (isset($_POST['place_order'])) {
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
     <style>
-        /* Layout Control: Fixed Order Summary + Scrollable User Inputs Only */
         html, body {
             height: 100%;
             margin: 0;
@@ -232,19 +231,30 @@ if (isset($_POST['place_order'])) {
             display: flex;
             flex-direction: column;
             height: 100vh;
-            height: 100dvh; /* Dynamic viewport height para sa mobile browsers */
+            height: 100dvh;
             overflow: hidden;
         }
 
-        /* Mobile View: Naka-pin sa taas ang Order Summary, scrollable ang form sa baba */
+        /* SUMMARY PANEL (Fixed Header & Footer, Independent Scrollable Items) */
         .summary-pane {
             flex-shrink: 0;
             z-index: 1020;
             background: #ffffff;
             border-bottom: 1px solid #dee2e6;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
         }
 
+        /* Mobile: Scrollable ang listahan kapag naka-expand (max 30% ng screen height para kita pa rin form) */
+        .summary-items-list {
+            max-height: 30vh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-right: 4px;
+        }
+
+        /* FORM PANEL (Independent Scrollable User Inputs) */
         .form-pane {
             flex: 1 1 auto;
             overflow-y: auto;
@@ -252,7 +262,7 @@ if (isset($_POST['place_order'])) {
             padding: 1rem;
         }
 
-        /* Desktop & Tablet View (>= 768px): Side-by-side layout */
+        /* DESKTOP & TABLET VIEW (>= 768px) */
         @media (min-width: 768px) {
             .checkout-wrapper {
                 flex-direction: row;
@@ -269,14 +279,14 @@ if (isset($_POST['place_order'])) {
                 border-bottom: none;
                 border-radius: 0.5rem;
                 box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
-                display: flex;
-                flex-direction: column;
-                overflow: hidden; /* Hindi nag-s-scroll ang buong summary pane */
+                overflow: hidden; /* Para hindi mag-scroll ang buong card, items lang */
             }
 
             .summary-items-list {
                 flex: 1 1 auto;
-                overflow: hidden; /* Walang scroll sa items */
+                max-height: none; /* Sasakupin lahat ng bakanteng gitna */
+                overflow-y: auto; /* Hiwalay na scrollbar para sa items */
+                padding-right: 6px;
             }
 
             .form-pane {
@@ -284,45 +294,50 @@ if (isset($_POST['place_order'])) {
                 height: 100%;
                 padding: 0;
                 border-radius: 0.5rem;
+                overflow-y: auto; /* Hiwalay na scrollbar para sa form inputs */
             }
 
-            /* Laging nakabukas ang items sa desktop kahit naka-collapse sa mobile */
+            /* Laging nakabukas ang items list sa desktop */
             #mobileItemsCollapse {
                 display: block !important;
             }
         }
 
-        /* Custom subtle scrollbar para sa form input area */
-        .form-pane::-webkit-scrollbar {
+        /* Custom subtle scrollbar para sa parehong panels */
+        .custom-scroll::-webkit-scrollbar {
             width: 6px;
         }
-        .form-pane::-webkit-scrollbar-track {
+        .custom-scroll::-webkit-scrollbar-track {
             background: transparent;
         }
-        .form-pane::-webkit-scrollbar-thumb {
+        .custom-scroll::-webkit-scrollbar-thumb {
             background-color: rgba(0, 0, 0, 0.2);
             border-radius: 10px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(0, 0, 0, 0.35);
         }
     </style>
 </head>
 <body>
 
 <div class="checkout-wrapper">
-    <!-- FIXED / NON-SCROLLABLE ORDER SUMMARY -->
+    <!-- ORDER SUMMARY PANEL -->
     <div class="summary-pane p-3 p-md-4">
-        <div class="d-flex justify-content-between align-items-center mb-2 mb-md-3">
+        <!-- Fixed Header -->
+        <div class="d-flex justify-content-between align-items-center mb-2 mb-md-3 flex-shrink-0">
             <h5 class="mb-0 fw-bold">
                 <i class="bi bi-cart-check text-primary me-1"></i> Items to Purchase
                 <span class="badge bg-secondary rounded-pill ms-1"><?php echo $total_qty; ?></span>
             </h5>
-            <!-- Toggle button para sa mobile para makita/maitago ang items habang pinapanatiling fixed ang total -->
+            <!-- Toggle button para sa mobile -->
             <button class="btn btn-sm btn-outline-secondary d-md-none" type="button" data-bs-toggle="collapse" data-bs-target="#mobileItemsCollapse" aria-expanded="false" aria-controls="mobileItemsCollapse">
                 View Items <i class="bi bi-chevron-down"></i>
             </button>
         </div>
 
-        <!-- Collapsible sa mobile, Always visible at non-scrollable sa desktop -->
-        <div class="collapse summary-items-list" id="mobileItemsCollapse">
+        <!-- Independent Scrollable Items List -->
+        <div class="collapse summary-items-list custom-scroll" id="mobileItemsCollapse">
             <div class="pt-2 pt-md-0">
                 <?php foreach ($items_to_process as $item): ?>
                     <?php $item_img_src = getCheckoutItemImageSrc($item['image'] ?? ''); ?>
@@ -343,8 +358,8 @@ if (isset($_POST['place_order'])) {
             </div>
         </div>
         
-        <!-- FIXED TOTAL AMOUNT SECTION -->
-        <div class="mt-auto pt-2">
+        <!-- Fixed Total Amount Footer -->
+        <div class="mt-auto pt-2 bg-white flex-shrink-0 border-top">
             <div class="d-flex justify-content-between align-items-center small text-secondary">
                 <span>Subtotal Amount:</span>
                 <span>₱<?php echo number_format($grand_total, 2); ?></span>
@@ -370,8 +385,8 @@ if (isset($_POST['place_order'])) {
         </div>
     </div>
     
-    <!-- SCROLLABLE DELIVERY & PAYMENT FORM (USER INPUTS ONLY) -->
-    <div class="form-pane">
+    <!-- INDEPENDENT SCROLLABLE DELIVERY & PAYMENT FORM -->
+    <div class="form-pane custom-scroll">
         <div class="card border-0 shadow-sm p-3 p-md-4 mb-4 mb-md-0">
             <h4 class="mb-4 text-primary fw-bold"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
             <form action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']) . (isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''); ?>" method="POST" enctype="multipart/form-data">
@@ -469,7 +484,7 @@ if (isset($_POST['place_order'])) {
     </div>
 </div>
 
-<!-- Bootstrap JS Bundle (para gumana ang mobile collapse toggle) -->
+<!-- Bootstrap JS Bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
