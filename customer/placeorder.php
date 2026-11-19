@@ -22,8 +22,10 @@ if ($checkout_source == 'buynow' && isset($_SESSION['buy_now'])) {
 }
 
 $grand_total = 0;
+$total_qty = 0;
 foreach ($items_to_process as $item) {
     $grand_total += (float)$item['price'] * (int)$item['qty'];
+    $total_qty += (int)$item['qty'];
 }
 
 if (isset($_POST['place_order'])) {
@@ -46,7 +48,7 @@ if (isset($_POST['place_order'])) {
 
     $proof_of_payment = null;
     
-    // Retrieve OCR Extracted Values (Nilagyan ng substr para limitahan sa 50 characters at maiwasan ang DB truncation error)
+    // Retrieve OCR Extracted Values
     $ref_no = !empty($_POST['ref_no']) ? substr(trim($_POST['ref_no']), 0, 50) : null;
     $receiptdt = !empty($_POST['receiptdt']) ? trim($_POST['receiptdt']) : null;
     $sent_to = !empty($_POST['sent_to']) ? trim($_POST['sent_to']) : null;
@@ -87,7 +89,7 @@ if (isset($_POST['place_order'])) {
                     $ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
                     $new_filename = "proof_" . time() . "_" . rand(1000, 9999) . "." . $ext;
 
-                    // Dedicated Folder ID para sa Customer Receipt[cite: 10]
+                    // Dedicated Folder ID para sa Customer Receipt
                     $customerFolderId = "1K63T1f7Z2JucT5lgyBuNobLIRJZFYNno";
 
                     try {
@@ -119,7 +121,7 @@ if (isset($_POST['place_order'])) {
         $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         $pdo->beginTransaction();
 
-        // Insert order into database (INCLUDES SENT_TO AND ALL OCR VALUES)
+        // Insert order into database
         $order_query = "INSERT INTO orders 
             (fullname, surname, contact_number, tel_no, email, full_address, landmark, total_amount, paid_amount, cart, payment_method, payment_scheme, ref_no, proof_of_payment, receiptdt, sent_to, order_date, status) 
             VALUES 
@@ -217,155 +219,258 @@ if (isset($_POST['place_order'])) {
     
     <!-- Tesseract.js OCR Engine -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-</head>
-<body class="bg-light">
-<div class="container py-4">
-    <div class="row g-4">
-        <!-- ORDER SUMMARY -->
-        <div class="col-12 col-md-5 order-1">
-            <div class="card border-0 shadow-sm p-4">
-                <h5 class="mb-3 fw-bold">Items to Purchase</h5>
-                <div class="overflow-auto" style="max-height: 300px;">
-                    <?php foreach ($items_to_process as $item): ?>
-                        <?php $item_img_src = getCheckoutItemImageSrc($item['image'] ?? ''); ?>
-                        <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
-                           <img src="<?php echo htmlspecialchars($item_img_src, ENT_QUOTES, 'UTF-8'); ?>" 
-                                alt="<?php echo htmlspecialchars($item['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
-                                class="rounded me-3" 
-                                style="width: 50px; height: 50px; object-fit: cover;"
-                                onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
-                                loading="lazy">
-                            <div class="flex-grow-1">
-                                <h6 class="mb-0 fw-bold small text-truncate"><?php echo htmlspecialchars($item['name']); ?></h6>
-                                <small class="text-muted">Qty: <?php echo (int)$item['qty']; ?> × ₱<?php echo number_format((float)$item['price'], 2); ?></small>
-                            </div>
-                            <div class="text-end fw-bold small">₱<?php echo number_format((float)$item['price'] * (int)$item['qty'], 2); ?></div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-                
-                <div class="d-flex justify-content-between align-items-center fs-6 text-secondary mt-3">
-                    <span>Subtotal Amount:</span>
-                    <span>₱<?php echo number_format($grand_total, 2); ?></span>
-                </div>
 
-                <?php if ($grand_total >= 5000): ?>
-                    <div id="summary_breakdown" class="mt-2 pt-2 border-top">
-                        <div class="d-flex justify-content-between align-items-center small text-muted mb-1">
-                            <span>Payment Scheme:</span>
-                            <span id="label_scheme" class="fw-bold text-dark">50% Downpayment</span>
+    <style>
+        /* Layout Control: Fixed Order Summary + Scrollable User Inputs Only */
+        html, body {
+            height: 100%;
+            margin: 0;
+            background-color: #f8f9fa;
+        }
+
+        .checkout-wrapper {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh; /* Dynamic viewport height para sa mobile browsers */
+            overflow: hidden;
+        }
+
+        /* Mobile View: Naka-pin sa taas ang Order Summary, scrollable ang form sa baba */
+        .summary-pane {
+            flex-shrink: 0;
+            z-index: 1020;
+            background: #ffffff;
+            border-bottom: 1px solid #dee2e6;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .form-pane {
+            flex: 1 1 auto;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: 1rem;
+        }
+
+        /* Desktop & Tablet View (>= 768px): Side-by-side layout */
+        @media (min-width: 768px) {
+            .checkout-wrapper {
+                flex-direction: row;
+                max-width: 1200px;
+                margin: 0 auto;
+                padding: 1.5rem;
+                gap: 1.5rem;
+            }
+
+            .summary-pane {
+                width: 42%;
+                max-width: 450px;
+                height: 100%;
+                border-bottom: none;
+                border-radius: 0.5rem;
+                box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+                display: flex;
+                flex-direction: column;
+                overflow: hidden; /* Hindi nag-s-scroll ang buong summary pane */
+            }
+
+            .summary-items-list {
+                flex: 1 1 auto;
+                overflow: hidden; /* Walang scroll sa items */
+            }
+
+            .form-pane {
+                width: 58%;
+                height: 100%;
+                padding: 0;
+                border-radius: 0.5rem;
+            }
+
+            /* Laging nakabukas ang items sa desktop kahit naka-collapse sa mobile */
+            #mobileItemsCollapse {
+                display: block !important;
+            }
+        }
+
+        /* Custom subtle scrollbar para sa form input area */
+        .form-pane::-webkit-scrollbar {
+            width: 6px;
+        }
+        .form-pane::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .form-pane::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="checkout-wrapper">
+    <!-- FIXED / NON-SCROLLABLE ORDER SUMMARY -->
+    <div class="summary-pane p-3 p-md-4">
+        <div class="d-flex justify-content-between align-items-center mb-2 mb-md-3">
+            <h5 class="mb-0 fw-bold">
+                <i class="bi bi-cart-check text-primary me-1"></i> Items to Purchase
+                <span class="badge bg-secondary rounded-pill ms-1"><?php echo $total_qty; ?></span>
+            </h5>
+            <!-- Toggle button para sa mobile para makita/maitago ang items habang pinapanatiling fixed ang total -->
+            <button class="btn btn-sm btn-outline-secondary d-md-none" type="button" data-bs-toggle="collapse" data-bs-target="#mobileItemsCollapse" aria-expanded="false" aria-controls="mobileItemsCollapse">
+                View Items <i class="bi bi-chevron-down"></i>
+            </button>
+        </div>
+
+        <!-- Collapsible sa mobile, Always visible at non-scrollable sa desktop -->
+        <div class="collapse summary-items-list" id="mobileItemsCollapse">
+            <div class="pt-2 pt-md-0">
+                <?php foreach ($items_to_process as $item): ?>
+                    <?php $item_img_src = getCheckoutItemImageSrc($item['image'] ?? ''); ?>
+                    <div class="d-flex align-items-center mb-2 mb-md-3 pb-2 pb-md-3 border-bottom">
+                       <img src="<?php echo htmlspecialchars($item_img_src, ENT_QUOTES, 'UTF-8'); ?>" 
+                            alt="<?php echo htmlspecialchars($item['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?>"
+                            class="rounded me-3" 
+                            style="width: 45px; height: 45px; object-fit: cover;"
+                            onerror="this.onerror=null; this.src='../assets/images/no-image.png';"
+                            loading="lazy">
+                        <div class="flex-grow-1 overflow-hidden">
+                            <h6 class="mb-0 fw-bold small text-truncate"><?php echo htmlspecialchars($item['name']); ?></h6>
+                            <small class="text-muted">Qty: <?php echo (int)$item['qty']; ?> × ₱<?php echo number_format((float)$item['price'], 2); ?></small>
                         </div>
-                        <div class="d-flex justify-content-between align-items-center fs-5 fw-bold text-dark">
-                            <span id="label_due_text">Amount to Pay Now:</span>
-                            <span class="text-primary" id="display_due_amount">₱<?php echo number_format($grand_total * 0.5, 2); ?></span>
-                        </div>
+                        <div class="text-end fw-bold small ms-2">₱<?php echo number_format((float)$item['price'] * (int)$item['qty'], 2); ?></div>
                     </div>
-                <?php else: ?>
-                    <div class="d-flex justify-content-between align-items-center fs-5 fw-bold text-dark mt-2 pt-2 border-top">
-                        <span>Total Amount:</span>
-                        <span class="text-primary">₱<?php echo number_format($grand_total, 2); ?></span>
-                    </div>
-                <?php endif; ?>
+                <?php endforeach; ?>
             </div>
         </div>
         
-        <!-- DELIVERY FORM -->
-        <div class="col-12 col-md-7 order-2">
-            <div class="card border-0 shadow-sm p-4">
-                <h4 class="mb-4 text-primary"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
-                <form action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']) . (isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''); ?>" method="POST" enctype="multipart/form-data">
-                    <div class="row g-3">
-                        <div class="col-12 col-sm-6">
-                            <label class="form-label">First Name</label>
-                            <input type="text" name="fullname" class="form-control" 
-                            pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
-                        </div>
-                        <div class="col-12 col-sm-6">
-                             <label class="form-label">Last Name</label>
-                            <input type="text" name="surname" class="form-control" 
-                            pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
-                        </div>
-                        <div class="col-12 col-sm-6">
-                            <label class="form-label">Contact Number</label>
-                            <input type="text" name="contact_number" class="form-control" placeholder="09XXXXXXXXX"
-                            maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
-                        </div>
-                        <div class="col-12 col-sm-6">
-                           <label class="form-label">Telephone (Optional)</label>
-                            <input type="text" name="tel_no" class="form-control" 
-                           oninput="this.value = this.value.replace(/[^0-9-]/g, '')">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Email Address</label>
-                             <input type="email" name="email" class="form-control" placeholder="name@example.com" required>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Complete Delivery Address</label>
-                            <textarea name="full_address" class="form-control" rows="2" required></textarea>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Landmark</label>
-                            <input type="text" name="landmark" class="form-control" required>
-                        </div>
-                        
-                        <!-- PAYMENT SECTION (GCASH & MAYA ONLY) -->
-                        <div class="col-12">
-                            <?php if ($grand_total >= 5000): ?>
-                                <div id="payment_option_box" class="alert alert-info p-3">
-                                    <p class="fw-bold small text-danger mb-2">Note: Orders ₱5,000+ require payment scheme selection.</p>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="payment_scheme" value="50_percent" checked id="opt1" onchange="updatePaymentDisplay()">
-                                        <label class="form-check-label" for="opt1">50% Downpayment</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="payment_scheme" value="full_payment" id="opt2" onchange="updatePaymentDisplay()">
-                                        <label class="form-check-label" for="opt2">Full Payment</label>
-                                    </div>
+        <!-- FIXED TOTAL AMOUNT SECTION -->
+        <div class="mt-auto pt-2">
+            <div class="d-flex justify-content-between align-items-center small text-secondary">
+                <span>Subtotal Amount:</span>
+                <span>₱<?php echo number_format($grand_total, 2); ?></span>
+            </div>
+
+            <?php if ($grand_total >= 5000): ?>
+                <div id="summary_breakdown" class="mt-2 pt-2 border-top">
+                    <div class="d-flex justify-content-between align-items-center small text-muted mb-1">
+                        <span>Payment Scheme:</span>
+                        <span id="label_scheme" class="fw-bold text-dark">50% Downpayment</span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center fs-5 fw-bold text-dark">
+                        <span id="label_due_text">Amount to Pay Now:</span>
+                        <span class="text-primary" id="display_due_amount">₱<?php echo number_format($grand_total * 0.5, 2); ?></span>
+                    </div>
+                </div>
+            <?php else: ?>
+                <div class="d-flex justify-content-between align-items-center fs-5 fw-bold text-dark mt-2 pt-2 border-top">
+                    <span>Total Amount:</span>
+                    <span class="text-primary">₱<?php echo number_format($grand_total, 2); ?></span>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- SCROLLABLE DELIVERY & PAYMENT FORM (USER INPUTS ONLY) -->
+    <div class="form-pane">
+        <div class="card border-0 shadow-sm p-3 p-md-4 mb-4 mb-md-0">
+            <h4 class="mb-4 text-primary fw-bold"><i class="bi bi-bag-check-fill"></i> Delivery & Payment Details</h4>
+            <form action="<?php echo htmlspecialchars($_SERVER['PHP_SELF']) . (isset($_GET['from']) ? '?from=' . htmlspecialchars($_GET['from']) : ''); ?>" method="POST" enctype="multipart/form-data">
+                <div class="row g-3">
+                    <div class="col-12 col-sm-6">
+                        <label class="form-label">First Name</label>
+                        <input type="text" name="fullname" class="form-control" 
+                        pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                         <label class="form-label">Last Name</label>
+                        <input type="text" name="surname" class="form-control" 
+                        pattern="[A-Za-z\s]+" title="Letters only" oninput="this.value = this.value.replace(/[^a-zA-Z\s]/g, '')" required>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                        <label class="form-label">Contact Number</label>
+                        <input type="text" name="contact_number" class="form-control" placeholder="09XXXXXXXXX"
+                        maxlength="11" oninput="this.value = this.value.replace(/[^0-9]/g, '')" required>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                       <label class="form-label">Telephone (Optional)</label>
+                        <input type="text" name="tel_no" class="form-control" 
+                       oninput="this.value = this.value.replace(/[^0-9-]/g, '')">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Email Address</label>
+                         <input type="email" name="email" class="form-control" placeholder="name@example.com" required>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Complete Delivery Address</label>
+                        <textarea name="full_address" class="form-control" rows="2" required></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Landmark</label>
+                        <input type="text" name="landmark" class="form-control" required>
+                    </div>
+                    
+                    <!-- PAYMENT SECTION (GCASH & MAYA ONLY) -->
+                    <div class="col-12">
+                        <?php if ($grand_total >= 5000): ?>
+                            <div id="payment_option_box" class="alert alert-info p-3">
+                                <p class="fw-bold small text-danger mb-2">Note: Orders ₱5,000+ require payment scheme selection.</p>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="payment_scheme" value="50_percent" checked id="opt1" onchange="updatePaymentDisplay()">
+                                    <label class="form-check-label" for="opt1">50% Downpayment</label>
                                 </div>
-                            <?php endif; ?>
-                            <label class="form-label fw-bold">Mode of Payment</label>
-                            <?php if ($grand_total < 5000): ?>
-                            <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Cash on Delivery (COD)" onclick="togglePaymentFields()" id="cod_radio" required><label class="form-check-label" for="cod_radio">Cash On Delivery</label></div>
-                            <?php endif; ?>
-                            <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="GCash" onclick="togglePaymentFields()" id="gcash_radio"><label class="form-check-label" for="gcash_radio">GCash</label></div>
-                            <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Maya" onclick="togglePaymentFields()" id="maya_radio"><label class="form-check-label" for="maya_radio">Maya</label></div>
-                            <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
-                        </div>
-
-                        <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC TESSERACT OCR SCANNER -->
-                        <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
-                            <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code / Account Details</a>
-                            
-                            <!-- Hidden Inputs: Automatically saved to Database -->
-                            <input type="hidden" name="ref_no" id="ref_no_input">
-                            <input type="hidden" name="paid_amount" id="paid_amount_input">
-                            <input type="hidden" name="receiptdt" id="receiptdt_input">
-                            <input type="hidden" name="sent_to" id="sent_to_input">
-
-                            <!-- OCR Status Message Box -->
-                            <div id="ocr_status" class="alert alert-info py-2 d-none small">
-                                <span id="ocr_status_text">Scanning receipt image via OCR...</span>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="payment_scheme" value="full_payment" id="opt2" onchange="updatePaymentDisplay()">
+                                    <label class="form-check-label" for="opt2">Full Payment</label>
+                                </div>
                             </div>
+                        <?php endif; ?>
+                        <label class="form-label fw-bold">Mode of Payment</label>
+                        <?php if ($grand_total < 5000): ?>
+                        <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Cash on Delivery (COD)" onclick="togglePaymentFields()" id="cod_radio" required><label class="form-check-label" for="cod_radio">Cash On Delivery</label></div>
+                        <?php endif; ?>
+                        <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="GCash" onclick="togglePaymentFields()" id="gcash_radio"><label class="form-check-label" for="gcash_radio">GCash</label></div>
+                        <div class="form-check"><input class="form-check-input" type="radio" name="payment_method" value="Maya" onclick="togglePaymentFields()" id="maya_radio"><label class="form-check-label" for="maya_radio">Maya</label></div>
+                        <div id="cod_message" class="alert alert-warning mt-2 d-none">Pay exact amount upon delivery.</div>
+                    </div>
 
-                            <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya / Bank Transfer Screenshot)</label>
-                            <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-1" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
-                            <small class="text-muted d-block mb-2"><i>Note: Upload direct official screenshot from GCash, Maya, or Bank Transfer.</i></small>
+                    <!-- ONLINE PAYMENT FIELDS WITH AUTOMATIC TESSERACT OCR SCANNER -->
+                    <div id="online_payment_fields" class="col-12 d-none bg-light p-3 border rounded">
+                        <a href="qr.php" target="_blank" class="btn btn-sm btn-outline-primary mb-2">View QR Code / Account Details</a>
+                        
+                        <!-- Hidden Inputs: Automatically saved to Database -->
+                        <input type="hidden" name="ref_no" id="ref_no_input">
+                        <input type="hidden" name="paid_amount" id="paid_amount_input">
+                        <input type="hidden" name="receiptdt" id="receiptdt_input">
+                        <input type="hidden" name="sent_to" id="sent_to_input">
+
+                        <!-- OCR Status Message Box -->
+                        <div id="ocr_status" class="alert alert-info py-2 d-none small">
+                            <span id="ocr_status_text">Scanning receipt image via OCR...</span>
                         </div>
 
-                        <div class="col-12 form-check ps-4">
-                            <input type="checkbox" class="form-check-input" id="termsCheckbox" onclick="toggleSubmitButton()">
-                           <label class="form-check-label" for="termsCheckbox" style="font-size: 0.85rem;">
-                               I have read and agree to the Terms and Conditions and Privacy Notice. <a href="tac.php" target="_blank" class="text-decoration-underline">Terms and Conditions</a> 
-                            </label>
-                        </div>
-                        <button type="submit" name="place_order" id="submitBtn" class="btn btn-success w-100 py-2" disabled>Confirm & Place Order</button>
+                        <label class="form-label small fw-bold">Upload Proof of Payment (GCash / Maya / Bank Transfer Screenshot)</label>
+                        <input type="file" name="proof_of_payment" id="proof_of_payment_input" class="form-control mb-1" accept=".jpg,.jpeg,.png,.webp" onchange="processReceiptOCR(this)">
+                        <small class="text-muted d-block mb-2"><i>Note: Upload direct official screenshot from GCash, Maya, or Bank Transfer.</i></small>
+                    </div>
+
+                    <div class="col-12 form-check ps-4">
+                        <input type="checkbox" class="form-check-input" id="termsCheckbox" onclick="toggleSubmitButton()">
+                       <label class="form-check-label" for="termsCheckbox" style="font-size: 0.85rem;">
+                           I have read and agree to the Terms and Conditions and Privacy Notice. <a href="tac.php" target="_blank" class="text-decoration-underline">Terms and Conditions</a> 
+                        </label>
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" name="place_order" id="submitBtn" class="btn btn-success w-100 py-2 mb-2" disabled>Confirm & Place Order</button>
                         <button type="button" class="btn btn-secondary w-100" onclick="window.location.href='cart.php';">Cancel</button>
                     </div>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+
+<!-- Bootstrap JS Bundle (para gumana ang mobile collapse toggle) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
 const grandTotal = <?php echo $grand_total; ?>;

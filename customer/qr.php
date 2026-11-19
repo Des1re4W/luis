@@ -44,14 +44,14 @@ require_once __DIR__ . '/../config/db.php';
         <div class="row g-3">          
             <div class="col-6">
                 <div class="channel-box">
-                    <h6 class="fw-bold text-info mb-2">💳 Maya QR Code</h6>
+                    <h6 class="fw-bold text-info mb-2"> Maya QR Code</h6>
                     <img src="../assets/qr/maya.jpg" alt="Maya QR Code" class="qr-image mb-2" onclick="openModal('../assets/qr/maya.jpg')">             
                     <p class="small text-secondary mb-0">Name: <b>Melanie Taipan</b></p>
                 </div>
             </div>
             <div class="col-6">
                 <div class="channel-box">
-                    <h6 class="fw-bold text-primary mb-2">💰 GCash QR Code</h6>
+                    <h6 class="fw-bold text-primary mb-2"> GCash QR Code</h6>
                     <img src="../assets/qr/gcash.jpg" alt="GCash QR Code" class="qr-image mb-2" onclick="openModal('../assets/qr/gcash.jpg')">
                     <p class="small text-secondary mb-0">Name: <b>R**L T.</b></p>
                 </div>
