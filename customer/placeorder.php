@@ -613,7 +613,7 @@ async function processReceiptOCR(fileInput) {
         if (!hasLegitBrandKeyword) {
             statusBox.classList.remove('alert-info');
             statusBox.classList.add('alert-danger');
-            statusText.innerHTML = '❌ <b>Invalid or Fake Receipt Photo!</b> Only official GCash, Maya, or Bank transfer screenshots are accepted. Please upload a clear official receipt.';
+            statusText.innerHTML = '❌ <b>Invalid Receipt Photo!</b> Only official GCash, Maya, or Bank transfer screenshots are accepted. Please upload a clear official receipt.';
             fileInput.value = "";
             return;
         }
@@ -761,7 +761,7 @@ async function processReceiptOCR(fileInput) {
         statusBox.classList.add('alert-success');
         
         let message = `
-            <strong>✓ Legitimate Receipt Scanned Successfully!</strong><br>
+            <strong>✓Receipt Scanned Successfully!</strong><br>
             <small class="text-success">Payment verified! Amount sent matches the total required due.</small><br>
         `;
         message += `Ref No: <b>${detectedRef}</b>`;
