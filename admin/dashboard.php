@@ -423,7 +423,32 @@ if (!empty($user['profile_image'])) {
                     <small>Reported Damaged Items</small>
                 </div>
             </div>
+<!-- PENDING ORDERS -->
+<div class="col-12 col-md-4">
+    <div class="card bg-info text-dark card-box">
+        <h4>
+            <i class="bi bi-hourglass-split"></i>
+            Pending Orders
+        </h4>
 
+        <?php
+        try {
+            $stmt = $pdo->query("
+                SELECT COUNT(*) 
+                FROM orders 
+                WHERE LOWER(TRIM(status)) = 'pending'
+            ");
+            $totalPendingOrders = (int) $stmt->fetchColumn();
+            echo "<h2>" . $totalPendingOrders . "</h2>";
+        } catch (PDOException $e) {
+            error_log("Pending orders query error: " . $e->getMessage());
+            echo "<h2>0</h2>";
+        }
+        ?>
+
+        <small>Awaiting Processing / Approval</small>
+    </div>
+</div>
         </div>
 
     </div>
