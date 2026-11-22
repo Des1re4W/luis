@@ -13,8 +13,14 @@ $owner_name = $_SESSION['username'] ?? "owner";
 $sales_query = $pdo->query("SELECT SUM(total_amount) as total_sales FROM orders WHERE status = 'completed'");
 $sales_data = $sales_query->fetch(PDO::FETCH_ASSOC);
 
-$pending_query = $pdo->query("SELECT COUNT(*) as pending_count FROM orders WHERE status = 'pending'");
-$pending_data = $pending_query->fetch(PDO::FETCH_ASSOC);
+$active_users_count = 0;
+try {
+    $active_users_query = $pdo->query("SELECT COUNT(*) AS active_users_count FROM users WHERE LOWER(status) = 'active'");
+    $active_users_data = $active_users_query->fetch(PDO::FETCH_ASSOC);
+    $active_users_count = (int) ($active_users_data['active_users_count'] ?? 0);
+} catch (PDOException $e) {
+    error_log("Total active users query error: " . $e->getMessage());
+}
 
 // Ginawang 10 mula sa dating 5
 $orders_query = $pdo->query("SELECT * FROM orders ORDER BY order_date DESC LIMIT 10");
@@ -120,7 +126,7 @@ body{
 
 /* CARDS */
 .card-stats{border-left:5px solid #0d6efd;}
-.bg-warning-stats{border-left:5px solid #ffc107;}
+.bg-success-stats{border-left:5px solid #198754;}
 
 /* MOBILE RESPONSIVENESS */
 @media (max-width: 991.98px) {
@@ -214,11 +220,11 @@ body{
         </div>
 
         <div class="col-md-6 mb-3">
-            <div class="card shadow-sm bg-warning-stats h-100">
+            <div class="card shadow-sm bg-success-stats h-100">
                 <div class="card-body">
-                    <h6 class="text-muted">Pending Orders</h6>
-                    <h3 class="text-warning fw-bold">
-                        <?= $pending_data['pending_count'] ?? 0; ?>
+                    <h6 class="text-muted">Total Active Users</h6>
+                    <h3 class="text-success fw-bold">
+                        <?= $active_users_count; ?>
                     </h3>
                 </div>
             </div>

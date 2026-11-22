@@ -280,6 +280,50 @@ if (!empty($user['profile_image'])) {
                 </div>
             </div>
 
+            <!-- OUT OF STOCK (ACTIVE ITEMS ONLY) -->
+            <div class="col-12 col-md-4">
+                <div class="card bg-dark text-white card-box">
+                    <h4>
+                        <i class="bi bi-x-octagon-fill text-danger"></i>
+                        Out of Stock
+                    </h4>
+
+                    <?php
+                    try {
+                        // Bilangin ang active main products na 0 ang stock
+                        $stmt = $pdo->query("
+                            SELECT COUNT(*) 
+                            FROM products 
+                            WHERE stock <= 0 
+                            AND LOWER(status) = 'active'
+                        ");
+                        $outOfStockProducts = (int) $stmt->fetchColumn();
+
+                        // Bilangin ang active variants
+                        $stmt = $pdo->query("
+                            SELECT COUNT(*) 
+                            FROM product_variants pv
+                            INNER JOIN products p ON pv.product_id = p.id
+                            WHERE pv.stock <= 0 
+                            AND LOWER(pv.status) = 'active'
+                            AND LOWER(p.status) = 'active'
+                        ");
+                        $outOfStockVariants = (int) $stmt->fetchColumn();
+
+                        $outOfStockTotal = $outOfStockProducts + $outOfStockVariants;
+
+                        echo "<h2>" . $outOfStockTotal . "</h2>";
+
+                    } catch (PDOException $e) {
+                        error_log("Out of stock query error: " . $e->getMessage());
+                        echo "<h2>--</h2>";
+                    }
+                    ?>
+
+                    <small>Active Products & Variants with 0 stock</small>
+                </div>
+            </div>
+
             <!-- TOTAL PRODUCTS -->
             <div class="col-12 col-md-4">
                 <div class="card bg-primary text-white card-box">
@@ -342,6 +386,7 @@ if (!empty($user['profile_image'])) {
                     <small>Online Orders</small>
                 </div>
             </div>
+
             <!-- TOTAL DAMAGED ITEMS -->
             <div class="col-12 col-md-4">
                 <div class="card bg-danger text-white card-box">
@@ -370,32 +415,6 @@ if (!empty($user['profile_image'])) {
                     ?>
 
                     <small>Reported Damaged Items</small>
-                </div>
-            </div>
-
-            <!-- TOTAL ACTIVE USERS (Excludes Archived Accounts) -->
-            <div class="col-12 col-md-4">
-                <div class="card bg-dark text-white card-box">
-                    <h4>
-                        <i class="bi bi-people-fill"></i>
-                        Total Active Users
-                    </h4>
-
-                    <?php
-                    try {
-                        // Kukunin lamang ang mga user na status = 'Active'
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) FROM users WHERE status = 'Active'
-                        ");
-                        $totalActiveUsers = (int) $stmt->fetchColumn();
-                        echo "<h2>" . $totalActiveUsers . "</h2>";
-                    } catch (PDOException $e) {
-                        error_log("Total active users query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
-                    ?>
-
-                    <small>Active Registered System Users (Excludes Archived)</small>
                 </div>
             </div>
 
