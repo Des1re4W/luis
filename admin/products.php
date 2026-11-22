@@ -99,16 +99,15 @@ try {
                     p.product_name,
                     p.category,
                     p.image,
-                    'Standard Single Item (No Variants)' AS variant_name,
+                    CASE
+                        WHEN EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id)
+                        THEN 'Main Product Stock'
+                        ELSE 'Standard Single Item (No Variants)'
+                    END AS variant_name,
                     p.stock AS item_stock,
                     p.price AS item_price
                 FROM products p
                 WHERE p.is_archived = 0
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM product_variants v
-                    WHERE v.product_id = p.id
-                )
                   AND p.stock <= 10
                   AND p.stock > 0
 
@@ -150,7 +149,7 @@ try {
             ];
         }
 
-        $query .= " ORDER BY product_id DESC";
+        $query .= " ORDER BY product_id DESC, variant_id NULLS FIRST";
 
     } elseif ($filter === 'out_of_stock') {
 
@@ -163,16 +162,15 @@ try {
                     p.product_name,
                     p.category,
                     p.image,
-                    'Standard Single Item (No Variants)' AS variant_name,
+                    CASE
+                        WHEN EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id = p.id)
+                        THEN 'Main Product Stock'
+                        ELSE 'Standard Single Item (No Variants)'
+                    END AS variant_name,
                     p.stock AS item_stock,
                     p.price AS item_price
                 FROM products p
                 WHERE p.is_archived = 0
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM product_variants v
-                    WHERE v.product_id = p.id
-                )
                   AND p.stock <= 0
 
                 UNION ALL
@@ -212,7 +210,7 @@ try {
             ];
         }
 
-        $query .= " ORDER BY product_id DESC";
+        $query .= " ORDER BY product_id DESC, variant_id NULLS FIRST";
 
     } else {
 
@@ -509,8 +507,10 @@ try {
 
                         if ($row !== false) {
                             do {
+                                $v_id = null;
                                 if ($filter == 'low_stock' || $filter == 'out_of_stock') {
                                     $p_id = $row['product_id'];
+                                    $v_id = $row['variant_id'];
                                     $p_name = $row['product_name'];
                                     $p_category = $row['category'];
                                     $p_image = $row['image'];
@@ -650,8 +650,20 @@ try {
                                         <?php echo $price_range; ?>
                                     </td>
                                     <td class="text-center">
-                                        <div class="d-flex justify-content-center gap-1">
-                                            <?php if ($filter !== 'low_stock' && $filter !== 'out_of_stock'): ?>
+                                        <div class="d-flex justify-content-center gap-1 flex-wrap">
+                                            <?php if ($filter === 'low_stock' || $filter === 'out_of_stock'): ?>
+                                                <?php if (!empty($v_id)): ?>
+                                                    <a href="manageVariants.php?product_id=<?php echo $p_id; ?>&variant_id=<?php echo $v_id; ?>"
+                                                        class="btn btn-warning btn-sm fw-bold">
+                                                        <i class="bi bi-pencil-square"></i> Edit Variant
+                                                    </a>
+                                                <?php else: ?>
+                                                    <a href="editProduct.php?product_id=<?php echo $p_id; ?>"
+                                                        class="btn btn-warning btn-sm fw-bold">
+                                                        <i class="bi bi-pencil-square"></i> Edit
+                                                    </a>
+                                                <?php endif; ?>
+                                            <?php else: ?>
                                                 <a href="manageVariants.php?product_id=<?php echo $p_id; ?>"
                                                     class="btn btn-success btn-sm fw-bold">
                                                     <i class="bi bi-boxes"></i> Variants

@@ -289,36 +289,73 @@ if (!empty($user['profile_image'])) {
                     </h4>
 
                     <?php
-                    try {
-                        // Bilangin ang active main products na 0 ang stock
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) 
-                            FROM products 
-                            WHERE stock <= 0 
-                            AND LOWER(status) = 'active'
-                        ");
-                        $outOfStockProducts = (int) $stmt->fetchColumn();
+try {
+    $outOfStockTotal = 0;
 
-                        // Bilangin ang active variants
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) 
-                            FROM product_variants pv
-                            INNER JOIN products p ON pv.product_id = p.id
-                            WHERE pv.stock <= 0 
-                            AND LOWER(pv.status) = 'active'
-                            AND LOWER(p.status) = 'active'
-                        ");
-                        $outOfStockVariants = (int) $stmt->fetchColumn();
+    // Helper para kunin ang columns ng table (compatible sa PostgreSQL & MySQL)
+    $getColumns = function (string $table) use ($pdo): array {
+        if ($pdo->getAttribute(PDO::ATTR_DRIVER_NAME) === 'pgsql') {
+            $q = $pdo->prepare("
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = :tbl
+            ");
+        } else {
+            $q = $pdo->prepare("
+                SELECT COLUMN_NAME AS column_name 
+                FROM information_schema.columns 
+                WHERE table_schema = DATABASE() AND table_name = :tbl
+            ");
+        }
+        $q->execute([':tbl' => $table]);
+        return array_map('strtolower', $q->fetchAll(PDO::FETCH_COLUMN));
+    };
 
-                        $outOfStockTotal = $outOfStockProducts + $outOfStockVariants;
+    $prodCols = $getColumns('products');
+    $varCols  = $getColumns('product_variants');
 
-                        echo "<h2>" . $outOfStockTotal . "</h2>";
+    // 1. Active main products na 0 o mas mababa ang stock
+    $prodSql = "SELECT COUNT(*) FROM products WHERE stock <= 0";
+    if (in_array('status', $prodCols, true)) {
+        $prodSql .= " AND LOWER(status) = 'active'";
+    } elseif (in_array('is_active', $prodCols, true)) {
+        $prodSql .= " AND is_active = 1";
+    } elseif (in_array('archived', $prodCols, true)) {
+        $prodSql .= " AND (archived = 0 OR archived IS NULL)";
+    }
+    $outOfStockTotal += (int) $pdo->query($prodSql)->fetchColumn();
 
-                    } catch (PDOException $e) {
-                        error_log("Out of stock query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
-                    ?>
+    // 2. Active variants (at active parent product) na 0 o mas mababa ang stock
+    $varSql = "
+        SELECT COUNT(*) 
+        FROM product_variants pv
+        INNER JOIN products p ON pv.product_id = p.id
+        WHERE pv.stock <= 0
+    ";
+    if (in_array('status', $varCols, true)) {
+        $varSql .= " AND LOWER(pv.status) = 'active'";
+    } elseif (in_array('is_active', $varCols, true)) {
+        $varSql .= " AND pv.is_active = 1";
+    } elseif (in_array('archived', $varCols, true)) {
+        $varSql .= " AND (pv.archived = 0 OR pv.archived IS NULL)";
+    }
+
+    if (in_array('status', $prodCols, true)) {
+        $varSql .= " AND LOWER(p.status) = 'active'";
+    } elseif (in_array('is_active', $prodCols, true)) {
+        $varSql .= " AND p.is_active = 1";
+    } elseif (in_array('archived', $prodCols, true)) {
+        $varSql .= " AND (p.archived = 0 OR p.archived IS NULL)";
+    }
+    $outOfStockTotal += (int) $pdo->query($varSql)->fetchColumn();
+
+    echo "<h2>" . $outOfStockTotal . "</h2>";
+
+} catch (PDOException $e) {
+    error_log("Out of stock query error: " . $e->getMessage());
+    echo "<h2>0</h2>";
+}
+?>
 
                     <small>Active Products & Variants with 0 stock</small>
                 </div>
