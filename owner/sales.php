@@ -36,77 +36,52 @@ $where_orders = getCleanWhere($filter, $date_selected, 'o.order_date');
 $where_pos = getCleanWhere($filter, $date_selected, 'pt.transaction_date');
 
 $grand_total_sales = 0;
-$grand_total_profit = 0;
 $sales_ledger_data = [];
 
-// A. Online Orders (Optimized single query with SUM and JOIN)
+// A. Online Orders
 if ($type_filter == 'all' || $type_filter == 'online') {
     $orders_query = $pdo->query("
         SELECT o.id,
                CONCAT(o.fullname, ' ', o.surname) AS name,
                o.total_amount,
-               o.order_date,
-               SUM(
-                   COALESCE(NULLIF(oi.cost_price, 0), pv.cost_price, p.cost_price, 0) * oi.qty
-               ) AS total_cost
+               o.order_date
         FROM orders o
-        JOIN order_items oi ON o.id = oi.order_id
-        LEFT JOIN products p ON oi.product_id = p.id
-        LEFT JOIN product_variants pv ON oi.variant_id = pv.id
         $where_orders
         AND o.status = 'completed'
-        GROUP BY o.id, o.fullname, o.surname, o.total_amount, o.order_date
     ");
 
     while ($ord = $orders_query->fetch(PDO::FETCH_ASSOC)) {
-        $total_cost = (float)($ord['total_cost'] ?? 0);
-        $profit = (float)$ord['total_amount'] - $total_cost;
-
         $grand_total_sales += (float)$ord['total_amount'];
-        $grand_total_profit += $profit;
 
         $sales_ledger_data[] = [
             'id'       => $ord['id'],
             'customer' => $ord['name'],
             'type'     => 'Online',
             'sales'    => $ord['total_amount'],
-            'profit'   => $profit,
             'date'     => $ord['order_date']
         ];
     }
 }
 
-// B. POS Walk-in Calculation (Optimized single query with SUM and JOIN)
+// B. POS Walk-in Calculation
 if ($type_filter == 'all' || $type_filter == 'walkin') {
     $pos_query = $pdo->query("
         SELECT pt.id,
                pt.cashier_name,
                pt.total_amount,
-               pt.transaction_date,
-               SUM(
-                   COALESCE(pv.cost_price, p.cost_price, 0) * pti.qty
-               ) AS total_cost
+               pt.transaction_date
         FROM pos_transaction pt
-        JOIN pos_transaction_items pti ON pt.id = pti.transaction_id
-        LEFT JOIN products p ON pti.product_id = p.id
-        LEFT JOIN product_variants pv ON pti.variant_id = pv.id
         $where_pos
-        GROUP BY pt.id, pt.cashier_name, pt.total_amount, pt.transaction_date
     ");
 
     while ($pos = $pos_query->fetch(PDO::FETCH_ASSOC)) {
-        $total_cost = (float)($pos['total_cost'] ?? 0);
-        $profit = (float)$pos['total_amount'] - $total_cost;
-        
         $grand_total_sales += (float)$pos['total_amount'];
-        $grand_total_profit += $profit;
         
         $sales_ledger_data[] = [
             'id'       => $pos['id'], 
             'customer' => $pos['cashier_name'], 
             'type'     => 'Walk-in', 
             'sales'    => $pos['total_amount'], 
-            'profit'   => $profit, 
             'date'     => $pos['transaction_date']
         ];
     }
@@ -120,7 +95,7 @@ usort($sales_ledger_data, fn($a, $b) => strtotime($b['date']) - strtotime($a['da
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales & Profit Report</title>
+    <title>Sales Report</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
@@ -252,7 +227,7 @@ body{
 </div>
 
 <div class="main-content">
-    <h3 class="mb-4">Sales & Profit Report</h3>
+    <h3 class="mb-4">Sales Report</h3>
     
     <form method="GET" class="row g-3 mb-4 mt-2">
         <div class="col-12 col-md-auto">
@@ -281,16 +256,10 @@ body{
     </form>
 
     <div class="row g-3 mb-4">
-        <div class="col-6 col-lg-3">
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
             <div class="card card-counter bg-white p-3 border-start border-primary border-4 h-100">
                 <div class="text-muted small fw-bold text-uppercase">Total Sales</div>
                 <div class="fs-4 fw-bold text-primary mt-1">₱<?=number_format($grand_total_sales, 2)?></div>
-            </div>
-        </div>
-        <div class="col-6 col-lg-3">
-            <div class="card card-counter bg-white p-3 border-start border-success border-4 h-100">
-                <div class="text-muted small fw-bold text-uppercase">Total Profit</div>
-                <div class="fs-4 fw-bold text-success mt-1">₱<?=number_format($grand_total_profit, 2)?></div>
             </div>
         </div>
     </div>
@@ -304,14 +273,13 @@ body{
                         <th>Customer/Cashier</th>
                         <th>Channel</th>
                         <th>Sales</th>
-                        <th>Profit</th>
                         <th>Date</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($sales_ledger_data)): ?>
                         <tr>
-                            <td colspan="6" class="text-center py-4 text-muted">No records found for the selected filter.</td>
+                            <td colspan="5" class="text-center py-4 text-muted">No records found for the selected filter.</td>
                         </tr>
                     <?php else: ?>
                         <?php foreach ($sales_ledger_data as $row) { ?>
@@ -320,7 +288,6 @@ body{
                             <td><?=htmlspecialchars($row['customer'])?></td>
                             <td><?=$row['type']?></td>
                             <td>₱<?=number_format($row['sales'], 2)?></td>
-                            <td class="text-success fw-bold">₱<?=number_format($row['profit'], 2)?></td>
                             <td><?=date('M d, Y h:i A', strtotime($row['date']))?></td>
                         </tr>
                         <?php } ?>

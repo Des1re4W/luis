@@ -92,7 +92,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['register'])) {
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Please enter a valid email address.';
     } elseif (strlen($password) < 8) {
-        $error = 'Password must be at least 8 characters.';
+        $error = 'Password must be at least 8 characters long.';
+    } elseif (!preg_match('/[A-Z]/', $password)) {
+        $error = 'Password must contain at least 1 uppercase letter (A–Z).';
+    } elseif (!preg_match('/[a-z]/', $password)) {
+        $error = 'Password must contain at least 1 lowercase letter (a–z).';
+    } elseif (!preg_match('/[0-9]/', $password)) {
+        $error = 'Password must contain at least 1 number (0–9).';
+    } elseif (!preg_match('/[\W_]/', $password)) {
+        $error = 'Password must contain at least 1 special character (!@#$%^&*).';
+    } elseif (preg_match('/\s/', $password)) {
+        $error = 'Password cannot contain spaces.';
     } elseif (!hash_equals($password, $confirm)) {
         $error = 'Passwords do not match.';
     } else {
@@ -484,6 +494,30 @@ try {
 
         .divider:not(:empty)::before { margin-right: 10px; }
         .divider:not(:empty)::after { margin-left: 10px; }
+
+        /* Checklist Styles */
+        .password-checklist {
+            font-size: 0.8rem;
+            margin-top: 6px;
+            padding-left: 0;
+            list-style: none;
+            margin-bottom: 0;
+        }
+        .password-checklist li {
+            color: #6c757d;
+            margin-bottom: 3px;
+            transition: color 0.2s ease;
+        }
+        .password-checklist li.valid {
+            color: #198754;
+            font-weight: 600;
+        }
+        .password-checklist li.valid::before {
+            content: "✓ ";
+        }
+        .password-checklist li::before {
+            content: "• ";
+        }
     </style>
 </head>
 
@@ -692,14 +726,35 @@ try {
 
                         <div class="mb-2">
                             <label for="reg_password" class="form-label small fw-semibold">Password</label>
-                            <input type="password" name="password" id="reg_password" class="form-control"
-                                placeholder="At least 8 characters" autocomplete="new-password" required>
+                            <div class="input-group">
+                                <input type="password" name="password" id="reg_password" class="form-control"
+                                    placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleRegPasswordBtn"
+                                    aria-label="Show password">
+                                    <i class="bi bi-eye" id="toggleRegPasswordIcon"></i>
+                                </button>
+                            </div>
+                            <!-- Real-time Checklist Validation -->
+                            <ul class="password-checklist" id="regPasswordChecklist">
+                                <li id="regLengthReq">At least 8 characters</li>
+                                <li id="regUpperReq">At least 1 uppercase letter (A–Z)</li>
+                                <li id="regLowerReq">At least 1 lowercase letter (a–z)</li>
+                                <li id="regNumberReq">At least 1 number (0–9)</li>
+                                <li id="regSpecialReq">At least 1 special character (!@#$%^&*)</li>
+                                <li id="regSpaceReq">No spaces allowed</li>
+                            </ul>
                         </div>
 
                         <div class="mb-3">
                             <label for="confirm_password" class="form-label small fw-semibold">Confirm Password</label>
-                            <input type="password" name="confirm_password" id="confirm_password" class="form-control"
-                                placeholder="Re-enter your password" autocomplete="new-password" required>
+                            <div class="input-group">
+                                <input type="password" name="confirm_password" id="confirm_password" class="form-control"
+                                    placeholder="Re-enter your password" autocomplete="new-password" minlength="8" required>
+                                <button class="btn btn-outline-secondary" type="button" id="toggleRegConfirmPasswordBtn"
+                                    aria-label="Show password">
+                                    <i class="bi bi-eye" id="toggleRegConfirmPasswordIcon"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <button type="submit" name="register" value="1" class="btn btn-primary-navy w-100 py-2">
@@ -967,6 +1022,104 @@ try {
             togglePasswordIcon.classList.toggle('bi-eye-slash', showPassword);
             togglePasswordBtn.setAttribute('aria-label', showPassword ? 'Hide password' : 'Show password');
         });
+
+        // Setup Password Visibility Toggle for Registration
+        function setupPasswordToggle(btnId, fieldId, iconId) {
+            const btn = document.getElementById(btnId);
+            const field = document.getElementById(fieldId);
+            const icon = document.getElementById(iconId);
+            if (btn && field && icon) {
+                btn.addEventListener('click', function () {
+                    const isPassword = field.getAttribute('type') === 'password';
+                    field.setAttribute('type', isPassword ? 'text' : 'password');
+                    icon.classList.toggle('bi-eye', !isPassword);
+                    icon.classList.toggle('bi-eye-slash', isPassword);
+                    btn.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+                });
+            }
+        }
+        setupPasswordToggle('toggleRegPasswordBtn', 'reg_password', 'toggleRegPasswordIcon');
+        setupPasswordToggle('toggleRegConfirmPasswordBtn', 'confirm_password', 'toggleRegConfirmPasswordIcon');
+
+        // Real-time Checklist Validation for Registration
+        const regPasswordInput = document.getElementById('reg_password');
+        const regLengthReq = document.getElementById('regLengthReq');
+        const regUpperReq = document.getElementById('regUpperReq');
+        const regLowerReq = document.getElementById('regLowerReq');
+        const regNumberReq = document.getElementById('regNumberReq');
+        const regSpecialReq = document.getElementById('regSpecialReq');
+        const regSpaceReq = document.getElementById('regSpaceReq');
+
+        if (regPasswordInput) {
+            regPasswordInput.addEventListener('input', function() {
+                const val = regPasswordInput.value;
+
+                // 1. Length check (8+ chars)
+                if (val.length >= 8) {
+                    regLengthReq?.classList.add('valid');
+                } else {
+                    regLengthReq?.classList.remove('valid');
+                }
+
+                // 2. Uppercase check
+                if (/[A-Z]/.test(val)) {
+                    regUpperReq?.classList.add('valid');
+                } else {
+                    regUpperReq?.classList.remove('valid');
+                }
+
+                // 3. Lowercase check
+                if (/[a-z]/.test(val)) {
+                    regLowerReq?.classList.add('valid');
+                } else {
+                    regLowerReq?.classList.remove('valid');
+                }
+
+                // 4. Number check
+                if (/[0-9]/.test(val)) {
+                    regNumberReq?.classList.add('valid');
+                } else {
+                    regNumberReq?.classList.remove('valid');
+                }
+
+                // 5. Special character check
+                if (/[\W_]/.test(val)) {
+                    regSpecialReq?.classList.add('valid');
+                } else {
+                    regSpecialReq?.classList.remove('valid');
+                }
+
+                // 6. No spaces check
+                if (val.length > 0 && !/\s/.test(val)) {
+                    regSpaceReq?.classList.add('valid');
+                } else {
+                    regSpaceReq?.classList.remove('valid');
+                }
+            });
+        }
+
+        // Validate on Registration Submit
+        const registerFormEl = document.getElementById('registerFormSection');
+        if (registerFormEl) {
+            registerFormEl.addEventListener('submit', function(e) {
+                const pwd = document.getElementById('reg_password')?.value || '';
+                const confirmPwd = document.getElementById('confirm_password')?.value || '';
+
+                if (pwd.length < 8 || !/[A-Z]/.test(pwd) || !/[a-z]/.test(pwd) || !/[0-9]/.test(pwd) || !/[\W_]/.test(pwd) || /\s/.test(pwd)) {
+                    e.preventDefault();
+                    alert('Please make sure your password satisfies all the requirements.');
+                    document.getElementById('reg_password')?.focus();
+                    return false;
+                }
+
+                if (pwd !== confirmPwd) {
+                    e.preventDefault();
+                    alert('Passwords do not match.');
+                    document.getElementById('confirm_password')?.focus();
+                    return false;
+                }
+            });
+        }
 
         // Block Add to Cart, Cart, Checkout, and Place Order when not logged in
         document.addEventListener('click', function (e) {
