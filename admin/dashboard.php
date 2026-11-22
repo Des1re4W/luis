@@ -242,43 +242,50 @@ if (!empty($user['profile_image'])) {
 
         <div class="row g-4">
 
-            <!-- LOW STOCK -->
-            <div class="col-12 col-md-4">
-                <div class="card bg-warning text-dark card-box">
-                    <h4>
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                        Low Stock
-                    </h4>
+           <!-- LOW STOCK (ACTIVE ITEMS ONLY) -->
+<div class="col-12 col-md-4">
+    <div class="card bg-warning text-dark card-box">
+        <h4>
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            Low Stock
+        </h4>
 
-                    <?php
-                    try {
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) 
-                            FROM products 
-                            WHERE stock <= 10
-                        ");
-                        $simpleCount = (int) $stmt->fetchColumn();
-                        
-                        $stmt = $pdo->query("
-                            SELECT COUNT(*) 
-                            FROM product_variants 
-                            WHERE stock <= 10
-                        ");
-                        $variantCount = (int) $stmt->fetchColumn();
+        <?php
+        try {
+            $lowStockTotal = 0;
 
-                        $lowStockTotal = $simpleCount + $variantCount;
+            // 1. Active main products (is_archived = 0) na 1 to 10 ang stock
+            $stmt = $pdo->query("
+                SELECT COUNT(*)
+                FROM products p
+                WHERE p.is_archived = 0
+                  AND p.stock > 0
+                  AND p.stock <= 10
+            ");
+            $lowStockTotal += (int) $stmt->fetchColumn();
 
-                        echo "<h2>" . $lowStockTotal . "</h2>";
+            // 2. Variants na active ang main product (p.is_archived = 0) at 1 to 10 ang stock
+            $stmt = $pdo->query("
+                SELECT COUNT(*)
+                FROM product_variants pv
+                INNER JOIN products p ON pv.product_id = p.id
+                WHERE p.is_archived = 0
+                  AND pv.stock > 0
+                  AND pv.stock <= 10
+            ");
+            $lowStockTotal += (int) $stmt->fetchColumn();
 
-                    } catch (PDOException $e) {
-                        error_log("Low stock query error: " . $e->getMessage());
-                        echo "<h2>--</h2>";
-                    }
-                    ?>
+            echo "<h2>" . $lowStockTotal . "</h2>";
 
-                    <small>Products & Variants with 10 or fewer stocks</small>
-                </div>
-            </div>
+        } catch (PDOException $e) {
+            error_log("Low stock query error: " . $e->getMessage());
+            echo "<h2>--</h2>";
+        }
+        ?>
+
+        <small>Active Products & Variants with 10 or fewer stocks</small>
+    </div>
+</div>
 
             <!-- OUT OF STOCK (ACTIVE ITEMS ONLY) -->
             <div class="col-12 col-md-4">
